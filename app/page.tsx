@@ -1,65 +1,175 @@
-import Image from "next/image";
-
+'use client';
+import { useState } from 'react';
+import {
+  PromptInput,
+  type PromptInputMessage,
+  PromptInputSubmit,
+  PromptInputTextarea,
+} from '@/components/ai-elements/prompt-input';
+import { Message, MessageContent } from '@/components/ai-elements/message';
+import {
+  Conversation,
+  ConversationContent,
+} from '@/components/ai-elements/conversation';
+import {
+  WebPreview,
+  WebPreviewNavigation,
+  WebPreviewUrl,
+  WebPreviewBody,
+} from '@/components/ai-elements/web-preview';
+import { Loader } from '@/components/ai-elements/loader';
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
+interface Chat {
+  id: string;
+  demo: string;
+}
 export default function Home() {
+  const [message, setMessage] = useState('');
+  const [currentChat, setCurrentChat] = useState<Chat | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatHistory, setChatHistory] = useState<
+    Array<{
+      type: 'user' | 'assistant';
+      content: string;
+    }>
+  >([]);
+  const handleSendMessage = async (promptMessage: PromptInputMessage) => {
+    const hasText = Boolean(promptMessage.text);
+    const hasAttachments = Boolean(promptMessage.files?.length);
+    
+    if (!(hasText || hasAttachments) || isLoading) return;
+    const userMessage = promptMessage.text?.trim() || 'Sent with attachments';
+    setMessage('');
+    setIsLoading(true);
+    setChatHistory((prev) => [...prev, { type: 'user', content: userMessage }]);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          chatId: currentChat?.id,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create chat');
+      }
+      const chat: Chat = await response.json();
+      setCurrentChat(chat);
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          type: 'assistant',
+          content: 'Generated new app preview. Check the preview panel!',
+        },
+      ]);
+    } catch (error) {
+      console.error('Error:', error);
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          type: 'assistant',
+          content:
+            'Sorry, there was an error creating your app. Please try again.',
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="h-screen flex">
+      {/* Chat Panel */}
+      <div className="w-1/2 flex flex-col border-r">
+        {/* Header */}
+        <div className="border-b p-3 h-14 flex items-center justify-between">
+          <h1 className="text-lg font-semibold">v0 Clone</h1>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {chatHistory.length === 0 ? (
+            <div className="text-center font-semibold mt-8">
+              <p className="text-3xl mt-4">What can we build together?</p>
+            </div>
+          ) : (
+            <>
+              <Conversation>
+                <ConversationContent>
+                  {chatHistory.map((msg, index) => (
+                    <Message from={msg.type} key={index}>
+                      <MessageContent>{msg.content}</MessageContent>
+                    </Message>
+                  ))}
+                </ConversationContent>
+              </Conversation>
+              {isLoading && (
+                <Message from="assistant">
+                  <MessageContent>
+                    <div className="flex items-center gap-2">
+                      <Loader />
+                      Creating your app...
+                    </div>
+                  </MessageContent>
+                </Message>
+              )}
+            </>
+          )}
+        </div>
+        {/* Input */}
+        <div className="border-t p-4">
+          {!currentChat && (
+            <Suggestions>
+              <Suggestion
+                onClick={() =>
+                  setMessage('Create a responsive navbar with Tailwind CSS')
+                }
+                suggestion="Create a responsive navbar with Tailwind CSS"
+              />
+              <Suggestion
+                onClick={() => setMessage('Build a todo app with React')}
+                suggestion="Build a todo app with React"
+              />
+              <Suggestion
+                onClick={() =>
+                  setMessage('Make a landing page for a coffee shop')
+                }
+                suggestion="Make a landing page for a coffee shop"
+              />
+            </Suggestions>
+          )}
+          <div className="flex gap-2">
+            <PromptInput
+              onSubmit={handleSendMessage}
+              className="mt-4 w-full max-w-2xl mx-auto relative"
+            >
+              <PromptInputTextarea
+                onChange={(e) => setMessage(e.target.value)}
+                value={message}
+                className="pr-12 min-h-[60px]"
+              />
+              <PromptInputSubmit
+                className="absolute bottom-1 right-1"
+                disabled={!message}
+                status={isLoading ? 'streaming' : 'ready'}
+              />
+            </PromptInput>
+          </div>
+        </div>
+      </div>
+      {/* Preview Panel */}
+      <div className="w-1/2 flex flex-col">
+        <WebPreview>
+          <WebPreviewNavigation>
+            <WebPreviewUrl
+              readOnly
+              placeholder="Your app here..."
+              value={currentChat?.demo}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          </WebPreviewNavigation>
+          <WebPreviewBody src={currentChat?.demo} />
+        </WebPreview>
+      </div>
     </div>
   );
 }
