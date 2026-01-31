@@ -5,6 +5,26 @@ export interface Project {
   created_at: string;
 }
 
+export interface Executor {
+  id: string;
+  project_id: string;
+  name: string;
+  command: string;
+  cwd: string | null;
+  created_at: string;
+}
+
+export type ExecutorProcessStatus = 'running' | 'completed' | 'failed' | 'killed';
+
+export interface ExecutorProcess {
+  id: string;
+  executor_id: string;
+  status: ExecutorProcessStatus;
+  exit_code: number | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
 export interface Storage {
   projects: {
     create: (opts: { id: string; name: string; path: string }) => Project;
@@ -12,6 +32,19 @@ export interface Storage {
     getById: (id: string) => Project | undefined;
     getByPath: (path: string) => Project | undefined;
     delete: (id: string) => void;
+  };
+  executors: {
+    create: (opts: { id: string; project_id: string; name: string; command: string; cwd?: string }) => Executor;
+    getByProjectId: (projectId: string) => Executor[];
+    getById: (id: string) => Executor | undefined;
+    update: (id: string, opts: { name?: string; command?: string; cwd?: string | null }) => Executor | undefined;
+    delete: (id: string) => void;
+  };
+  executorProcesses: {
+    create: (opts: { id: string; executor_id: string }) => ExecutorProcess;
+    getById: (id: string) => ExecutorProcess | undefined;
+    getRunning: () => ExecutorProcess[];
+    updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
   };
   close: () => void;
 }

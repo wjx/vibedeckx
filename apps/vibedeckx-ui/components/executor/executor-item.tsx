@@ -1,0 +1,179 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import {
+  ChevronDown,
+  ChevronRight,
+  Play,
+  Square,
+  MoreVertical,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { ExecutorOutput } from "./executor-output";
+import { ExecutorForm } from "./executor-form";
+import { useExecutorLogs } from "@/hooks/use-executor-logs";
+import type { ExecutorWithProcess } from "@/hooks/use-executors";
+import { cn } from "@/lib/utils";
+
+interface ExecutorItemProps {
+  executor: ExecutorWithProcess;
+  onStart: () => Promise<string | null>;
+  onStop: () => Promise<void>;
+  onUpdate: (data: { name?: string; command?: string; cwd?: string | null }) => Promise<unknown>;
+  onDelete: () => Promise<void>;
+  onProcessFinished: () => void;
+}
+
+export function ExecutorItem({
+  executor,
+  onStart,
+  onStop,
+  onUpdate,
+  onDelete,
+  onProcessFinished,
+}: ExecutorItemProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [localProcessId, setLocalProcessId] = useState<string | null>(
+    executor.currentProcessId
+  );
+  const processFinishedCalledRef = useRef(false);
+
+  const { logs, status, exitCode } = useExecutorLogs(localProcessId);
+
+  // Sync local process ID with executor's current process
+  useEffect(() => {
+    if (executor.currentProcessId) {
+      setLocalProcessId(executor.currentProcessId);
+      processFinishedCalledRef.current = false; // Reset when new process starts
+    }
+  }, [executor.currentProcessId]);
+
+  // Handle process finished - only call once per process
+  useEffect(() => {
+    if (status === "closed" && exitCode !== null && !processFinishedCalledRef.current) {
+      processFinishedCalledRef.current = true;
+      onProcessFinished();
+    }
+  }, [status, exitCode, onProcessFinished]);
+
+  const handleStart = async () => {
+    console.log(`[ExecutorItem] Starting executor ${executor.id}`);
+    processFinishedCalledRef.current = false; // Reset for new process
+    const processId = await onStart();
+    console.log(`[ExecutorItem] Got processId: ${processId}`);
+    if (processId) {
+      setLocalProcessId(processId);
+      setIsOpen(true); // Auto-expand on start
+    }
+  };
+
+  const handleStop = async () => {
+    await onStop();
+  };
+
+  const isRunning = executor.isRunning || status === "connected" || status === "connecting";
+
+  return (
+    <>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <div className="border rounded-lg">
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50">
+              <div className="flex items-center gap-2">
+                {isOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+                <span className="font-medium">{executor.name}</span>
+                <Badge
+                  variant={isRunning ? "default" : "secondary"}
+                  className={cn(
+                    isRunning && "bg-green-600 hover:bg-green-600"
+                  )}
+                >
+                  {isRunning
+                    ? "Running"
+                    : exitCode !== null
+                    ? exitCode === 0
+                      ? "Completed"
+                      : "Failed"
+                    : "Stopped"}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                {isRunning ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleStop}
+                  >
+                    <Square className="h-3 w-3 mr-1" />
+                    Stop
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={handleStart}>
+                    <Play className="h-3 w-3 mr-1" />
+                    Start
+                  </Button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-8 w-8">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={onDelete}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-3 pb-3">
+              <div className="text-xs text-muted-foreground mb-2 font-mono">
+                $ {executor.command}
+              </div>
+              <ExecutorOutput logs={logs} />
+            </div>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+
+      <ExecutorForm
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        executor={executor}
+        onSubmit={async (data) => {
+          await onUpdate(data);
+        }}
+      />
+    </>
+  );
+}

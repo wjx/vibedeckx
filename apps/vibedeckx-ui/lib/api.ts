@@ -1,4 +1,40 @@
-const API_BASE = "";
+// 检查是否是本地开发模式（Next.js dev server 在 3000 端口）
+function isLocalDevMode(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  // 只有在 localhost:3000 时才是本地开发模式
+  return window.location.hostname === "localhost" && window.location.port === "3000";
+}
+
+// 获取 API 基础地址
+function getApiBase(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  // 本地开发模式：前端在 3000，后端在 5173
+  if (isLocalDevMode()) {
+    return "http://localhost:5173";
+  }
+  // 生产模式或通过 tunnel 访问：使用相对路径
+  return "";
+}
+
+export function getWebSocketUrl(path: string): string {
+  if (typeof window === "undefined") {
+    return `ws://localhost:5173${path}`;
+  }
+
+  // 本地开发模式：连接到后端 5173 端口
+  if (isLocalDevMode()) {
+    return `ws://localhost:5173${path}`;
+  }
+
+  // 生产模式或通过 tunnel 访问：使用当前页面的 host
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  return `${protocol}//${host}${path}`;
+}
 
 export interface Project {
   id: string;
@@ -12,28 +48,54 @@ export interface DirectoryEntry {
   type: "file" | "directory";
 }
 
+export interface Executor {
+  id: string;
+  project_id: string;
+  name: string;
+  command: string;
+  cwd: string | null;
+  created_at: string;
+}
+
+export type ExecutorProcessStatus = 'running' | 'completed' | 'failed' | 'killed';
+
+export interface ExecutorProcess {
+  id: string;
+  executor_id: string;
+  status: ExecutorProcessStatus;
+  exit_code: number | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export type LogMessage =
+  | { type: "stdout"; data: string }
+  | { type: "stderr"; data: string }
+  | { type: "finished"; exitCode: number }
+  | { type: "error"; message: string };
+
 export const api = {
   async getProjects(): Promise<Project[]> {
-    const res = await fetch(`${API_BASE}/api/projects`);
+    const res = await fetch(`${getApiBase()}/api/projects`);
     const data = await res.json();
     return data.projects;
   },
 
   async getProject(id: string): Promise<Project> {
-    const res = await fetch(`${API_BASE}/api/projects/${id}`);
+    const res = await fetch(`${getApiBase()}/api/projects/${id}`);
     const data = await res.json();
     return data.project;
   },
 
   async selectFolder(): Promise<{ path: string | null; cancelled: boolean }> {
-    const res = await fetch(`${API_BASE}/api/dialog/select-folder`, {
+    const res = await fetch(`${getApiBase()}/api/dialog/select-folder`, {
       method: "POST",
     });
     return res.json();
   },
 
   async createProject(name: string, path: string): Promise<Project> {
-    const res = await fetch(`${API_BASE}/api/projects`, {
+    const res = await fetch(`${getApiBase()}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, path }),
@@ -47,18 +109,106 @@ export const api = {
   },
 
   async deleteProject(id: string): Promise<void> {
-    await fetch(`${API_BASE}/api/projects/${id}`, {
+    await fetch(`${getApiBase()}/api/projects/${id}`, {
       method: "DELETE",
     });
   },
 
   async getProjectFiles(id: string): Promise<DirectoryEntry[]> {
-    const res = await fetch(`${API_BASE}/api/projects/${id}/files`);
+    const res = await fetch(`${getApiBase()}/api/projects/${id}/files`);
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.error);
     }
     const data = await res.json();
     return data.files;
+  },
+
+  // Executor API
+  async getExecutors(projectId: string): Promise<Executor[]> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.executors;
+  },
+
+  async createExecutor(
+    projectId: string,
+    opts: { name: string; command: string; cwd?: string }
+  ): Promise<Executor> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.executor;
+  },
+
+  async updateExecutor(
+    id: string,
+    opts: { name?: string; command?: string; cwd?: string | null }
+  ): Promise<Executor> {
+    const res = await fetch(`${getApiBase()}/api/executors/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.executor;
+  },
+
+  async deleteExecutor(id: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/executors/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  // Process Control API
+  async startExecutor(executorId: string): Promise<string> {
+    const res = await fetch(`${getApiBase()}/api/executors/${executorId}/start`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.processId;
+  },
+
+  async stopProcess(processId: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/executor-processes/${processId}/stop`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  async getRunningProcesses(): Promise<ExecutorProcess[]> {
+    const res = await fetch(`${getApiBase()}/api/executor-processes/running`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.processes;
   },
 };

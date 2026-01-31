@@ -1,0 +1,162 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { api, type Executor, type ExecutorProcess } from "@/lib/api";
+
+export interface ExecutorWithProcess extends Executor {
+  currentProcessId: string | null;
+  isRunning: boolean;
+}
+
+export function useExecutors(projectId: string | null) {
+  const [executors, setExecutors] = useState<Executor[]>([]);
+  const [runningProcesses, setRunningProcesses] = useState<Map<string, string>>(
+    new Map()
+  ); // executorId -> processId
+  const [loading, setLoading] = useState(true);
+
+  // Fetch executors
+  const fetchExecutors = useCallback(async () => {
+    if (!projectId) {
+      setExecutors([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const data = await api.getExecutors(projectId);
+      setExecutors(data);
+    } catch (error) {
+      console.error("Failed to fetch executors:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  // Fetch running processes
+  const fetchRunningProcesses = useCallback(async () => {
+    try {
+      const processes = await api.getRunningProcesses();
+      const processMap = new Map<string, string>();
+      for (const proc of processes) {
+        processMap.set(proc.executor_id, proc.id);
+      }
+      setRunningProcesses(processMap);
+    } catch (error) {
+      console.error("Failed to fetch running processes:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchExecutors();
+    fetchRunningProcesses();
+  }, [fetchExecutors, fetchRunningProcesses]);
+
+  // Create executor
+  const createExecutor = useCallback(
+    async (opts: { name: string; command: string; cwd?: string }) => {
+      if (!projectId) return null;
+
+      try {
+        const executor = await api.createExecutor(projectId, opts);
+        setExecutors((prev) => [...prev, executor]);
+        return executor;
+      } catch (error) {
+        console.error("Failed to create executor:", error);
+        return null;
+      }
+    },
+    [projectId]
+  );
+
+  // Update executor
+  const updateExecutor = useCallback(
+    async (
+      id: string,
+      opts: { name?: string; command?: string; cwd?: string | null }
+    ) => {
+      try {
+        const executor = await api.updateExecutor(id, opts);
+        setExecutors((prev) =>
+          prev.map((e) => (e.id === id ? executor : e))
+        );
+        return executor;
+      } catch (error) {
+        console.error("Failed to update executor:", error);
+        return null;
+      }
+    },
+    []
+  );
+
+  // Delete executor
+  const deleteExecutor = useCallback(async (id: string) => {
+    try {
+      await api.deleteExecutor(id);
+      setExecutors((prev) => prev.filter((e) => e.id !== id));
+    } catch (error) {
+      console.error("Failed to delete executor:", error);
+    }
+  }, []);
+
+  // Start executor
+  const startExecutor = useCallback(async (executorId: string) => {
+    try {
+      const processId = await api.startExecutor(executorId);
+      setRunningProcesses((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(executorId, processId);
+        return newMap;
+      });
+      return processId;
+    } catch (error) {
+      console.error("Failed to start executor:", error);
+      return null;
+    }
+  }, []);
+
+  // Stop executor
+  const stopExecutor = useCallback(async (executorId: string) => {
+    const processId = runningProcesses.get(executorId);
+    if (!processId) return;
+
+    try {
+      await api.stopProcess(processId);
+      setRunningProcesses((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(executorId);
+        return newMap;
+      });
+    } catch (error) {
+      console.error("Failed to stop executor:", error);
+    }
+  }, [runningProcesses]);
+
+  // Mark process as finished (called when WebSocket receives finished message)
+  const markProcessFinished = useCallback((executorId: string) => {
+    setRunningProcesses((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(executorId);
+      return newMap;
+    });
+  }, []);
+
+  // Get executor with process info
+  const executorsWithProcess: ExecutorWithProcess[] = executors.map((executor) => ({
+    ...executor,
+    currentProcessId: runningProcesses.get(executor.id) ?? null,
+    isRunning: runningProcesses.has(executor.id),
+  }));
+
+  return {
+    executors: executorsWithProcess,
+    loading,
+    createExecutor,
+    updateExecutor,
+    deleteExecutor,
+    startExecutor,
+    stopExecutor,
+    markProcessFinished,
+    refetch: fetchExecutors,
+  };
+}

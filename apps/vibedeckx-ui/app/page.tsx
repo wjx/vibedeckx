@@ -11,12 +11,6 @@ import {
   Conversation,
   ConversationContent,
 } from '@/components/ai-elements/conversation';
-import {
-  WebPreview,
-  WebPreviewNavigation,
-  WebPreviewUrl,
-  WebPreviewBody,
-} from '@/components/ai-elements/web-preview';
 import { Loader } from '@/components/ai-elements/loader';
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 import { ProjectSelector } from '@/components/project/project-selector';
@@ -25,6 +19,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
+import { ExecutorPanel } from '@/components/executor';
 
 interface Chat {
   id: string;
@@ -214,18 +209,9 @@ export default function Home() {
             </div>
           </div>
         </div>
-        {/* Preview Panel */}
+        {/* Executor Panel */}
         <div className="w-1/2 flex flex-col">
-          <WebPreview>
-            <WebPreviewNavigation>
-              <WebPreviewUrl
-                readOnly
-                placeholder="Your app here..."
-                value={currentChat?.demo}
-              />
-            </WebPreviewNavigation>
-            <WebPreviewBody src={currentChat?.demo} />
-          </WebPreview>
+          <ExecutorPanel projectId={currentProject?.id ?? null} />
         </div>
       </div>
     </div>

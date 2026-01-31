@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm --filter vibedeckx-ui dev",
     "dev:server": "pnpm --filter vibedeckx dev",
+    "dev:all": "pnpm build:main && concurrently -n server,ui -c blue,green \"pnpm start\" \"pnpm dev\"",
     "build": "pnpm build:main && pnpm build:ui && pnpm copy:ui",
     "build:main": "pnpm --filter vibedeckx build",
     "build:ui": "pnpm --filter vibedeckx-ui build",
@@ -11,6 +12,7 @@
     "start": "node packages/vibedeckx/dist/bin.js"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "typescript": "^5"
   },
   "pnpm": {
