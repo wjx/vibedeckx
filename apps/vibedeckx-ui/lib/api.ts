@@ -54,6 +54,7 @@ export interface Executor {
   name: string;
   command: string;
   cwd: string | null;
+  pty: boolean;
   created_at: string;
 }
 
@@ -71,8 +72,14 @@ export interface ExecutorProcess {
 export type LogMessage =
   | { type: "stdout"; data: string }
   | { type: "stderr"; data: string }
+  | { type: "pty"; data: string }
   | { type: "finished"; exitCode: number }
+  | { type: "init"; isPty: boolean }
   | { type: "error"; message: string };
+
+export type InputMessage =
+  | { type: "input"; data: string }
+  | { type: "resize"; cols: number; rows: number };
 
 export const api = {
   async getProjects(): Promise<Project[]> {
@@ -137,7 +144,7 @@ export const api = {
 
   async createExecutor(
     projectId: string,
-    opts: { name: string; command: string; cwd?: string }
+    opts: { name: string; command: string; cwd?: string; pty?: boolean }
   ): Promise<Executor> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`, {
       method: "POST",
@@ -154,7 +161,7 @@ export const api = {
 
   async updateExecutor(
     id: string,
-    opts: { name?: string; command?: string; cwd?: string | null }
+    opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }
   ): Promise<Executor> {
     const res = await fetch(`${getApiBase()}/api/executors/${id}`, {
       method: "PUT",

@@ -53,7 +53,7 @@ export function ExecutorItem({
   );
   const processFinishedCalledRef = useRef(false);
 
-  const { logs, status, exitCode } = useExecutorLogs(localProcessId);
+  const { logs, status, exitCode, isPty, sendInput, sendResize } = useExecutorLogs(localProcessId);
 
   // Sync local process ID with executor's current process
   useEffect(() => {
@@ -160,7 +160,12 @@ export function ExecutorItem({
               <div className="text-xs text-muted-foreground mb-2 font-mono">
                 $ {executor.command}
               </div>
-              <ExecutorOutput logs={logs} />
+              <ExecutorOutput
+                logs={logs}
+                isPty={isPty}
+                onInput={sendInput}
+                onResize={sendResize}
+              />
             </div>
           </CollapsibleContent>
         </div>

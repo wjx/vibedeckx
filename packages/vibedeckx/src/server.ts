@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile, readFile, stat, readdir } from "fs/promises";
 import type { Storage } from "./storage/types.js";
 import { selectFolder } from "./dialog.js";
-import { ProcessManager, type LogMessage } from "./process-manager.js";
+import { ProcessManager, type LogMessage, type InputMessage } from "./process-manager.js";
 
 export const createServer = (opts: { storage: Storage }) => {
   const UI_ROOT = path.join(
@@ -44,6 +44,10 @@ export const createServer = (opts: { storage: Storage }) => {
 
         console.log(`[WebSocket] Client connected for process ${processId}`);
 
+        // Send PTY mode info first
+        const isPty = processManager.isPtyProcess(processId);
+        socket.send(JSON.stringify({ type: "init", isPty }));
+
         // 发送历史日志
         const logs = processManager.getLogs(processId);
         console.log(`[WebSocket] Sending ${logs.length} historical logs`);
@@ -79,6 +83,18 @@ export const createServer = (opts: { storage: Storage }) => {
           } catch (error) {
             // Socket might be closed
             unsubscribe?.();
+          }
+        });
+
+        // Handle incoming messages (input, resize) for PTY processes
+        socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+          try {
+            const message = JSON.parse(data.toString()) as InputMessage;
+            if (message.type === "input" || message.type === "resize") {
+              processManager.handleInput(processId, message);
+            }
+          } catch (error) {
+            console.error("[WebSocket] Failed to parse input message:", error);
           }
         });
 
@@ -218,14 +234,14 @@ export const createServer = (opts: { storage: Storage }) => {
   // 创建 Executor
   server.post<{
     Params: { projectId: string };
-    Body: { name: string; command: string; cwd?: string };
+    Body: { name: string; command: string; cwd?: string; pty?: boolean };
   }>("/api/projects/:projectId/executors", async (req, reply) => {
     const project = opts.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { name, command, cwd } = req.body;
+    const { name, command, cwd, pty } = req.body;
     const id = randomUUID();
     const executor = opts.storage.executors.create({
       id,
@@ -233,6 +249,7 @@ export const createServer = (opts: { storage: Storage }) => {
       name,
       command,
       cwd,
+      pty,
     });
 
     return reply.code(201).send({ executor });
@@ -241,7 +258,7 @@ export const createServer = (opts: { storage: Storage }) => {
   // 更新 Executor
   server.put<{
     Params: { id: string };
-    Body: { name?: string; command?: string; cwd?: string | null };
+    Body: { name?: string; command?: string; cwd?: string | null; pty?: boolean };
   }>("/api/executors/:id", async (req, reply) => {
     const existing = opts.storage.executors.getById(req.params.id);
     if (!existing) {

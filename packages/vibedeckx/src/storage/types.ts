@@ -11,6 +11,7 @@ export interface Executor {
   name: string;
   command: string;
   cwd: string | null;
+  pty: boolean;
   created_at: string;
 }
 
@@ -34,10 +35,10 @@ export interface Storage {
     delete: (id: string) => void;
   };
   executors: {
-    create: (opts: { id: string; project_id: string; name: string; command: string; cwd?: string }) => Executor;
+    create: (opts: { id: string; project_id: string; name: string; command: string; cwd?: string; pty?: boolean }) => Executor;
     getByProjectId: (projectId: string) => Executor[];
     getById: (id: string) => Executor | undefined;
-    update: (id: string, opts: { name?: string; command?: string; cwd?: string | null }) => Executor | undefined;
+    update: (id: string, opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }) => Executor | undefined;
     delete: (id: string) => void;
   };
   executorProcesses: {

@@ -21,6 +21,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       name TEXT NOT NULL,
       command TEXT NOT NULL,
       cwd TEXT,
+      pty INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
@@ -35,6 +36,14 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       FOREIGN KEY (executor_id) REFERENCES executors(id) ON DELETE CASCADE
     );
   `);
+
+  // Migration: add pty column to existing executors table if not present
+  const tableInfo = db.prepare("PRAGMA table_info(executors)").all() as { name: string }[];
+  const hasPtyColumn = tableInfo.some((col) => col.name === "pty");
+  if (!hasPtyColumn) {
+    db.exec("ALTER TABLE executors ADD COLUMN pty INTEGER DEFAULT 1");
+  }
+
   return db;
 };
 
@@ -78,29 +87,32 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     executors: {
-      create: ({ id, project_id, name, command, cwd }) => {
+      create: ({ id, project_id, name, command, cwd, pty }) => {
         db.prepare(
-          `INSERT INTO executors (id, project_id, name, command, cwd) VALUES (@id, @project_id, @name, @command, @cwd)`
-        ).run({ id, project_id, name, command, cwd: cwd ?? null });
+          `INSERT INTO executors (id, project_id, name, command, cwd, pty) VALUES (@id, @project_id, @name, @command, @cwd, @pty)`
+        ).run({ id, project_id, name, command, cwd: cwd ?? null, pty: pty !== false ? 1 : 0 });
 
-        return db
-          .prepare<{ id: string }, Executor>(`SELECT * FROM executors WHERE id = @id`)
+        const row = db
+          .prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
           .get({ id })!;
+        return { ...row, pty: row.pty === 1 };
       },
 
       getByProjectId: (projectId: string) => {
-        return db
-          .prepare<{ project_id: string }, Executor>(`SELECT * FROM executors WHERE project_id = @project_id ORDER BY created_at ASC`)
+        const rows = db
+          .prepare<{ project_id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; created_at: string }>(`SELECT * FROM executors WHERE project_id = @project_id ORDER BY created_at ASC`)
           .all({ project_id: projectId });
+        return rows.map((row) => ({ ...row, pty: row.pty === 1 }));
       },
 
       getById: (id: string) => {
-        return db
-          .prepare<{ id: string }, Executor>(`SELECT * FROM executors WHERE id = @id`)
+        const row = db
+          .prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
           .get({ id });
+        return row ? { ...row, pty: row.pty === 1 } : undefined;
       },
 
-      update: (id: string, opts: { name?: string; command?: string; cwd?: string | null }) => {
+      update: (id: string, opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }) => {
         const updates: string[] = [];
         const params: Record<string, unknown> = { id };
 
@@ -116,13 +128,19 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           updates.push('cwd = @cwd');
           params.cwd = opts.cwd;
         }
+        if (opts.pty !== undefined) {
+          updates.push('pty = @pty');
+          params.pty = opts.pty ? 1 : 0;
+        }
 
         if (updates.length === 0) {
-          return db.prepare<{ id: string }, Executor>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+          const row = db.prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+          return row ? { ...row, pty: row.pty === 1 } : undefined;
         }
 
         db.prepare(`UPDATE executors SET ${updates.join(', ')} WHERE id = @id`).run(params);
-        return db.prepare<{ id: string }, Executor>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+        const row = db.prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+        return row ? { ...row, pty: row.pty === 1 } : undefined;
       },
 
       delete: (id: string) => {

@@ -54,7 +54,7 @@ export function useExecutors(projectId: string | null) {
 
   // Create executor
   const createExecutor = useCallback(
-    async (opts: { name: string; command: string; cwd?: string }) => {
+    async (opts: { name: string; command: string; cwd?: string; pty?: boolean }) => {
       if (!projectId) return null;
 
       try {
@@ -73,7 +73,7 @@ export function useExecutors(projectId: string | null) {
   const updateExecutor = useCallback(
     async (
       id: string,
-      opts: { name?: string; command?: string; cwd?: string | null }
+      opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }
     ) => {
       try {
         const executor = await api.updateExecutor(id, opts);

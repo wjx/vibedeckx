@@ -1,15 +1,23 @@
 import { spawn, type ChildProcess } from "child_process";
+import * as pty from "node-pty";
+import type { IPty } from "node-pty";
 import type { Executor, ExecutorProcessStatus, Storage } from "./storage/types.js";
 
 export type LogMessage =
   | { type: "stdout"; data: string }
   | { type: "stderr"; data: string }
+  | { type: "pty"; data: string }
   | { type: "finished"; exitCode: number };
+
+export type InputMessage =
+  | { type: "input"; data: string }
+  | { type: "resize"; cols: number; rows: number };
 
 type LogSubscriber = (msg: LogMessage) => void;
 
 interface RunningProcess {
-  childProcess: ChildProcess;
+  process: ChildProcess | IPty;
+  isPty: boolean;
   logs: LogMessage[];
   subscribers: Set<LogSubscriber>;
   executorId: string;
@@ -45,8 +53,76 @@ export class ProcessManager {
     console.log(`[ProcessManager] Starting process ${processId}`);
     console.log(`[ProcessManager] Command: ${executor.command}`);
     console.log(`[ProcessManager] CWD: ${cwd}`);
+    console.log(`[ProcessManager] PTY mode: ${executor.pty}`);
 
-    // Spawn the child process
+    if (executor.pty) {
+      this.startPtyProcess(processId, executor, cwd);
+    } else {
+      this.startRegularProcess(processId, executor, cwd);
+    }
+
+    return processId;
+  }
+
+  /**
+   * Start a process using node-pty (for interactive commands)
+   */
+  private startPtyProcess(processId: string, executor: Executor, cwd: string): void {
+    const shell = process.platform === "win32" ? "powershell.exe" : "bash";
+    const args = process.platform === "win32" ? ["-Command", executor.command] : ["-c", executor.command];
+
+    const ptyProcess = pty.spawn(shell, args, {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd,
+      env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>,
+    });
+
+    const runningProcess: RunningProcess = {
+      process: ptyProcess,
+      isPty: true,
+      logs: [],
+      subscribers: new Set(),
+      executorId: executor.id,
+      projectPath: cwd,
+    };
+
+    this.processes.set(processId, runningProcess);
+    console.log(`[ProcessManager] PTY process ${processId} added to map, PID: ${ptyProcess.pid}`);
+
+    // Handle PTY data output
+    ptyProcess.onData((data: string) => {
+      const msg: LogMessage = { type: "pty", data };
+      runningProcess.logs.push(msg);
+      this.broadcast(processId, msg);
+    });
+
+    // Handle PTY exit
+    ptyProcess.onExit(({ exitCode }) => {
+      const code = exitCode ?? 0;
+      const status: ExecutorProcessStatus = code === 0 ? "completed" : "failed";
+
+      console.log(`[ProcessManager] PTY process ${processId} exited with code ${code}`);
+
+      this.storage.executorProcesses.updateStatus(processId, status, code);
+
+      const msg: LogMessage = { type: "finished", exitCode: code };
+      runningProcess.logs.push(msg);
+      this.broadcast(processId, msg);
+
+      // Schedule cleanup after retention period
+      setTimeout(() => {
+        console.log(`[ProcessManager] Cleaning up process ${processId}`);
+        this.processes.delete(processId);
+      }, LOG_RETENTION_MS);
+    });
+  }
+
+  /**
+   * Start a process using regular spawn (for non-interactive commands)
+   */
+  private startRegularProcess(processId: string, executor: Executor, cwd: string): void {
     const childProcess = spawn(executor.command, {
       shell: true,
       cwd,
@@ -54,15 +130,16 @@ export class ProcessManager {
     });
 
     const runningProcess: RunningProcess = {
-      childProcess,
+      process: childProcess,
+      isPty: false,
       logs: [],
       subscribers: new Set(),
       executorId: executor.id,
-      projectPath,
+      projectPath: cwd,
     };
 
     this.processes.set(processId, runningProcess);
-    console.log(`[ProcessManager] Process ${processId} added to map, PID: ${childProcess.pid}`);
+    console.log(`[ProcessManager] Regular process ${processId} added to map, PID: ${childProcess.pid}`);
 
     // Handle stdout
     childProcess.stdout?.on("data", (data: Buffer) => {
@@ -110,8 +187,6 @@ export class ProcessManager {
       runningProcess.logs.push(finishMsg);
       this.broadcast(processId, finishMsg);
     });
-
-    return processId;
   }
 
   /**
@@ -123,14 +198,53 @@ export class ProcessManager {
       return false;
     }
 
-    // Try graceful termination first (SIGTERM), then force kill (SIGKILL)
-    const killed = runningProcess.childProcess.kill("SIGTERM");
+    let killed = false;
+    if (runningProcess.isPty) {
+      // For PTY processes, use kill method
+      const ptyProcess = runningProcess.process as IPty;
+      ptyProcess.kill();
+      killed = true;
+    } else {
+      // For regular processes, use SIGTERM
+      const childProcess = runningProcess.process as ChildProcess;
+      killed = childProcess.kill("SIGTERM");
+    }
 
     if (killed) {
       this.storage.executorProcesses.updateStatus(processId, "killed");
     }
 
     return killed;
+  }
+
+  /**
+   * Handle input from the client (for PTY processes)
+   */
+  handleInput(processId: string, message: InputMessage): boolean {
+    const runningProcess = this.processes.get(processId);
+    if (!runningProcess || !runningProcess.isPty) {
+      return false;
+    }
+
+    const ptyProcess = runningProcess.process as IPty;
+
+    if (message.type === "input") {
+      ptyProcess.write(message.data);
+      return true;
+    } else if (message.type === "resize") {
+      ptyProcess.resize(message.cols, message.rows);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if a process is using PTY mode
+   */
+  isPtyProcess(processId: string): boolean {
+    const runningProcess = this.processes.get(processId);
+    return runningProcess?.isPty ?? false;
   }
 
   /**
@@ -166,7 +280,16 @@ export class ProcessManager {
     if (!runningProcess) {
       return false;
     }
-    return !runningProcess.childProcess.killed && runningProcess.childProcess.exitCode === null;
+
+    if (runningProcess.isPty) {
+      // PTY processes: check if the last log is a "finished" message
+      const lastLog = runningProcess.logs[runningProcess.logs.length - 1];
+      return lastLog?.type !== "finished";
+    } else {
+      // Regular processes: check killed and exitCode
+      const childProcess = runningProcess.process as ChildProcess;
+      return !childProcess.killed && childProcess.exitCode === null;
+    }
   }
 
   /**
@@ -174,7 +297,15 @@ export class ProcessManager {
    */
   getRunningProcessIds(): string[] {
     return Array.from(this.processes.entries())
-      .filter(([_, proc]) => !proc.childProcess.killed && proc.childProcess.exitCode === null)
+      .filter(([id, proc]) => {
+        if (proc.isPty) {
+          const lastLog = proc.logs[proc.logs.length - 1];
+          return lastLog?.type !== "finished";
+        } else {
+          const childProcess = proc.process as ChildProcess;
+          return !childProcess.killed && childProcess.exitCode === null;
+        }
+      })
       .map(([id]) => id);
   }
 

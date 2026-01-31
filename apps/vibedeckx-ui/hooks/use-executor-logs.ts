@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getWebSocketUrl, type LogMessage } from "@/lib/api";
+import { getWebSocketUrl, type LogMessage, type InputMessage } from "@/lib/api";
 
 export type ConnectionStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -9,18 +9,37 @@ export interface UseExecutorLogsResult {
   logs: LogMessage[];
   status: ConnectionStatus;
   exitCode: number | null;
+  isPty: boolean;
   clearLogs: () => void;
+  sendInput: (data: string) => void;
+  sendResize: (cols: number, rows: number) => void;
 }
 
 export function useExecutorLogs(processId: string | null): UseExecutorLogsResult {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("closed");
   const [exitCode, setExitCode] = useState<number | null>(null);
+  const [isPty, setIsPty] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   const clearLogs = useCallback(() => {
     setLogs([]);
     setExitCode(null);
+    setIsPty(false);
+  }, []);
+
+  const sendInput = useCallback((data: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const message: InputMessage = { type: "input", data };
+      wsRef.current.send(JSON.stringify(message));
+    }
+  }, []);
+
+  const sendResize = useCallback((cols: number, rows: number) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const message: InputMessage = { type: "resize", cols, rows };
+      wsRef.current.send(JSON.stringify(message));
+    }
   }, []);
 
   useEffect(() => {
@@ -32,6 +51,7 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
     // Reset state for new process
     setLogs([]);
     setExitCode(null);
+    setIsPty(false);
     setStatus("connecting");
 
     const wsUrl = getWebSocketUrl(`/api/executor-processes/${processId}/logs`);
@@ -49,7 +69,9 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
       try {
         const msg: LogMessage = JSON.parse(event.data);
 
-        if (msg.type === "finished") {
+        if (msg.type === "init") {
+          setIsPty(msg.isPty);
+        } else if (msg.type === "finished") {
           setExitCode(msg.exitCode);
           setStatus("closed");
         } else if (msg.type === "error") {
@@ -80,5 +102,5 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
     };
   }, [processId]);
 
-  return { logs, status, exitCode, clearLogs };
+  return { logs, status, exitCode, isPty, clearLogs, sendInput, sendResize };
 }
