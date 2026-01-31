@@ -7,6 +7,11 @@ export interface Project {
   created_at: string;
 }
 
+export interface DirectoryEntry {
+  name: string;
+  type: "file" | "directory";
+}
+
 export const api = {
   async getProjects(): Promise<Project[]> {
     const res = await fetch(`${API_BASE}/api/projects`);
@@ -45,5 +50,15 @@ export const api = {
     await fetch(`${API_BASE}/api/projects/${id}`, {
       method: "DELETE",
     });
+  },
+
+  async getProjectFiles(id: string): Promise<DirectoryEntry[]> {
+    const res = await fetch(`${API_BASE}/api/projects/${id}/files`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.files;
   },
 };

@@ -3,7 +3,7 @@ import { fastifyStatic } from "@fastify/static";
 import path from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
-import { mkdir, writeFile, readFile, stat } from "fs/promises";
+import { mkdir, writeFile, readFile, stat, readdir } from "fs/promises";
 import type { Storage } from "./storage/types.js";
 import { selectFolder } from "./dialog.js";
 
@@ -97,6 +97,35 @@ export const createServer = (opts: { storage: Storage }) => {
 
     opts.storage.projects.delete(req.params.id);
     return reply.code(200).send({ success: true });
+  });
+
+  // 获取项目目录文件列表
+  server.get<{ Params: { id: string } }>("/api/projects/:id/files", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    try {
+      const entries = await readdir(project.path, { withFileTypes: true });
+      const files = entries
+        .filter((entry) => !entry.name.startsWith("."))
+        .map((entry) => ({
+          name: entry.name,
+          type: entry.isDirectory() ? "directory" : "file" as const,
+        }))
+        .sort((a, b) => {
+          // Directories first, then alphabetically
+          if (a.type !== b.type) {
+            return a.type === "directory" ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+
+      return reply.code(200).send({ files });
+    } catch (error) {
+      return reply.code(500).send({ error: "Failed to read directory" });
+    }
   });
 
   return {
