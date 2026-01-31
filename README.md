@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vibedeckx
 
-## Getting Started
+AI-powered app generator with project management support.
 
-First, run the development server:
+## Project Structure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+vibedeckx/
+├── packages/vibedeckx/     # CLI package (publishable to npm)
+│   └── src/
+│       ├── bin.ts          # CLI entry point
+│       ├── command.ts      # CLI commands
+│       ├── server.ts       # Fastify server
+│       ├── dialog.ts       # Folder selection dialog
+│       └── storage/        # SQLite storage layer
+└── apps/vibedeckx-ui/      # Next.js frontend
+    ├── app/                # Next.js app router
+    ├── components/         # React components
+    └── hooks/              # React hooks
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Install dependencies
+pnpm install
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Run frontend in development mode
+pnpm dev
 
-## Learn More
+# Run CLI in watch mode
+pnpm dev:server
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Build
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# Build everything (CLI + UI)
+pnpm build
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Build individual parts
+pnpm build:main    # Build CLI package
+pnpm build:ui      # Build UI (static export)
+pnpm copy:ui       # Copy UI to CLI dist
+```
 
-## Deploy on Vercel
+## Usage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Run from built files
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm start
+# or
+node packages/vibedeckx/dist/bin.js
+```
+
+### Specify port
+
+```bash
+node packages/vibedeckx/dist/bin.js --port 8080
+```
+
+## Distribution
+
+### Option 1: Publish to npm
+
+```bash
+cd packages/vibedeckx
+npm publish
+```
+
+Users can then run:
+
+```bash
+npx vibedeckx
+```
+
+### Option 2: Local tgz package
+
+Create a local package file:
+
+```bash
+cd packages/vibedeckx
+npm pack
+```
+
+This creates `vibedeckx-0.1.0.tgz`. Users can run it via:
+
+```bash
+# Run directly with npx
+npx /path/to/vibedeckx-0.1.0.tgz
+
+# Or install globally first
+npm install -g /path/to/vibedeckx-0.1.0.tgz
+vibedeckx
+```
+
+### Option 3: Install from local path
+
+```bash
+npm install -g /path/to/vibedeckx/packages/vibedeckx
+vibedeckx
+```
+
+## Features
+
+- **Project Management**: Create and manage multiple workspace projects
+- **Folder Selection**: Native OS folder picker (macOS, Windows, Linux)
+- **SQLite Storage**: Project data stored in `~/.vibedeckx/data.sqlite`
+- **Static UI**: Frontend bundled with CLI for easy distribution
+
+## CLI Commands
+
+```
+vibedeckx start [--port value]   Start the server (default port: 3000)
+vibedeckx --help                 Show help
+vibedeckx --version              Show version
+```
+
+## Data Storage
+
+- **Global config**: `~/.vibedeckx/`
+- **Database**: `~/.vibedeckx/data.sqlite`
+- **Project config**: `<project-path>/.vibedeckx/config.json`
