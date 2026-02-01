@@ -11,7 +11,7 @@ import {
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Play, Square, AlertCircle, Wifi, WifiOff } from "lucide-react";
+import { Bot, Square, AlertCircle, Wifi, WifiOff } from "lucide-react";
 
 interface AgentConversationProps {
   projectId: string | null;
@@ -119,21 +119,6 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
               <p className="text-sm text-muted-foreground mb-4">
                 Ask Claude to help you with coding tasks in this worktree
               </p>
-              {!session && (
-                <Button onClick={startSession} disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader className="h-4 w-4 mr-2" />
-                      Starting...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Start Session
-                    </>
-                  )}
-                </Button>
-              )}
             </div>
           ) : (
             <div className="space-y-1">
