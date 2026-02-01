@@ -48,6 +48,11 @@ export interface DirectoryEntry {
   type: "file" | "directory";
 }
 
+export interface Worktree {
+  path: string;
+  branch: string | null;
+}
+
 export interface Executor {
   id: string;
   project_id: string;
@@ -131,6 +136,15 @@ export const api = {
     return data.files;
   },
 
+  async getProjectWorktrees(id: string): Promise<Worktree[]> {
+    const res = await fetch(`${getApiBase()}/api/projects/${id}/worktrees`);
+    if (!res.ok) {
+      return [{ path: ".", branch: null }];
+    }
+    const data = await res.json();
+    return data.worktrees;
+  },
+
   // Executor API
   async getExecutors(projectId: string): Promise<Executor[]> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`);
@@ -187,9 +201,11 @@ export const api = {
   },
 
   // Process Control API
-  async startExecutor(executorId: string): Promise<string> {
+  async startExecutor(executorId: string, worktreePath?: string): Promise<string> {
     const res = await fetch(`${getApiBase()}/api/executors/${executorId}/start`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worktreePath }),
     });
     if (!res.ok) {
       const error = await res.json();
