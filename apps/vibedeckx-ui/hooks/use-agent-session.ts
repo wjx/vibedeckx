@@ -336,6 +336,31 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     };
   }, []);
 
+  // Reset session when projectId or worktreePath changes
+  useEffect(() => {
+    // Close existing WebSocket
+    if (wsRef.current) {
+      finishedRef.current = true;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    // Reset all state
+    setSession(null);
+    setMessages([]);
+    setStatus("stopped");
+    setIsConnected(false);
+    setIsInitialized(false);
+    setError(null);
+    containerRef.current = { entries: [], status: "stopped" };
+    finishedRef.current = false;
+    reconnectAttemptRef.current = 0;
+  }, [projectId, worktreePath]);
+
   // Reconnect when session changes
   useEffect(() => {
     if (session?.id && !isConnected && !finishedRef.current) {
