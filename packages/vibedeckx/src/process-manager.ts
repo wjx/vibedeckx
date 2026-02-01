@@ -56,7 +56,13 @@ export class ProcessManager {
     console.log(`[ProcessManager] PTY mode: ${executor.pty}`);
 
     if (executor.pty) {
-      this.startPtyProcess(processId, executor, cwd);
+      try {
+        this.startPtyProcess(processId, executor, cwd);
+      } catch (error) {
+        // PTY failed (e.g., native module not compiled), fallback to regular process
+        console.warn(`[ProcessManager] PTY spawn failed, falling back to regular process: ${error}`);
+        this.startRegularProcess(processId, executor, cwd);
+      }
     } else {
       this.startRegularProcess(processId, executor, cwd);
     }
@@ -68,8 +74,20 @@ export class ProcessManager {
    * Start a process using node-pty (for interactive commands)
    */
   private startPtyProcess(processId: string, executor: Executor, cwd: string): void {
-    const shell = process.platform === "win32" ? "powershell.exe" : "bash";
+    // Use user's default shell or fall back to common shell paths
+    let shell: string;
+    if (process.platform === "win32") {
+      shell = "powershell.exe";
+    } else {
+      // Try SHELL env var first, then common paths
+      shell = process.env.SHELL || "/bin/zsh";
+      // If SHELL is just "bash" or "zsh" without path, prepend /bin/
+      if (shell === "bash" || shell === "zsh" || shell === "sh") {
+        shell = `/bin/${shell}`;
+      }
+    }
     const args = process.platform === "win32" ? ["-Command", executor.command] : ["-c", executor.command];
+    console.log(`[ProcessManager] Using shell: ${shell}`);
 
     const ptyProcess = pty.spawn(shell, args, {
       name: "xterm-256color",

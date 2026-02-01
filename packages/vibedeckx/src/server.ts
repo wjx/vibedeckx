@@ -656,8 +656,13 @@ export const createServer = (opts: { storage: Storage }) => {
       ? path.resolve(project.path, worktreePath)
       : project.path;
 
-    const processId = processManager.start(executor, basePath);
-    return reply.code(200).send({ processId });
+    try {
+      const processId = processManager.start(executor, basePath);
+      return reply.code(200).send({ processId });
+    } catch (error) {
+      console.error("[API] Failed to start executor:", error);
+      return reply.code(500).send({ error: String(error) });
+    }
   });
 
   // 停止进程

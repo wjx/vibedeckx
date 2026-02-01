@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "build": "tsc && chmod +x ./dist/bin.js",
-    "dev": "tsc -w"
+    "dev": "tsc -w",
+    "postinstall": "npm rebuild node-pty || echo 'node-pty rebuild failed, PTY features may not work'"
   },
   "dependencies": {
     "@fastify/static": "^8.2.0",
