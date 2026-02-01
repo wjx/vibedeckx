@@ -10,9 +10,10 @@ import { useExecutors } from "@/hooks/use-executors";
 
 interface ExecutorPanelProps {
   projectId: string | null;
+  selectedWorktree?: string;
 }
 
-export function ExecutorPanel({ projectId }: ExecutorPanelProps) {
+export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const {
     executors,
@@ -67,7 +68,7 @@ export function ExecutorPanel({ projectId }: ExecutorPanelProps) {
               <ExecutorItem
                 key={executor.id}
                 executor={executor}
-                onStart={() => startExecutor(executor.id)}
+                onStart={() => startExecutor(executor.id, selectedWorktree)}
                 onStop={() => stopExecutor(executor.id)}
                 onUpdate={(data) => updateExecutor(executor.id, data)}
                 onDelete={() => deleteExecutor(executor.id)}
