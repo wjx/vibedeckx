@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   PromptInput,
   type PromptInputMessage,
@@ -37,6 +37,7 @@ export default function Home() {
     }>
   >([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedWorktree, setSelectedWorktree] = useState(".");
 
   const {
     projects,
@@ -45,6 +46,11 @@ export default function Home() {
     createProject,
     selectProject,
   } = useProjects();
+
+  // Reset worktree selection when project changes
+  useEffect(() => {
+    setSelectedWorktree(".");
+  }, [currentProject?.id]);
 
   const handleSendMessage = async (promptMessage: PromptInputMessage) => {
     const hasText = Boolean(promptMessage.text);
@@ -135,7 +141,11 @@ export default function Home() {
           {/* Project Info */}
           {currentProject && (
             <div className="p-4 border-b">
-              <ProjectCard project={currentProject} />
+              <ProjectCard
+                project={currentProject}
+                selectedWorktree={selectedWorktree}
+                onWorktreeChange={setSelectedWorktree}
+              />
             </div>
           )}
 
@@ -211,7 +221,10 @@ export default function Home() {
         </div>
         {/* Executor Panel */}
         <div className="w-1/2 flex flex-col">
-          <ExecutorPanel projectId={currentProject?.id ?? null} />
+          <ExecutorPanel
+            projectId={currentProject?.id ?? null}
+            selectedWorktree={selectedWorktree}
+          />
         </div>
       </div>
     </div>
