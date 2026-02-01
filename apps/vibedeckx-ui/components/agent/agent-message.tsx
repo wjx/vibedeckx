@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Bot, User, Wrench, Brain, AlertCircle, Info } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
+import { MessageResponse } from "@/components/ai-elements/message";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -58,7 +59,9 @@ function AssistantMessage({ content }: { content: string }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-violet-500 mb-1">Claude</p>
-        <div className="text-sm text-foreground whitespace-pre-wrap">{content}</div>
+        <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none">
+          <MessageResponse>{content}</MessageResponse>
+        </div>
       </div>
     </div>
   );
