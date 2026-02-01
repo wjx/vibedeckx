@@ -116,12 +116,12 @@ export function useExecutors(projectId: string | null) {
   }, []);
 
   // Stop executor
-  const stopExecutor = useCallback(async (executorId: string) => {
-    const processId = runningProcesses.get(executorId);
-    if (!processId) return;
+  const stopExecutor = useCallback(async (executorId: string, processId?: string) => {
+    const targetProcessId = processId || runningProcesses.get(executorId);
+    if (!targetProcessId) return;
 
     try {
-      await api.stopProcess(processId);
+      await api.stopProcess(targetProcessId);
       setRunningProcesses((prev) => {
         const newMap = new Map(prev);
         newMap.delete(executorId);

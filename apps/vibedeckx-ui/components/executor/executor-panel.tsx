@@ -69,7 +69,7 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
                 key={executor.id}
                 executor={executor}
                 onStart={() => startExecutor(executor.id, selectedWorktree)}
-                onStop={() => stopExecutor(executor.id)}
+                onStop={(processId) => stopExecutor(executor.id, processId || executor.currentProcessId || undefined)}
                 onUpdate={(data) => updateExecutor(executor.id, data)}
                 onDelete={() => deleteExecutor(executor.id)}
                 onProcessFinished={() => markProcessFinished(executor.id)}

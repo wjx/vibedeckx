@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 interface ExecutorItemProps {
   executor: ExecutorWithProcess;
   onStart: () => Promise<string | null>;
-  onStop: () => Promise<void>;
+  onStop: (processId?: string) => Promise<void>;
   onUpdate: (data: { name?: string; command?: string; cwd?: string | null }) => Promise<unknown>;
   onDelete: () => Promise<void>;
   onProcessFinished: () => void;
@@ -83,7 +83,7 @@ export function ExecutorItem({
   };
 
   const handleStop = async () => {
-    await onStop();
+    await onStop(localProcessId || undefined);
   };
 
   const isRunning = executor.isRunning || status === "connected" || status === "connecting";
