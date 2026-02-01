@@ -372,6 +372,205 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   });
 
+  // ==================== Git Diff API ====================
+
+  function parseDiffOutput(diffOutput: string): Array<{
+    path: string;
+    status: 'modified' | 'added' | 'deleted' | 'renamed';
+    oldPath?: string;
+    hunks: Array<{
+      oldStart: number;
+      oldLines: number;
+      newStart: number;
+      newLines: number;
+      lines: Array<{
+        type: 'context' | 'add' | 'delete';
+        content: string;
+        oldLineNo?: number;
+        newLineNo?: number;
+      }>;
+    }>;
+  }> {
+    const files: Array<{
+      path: string;
+      status: 'modified' | 'added' | 'deleted' | 'renamed';
+      oldPath?: string;
+      hunks: Array<{
+        oldStart: number;
+        oldLines: number;
+        newStart: number;
+        newLines: number;
+        lines: Array<{
+          type: 'context' | 'add' | 'delete';
+          content: string;
+          oldLineNo?: number;
+          newLineNo?: number;
+        }>;
+      }>;
+    }> = [];
+
+    if (!diffOutput.trim()) {
+      return files;
+    }
+
+    // Split by "diff --git" to get each file's diff
+    const fileDiffs = diffOutput.split(/^diff --git /m).filter(Boolean);
+
+    for (const fileDiff of fileDiffs) {
+      const lines = fileDiff.split('\n');
+      if (lines.length === 0) continue;
+
+      // Parse file header: "a/path b/path"
+      const headerMatch = lines[0].match(/a\/(.+?) b\/(.+)/);
+      if (!headerMatch) continue;
+
+      const oldPath = headerMatch[1];
+      const newPath = headerMatch[2];
+
+      // Determine status
+      let status: 'modified' | 'added' | 'deleted' | 'renamed' = 'modified';
+      let finalPath = newPath;
+      let finalOldPath: string | undefined;
+
+      for (const line of lines.slice(1, 10)) {
+        if (line.startsWith('new file mode')) {
+          status = 'added';
+          break;
+        } else if (line.startsWith('deleted file mode')) {
+          status = 'deleted';
+          break;
+        } else if (line.startsWith('rename from')) {
+          status = 'renamed';
+          finalOldPath = oldPath;
+          break;
+        }
+      }
+
+      // Parse hunks
+      const hunks: Array<{
+        oldStart: number;
+        oldLines: number;
+        newStart: number;
+        newLines: number;
+        lines: Array<{
+          type: 'context' | 'add' | 'delete';
+          content: string;
+          oldLineNo?: number;
+          newLineNo?: number;
+        }>;
+      }> = [];
+
+      let currentHunk: typeof hunks[0] | null = null;
+      let oldLineNo = 0;
+      let newLineNo = 0;
+
+      for (const line of lines) {
+        // Match hunk header: @@ -oldStart,oldLines +newStart,newLines @@
+        const hunkMatch = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+        if (hunkMatch) {
+          if (currentHunk) {
+            hunks.push(currentHunk);
+          }
+          const oldStart = parseInt(hunkMatch[1], 10);
+          const oldLines = parseInt(hunkMatch[2] || '1', 10);
+          const newStart = parseInt(hunkMatch[3], 10);
+          const newLines = parseInt(hunkMatch[4] || '1', 10);
+
+          currentHunk = {
+            oldStart,
+            oldLines,
+            newStart,
+            newLines,
+            lines: [],
+          };
+          oldLineNo = oldStart;
+          newLineNo = newStart;
+          continue;
+        }
+
+        if (!currentHunk) continue;
+
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          currentHunk.lines.push({
+            type: 'add',
+            content: line.slice(1),
+            newLineNo: newLineNo++,
+          });
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          currentHunk.lines.push({
+            type: 'delete',
+            content: line.slice(1),
+            oldLineNo: oldLineNo++,
+          });
+        } else if (line.startsWith(' ')) {
+          currentHunk.lines.push({
+            type: 'context',
+            content: line.slice(1),
+            oldLineNo: oldLineNo++,
+            newLineNo: newLineNo++,
+          });
+        }
+      }
+
+      if (currentHunk) {
+        hunks.push(currentHunk);
+      }
+
+      files.push({
+        path: finalPath,
+        status,
+        ...(finalOldPath && { oldPath: finalOldPath }),
+        hunks,
+      });
+    }
+
+    return files;
+  }
+
+  // Get git diff for uncommitted changes
+  server.get<{
+    Params: { id: string };
+    Querystring: { worktreePath?: string };
+  }>("/api/projects/:id/diff", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const worktreePath = req.query.worktreePath;
+    const cwd = worktreePath && worktreePath !== "."
+      ? path.resolve(project.path, worktreePath)
+      : project.path;
+
+    try {
+      const { execSync } = await import("child_process");
+
+      // Get diff for both staged and unstaged changes
+      const diffOutput = execSync("git diff HEAD --no-color", {
+        cwd,
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+      });
+
+      const files = parseDiffOutput(diffOutput);
+      return reply.code(200).send({ files });
+    } catch (error) {
+      // If HEAD doesn't exist (new repo), try diff without HEAD
+      try {
+        const { execSync } = await import("child_process");
+        const diffOutput = execSync("git diff --no-color", {
+          cwd,
+          encoding: "utf-8",
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        const files = parseDiffOutput(diffOutput);
+        return reply.code(200).send({ files });
+      } catch {
+        return reply.code(200).send({ files: [] });
+      }
+    }
+  });
+
   // ==================== Executor API ====================
 
   // 获取项目的所有 Executor
