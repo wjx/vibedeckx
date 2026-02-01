@@ -53,17 +53,15 @@ export class ProcessManager {
     console.log(`[ProcessManager] Starting process ${processId}`);
     console.log(`[ProcessManager] Command: ${executor.command}`);
     console.log(`[ProcessManager] CWD: ${cwd}`);
-    console.log(`[ProcessManager] PTY mode: ${executor.pty}`);
+    console.log(`[ProcessManager] Forcing PTY mode for ANSI color support`);
 
-    if (executor.pty) {
-      try {
-        this.startPtyProcess(processId, executor, cwd);
-      } catch (error) {
-        // PTY failed (e.g., native module not compiled), fallback to regular process
-        console.warn(`[ProcessManager] PTY spawn failed, falling back to regular process: ${error}`);
-        this.startRegularProcess(processId, executor, cwd);
-      }
-    } else {
+    // Always use PTY mode for proper ANSI color support
+    try {
+      this.startPtyProcess(processId, executor, cwd);
+      console.log(`[ProcessManager] PTY mode started successfully`);
+    } catch (error) {
+      // PTY failed (e.g., native module not compiled), fallback to regular process
+      console.warn(`[ProcessManager] PTY spawn failed, falling back to regular process: ${error}`);
       this.startRegularProcess(processId, executor, cwd);
     }
 
