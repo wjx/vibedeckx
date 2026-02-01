@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, Storage } from "./types.js";
+import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -34,6 +34,16 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       finished_at TIMESTAMP,
       FOREIGN KEY (executor_id) REFERENCES executors(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      worktree_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(project_id, worktree_path),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
 
@@ -176,6 +186,53 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         db.prepare(
           `UPDATE executor_processes SET status = @status, exit_code = @exit_code, finished_at = @finished_at WHERE id = @id`
         ).run({ id, status, exit_code: exitCode ?? null, finished_at: finishedAt });
+      },
+    },
+
+    agentSessions: {
+      create: ({ id, project_id, worktree_path }) => {
+        // Delete any existing session for this worktree (one-to-one binding)
+        db.prepare(
+          `DELETE FROM agent_sessions WHERE project_id = @project_id AND worktree_path = @worktree_path`
+        ).run({ project_id, worktree_path });
+
+        db.prepare(
+          `INSERT INTO agent_sessions (id, project_id, worktree_path, status) VALUES (@id, @project_id, @worktree_path, 'running')`
+        ).run({ id, project_id, worktree_path });
+
+        return db
+          .prepare<{ id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getById: (id: string) => {
+        return db
+          .prepare<{ id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE id = @id`)
+          .get({ id });
+      },
+
+      getByProjectId: (projectId: string) => {
+        return db
+          .prepare<{ project_id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE project_id = @project_id ORDER BY created_at DESC`)
+          .all({ project_id: projectId });
+      },
+
+      getByWorktree: (projectId: string, worktreePath: string) => {
+        return db
+          .prepare<{ project_id: string; worktree_path: string }, AgentSession>(
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND worktree_path = @worktree_path`
+          )
+          .get({ project_id: projectId, worktree_path: worktreePath });
+      },
+
+      updateStatus: (id: string, status: AgentSessionStatus) => {
+        db.prepare(
+          `UPDATE agent_sessions SET status = @status WHERE id = @id`
+        ).run({ id, status });
+      },
+
+      delete: (id: string) => {
+        db.prepare(`DELETE FROM agent_sessions WHERE id = @id`).run({ id });
       },
     },
 

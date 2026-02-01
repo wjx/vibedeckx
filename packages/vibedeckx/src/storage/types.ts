@@ -26,6 +26,16 @@ export interface ExecutorProcess {
   finished_at: string | null;
 }
 
+export type AgentSessionStatus = 'running' | 'stopped' | 'error';
+
+export interface AgentSession {
+  id: string;
+  project_id: string;
+  worktree_path: string;
+  status: AgentSessionStatus;
+  created_at: string;
+}
+
 export interface Storage {
   projects: {
     create: (opts: { id: string; name: string; path: string }) => Project;
@@ -46,6 +56,14 @@ export interface Storage {
     getById: (id: string) => ExecutorProcess | undefined;
     getRunning: () => ExecutorProcess[];
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
+  };
+  agentSessions: {
+    create: (opts: { id: string; project_id: string; worktree_path: string }) => AgentSession;
+    getById: (id: string) => AgentSession | undefined;
+    getByProjectId: (projectId: string) => AgentSession[];
+    getByWorktree: (projectId: string, worktreePath: string) => AgentSession | undefined;
+    updateStatus: (id: string, status: AgentSessionStatus) => void;
+    delete: (id: string) => void;
   };
   close: () => void;
 }

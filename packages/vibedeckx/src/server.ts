@@ -8,6 +8,8 @@ import { mkdir, writeFile, readFile, stat, readdir } from "fs/promises";
 import type { Storage } from "./storage/types.js";
 import { selectFolder } from "./dialog.js";
 import { ProcessManager, type LogMessage, type InputMessage } from "./process-manager.js";
+import { AgentSessionManager } from "./agent-session-manager.js";
+import type { AgentWsInput } from "./agent-types.js";
 
 export const createServer = (opts: { storage: Storage }) => {
   const UI_ROOT = path.join(
@@ -17,6 +19,7 @@ export const createServer = (opts: { storage: Storage }) => {
 
   const server = fastify();
   const processManager = new ProcessManager(opts.storage);
+  const agentSessionManager = new AgentSessionManager(opts.storage);
 
   // CORS - 必须在所有路由之前设置
   server.addHook("onRequest", (req, reply, done) => {
@@ -100,6 +103,45 @@ export const createServer = (opts: { storage: Storage }) => {
 
         // 处理连接关闭
         socket.on("close", () => {
+          unsubscribe?.();
+        });
+      }
+    );
+
+    // Agent Session WebSocket
+    server.get<{ Params: { sessionId: string } }>(
+      "/api/agent-sessions/:sessionId/stream",
+      { websocket: true },
+      (socket, req) => {
+        const { sessionId } = req.params;
+
+        console.log(`[AgentWS] Client connected for session ${sessionId}`);
+
+        // Subscribe to session updates
+        const unsubscribe = agentSessionManager.subscribe(sessionId, socket);
+
+        if (!unsubscribe) {
+          console.log(`[AgentWS] Session ${sessionId} not found`);
+          socket.send(JSON.stringify({ type: "error", message: "Session not found" }));
+          socket.close();
+          return;
+        }
+
+        // Handle incoming messages from client
+        socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+          try {
+            const message = JSON.parse(data.toString()) as AgentWsInput;
+            if (message.type === "user_message") {
+              agentSessionManager.sendUserMessage(sessionId, message.content);
+            }
+          } catch (error) {
+            console.error("[AgentWS] Failed to parse message:", error);
+          }
+        });
+
+        // Handle connection close
+        socket.on("close", () => {
+          console.log(`[AgentWS] Client disconnected from session ${sessionId}`);
           unsubscribe?.();
         });
       }
@@ -443,6 +485,119 @@ export const createServer = (opts: { storage: Storage }) => {
 
     return reply.code(200).send({ processes });
   });
+
+  // ==================== Agent Session API ====================
+
+  // 获取项目的所有 Agent Sessions
+  server.get<{ Params: { projectId: string } }>(
+    "/api/projects/:projectId/agent-sessions",
+    async (req, reply) => {
+      const project = opts.storage.projects.getById(req.params.projectId);
+      if (!project) {
+        return reply.code(404).send({ error: "Project not found" });
+      }
+
+      const sessions = opts.storage.agentSessions.getByProjectId(req.params.projectId);
+      return reply.code(200).send({ sessions });
+    }
+  );
+
+  // 创建或获取 Agent Session（每个 worktree 最多一个）
+  server.post<{
+    Params: { projectId: string };
+    Body: { worktreePath: string };
+  }>("/api/projects/:projectId/agent-sessions", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.projectId);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { worktreePath } = req.body;
+    const sessionId = agentSessionManager.getOrCreateSession(
+      req.params.projectId,
+      worktreePath || ".",
+      project.path
+    );
+
+    const session = agentSessionManager.getSession(sessionId);
+    const messages = agentSessionManager.getMessages(sessionId);
+
+    return reply.code(200).send({
+      session: {
+        id: sessionId,
+        projectId: req.params.projectId,
+        worktreePath: worktreePath || ".",
+        status: session?.status || "running",
+      },
+      messages,
+    });
+  });
+
+  // 获取 Agent Session 详情和消息历史
+  server.get<{ Params: { sessionId: string } }>(
+    "/api/agent-sessions/:sessionId",
+    async (req, reply) => {
+      const session = agentSessionManager.getSession(req.params.sessionId);
+      if (!session) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const messages = agentSessionManager.getMessages(req.params.sessionId);
+
+      return reply.code(200).send({
+        session: {
+          id: session.id,
+          projectId: session.projectId,
+          worktreePath: session.worktreePath,
+          status: session.status,
+        },
+        messages,
+      });
+    }
+  );
+
+  // 发送消息到 Agent Session
+  server.post<{
+    Params: { sessionId: string };
+    Body: { content: string };
+  }>("/api/agent-sessions/:sessionId/message", async (req, reply) => {
+    const { content } = req.body;
+
+    if (!content || typeof content !== "string") {
+      return reply.code(400).send({ error: "Content is required" });
+    }
+
+    const success = agentSessionManager.sendUserMessage(req.params.sessionId, content);
+    if (!success) {
+      return reply.code(404).send({ error: "Session not found or not running" });
+    }
+
+    return reply.code(200).send({ success: true });
+  });
+
+  // 停止 Agent Session
+  server.post<{ Params: { sessionId: string } }>(
+    "/api/agent-sessions/:sessionId/stop",
+    async (req, reply) => {
+      const stopped = agentSessionManager.stopSession(req.params.sessionId);
+      if (!stopped) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+      return reply.code(200).send({ success: true });
+    }
+  );
+
+  // 删除 Agent Session
+  server.delete<{ Params: { sessionId: string } }>(
+    "/api/agent-sessions/:sessionId",
+    async (req, reply) => {
+      const deleted = agentSessionManager.deleteSession(req.params.sessionId);
+      if (!deleted) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+      return reply.code(200).send({ success: true });
+    }
+  );
 
   return {
     start: async (port: number) => {
