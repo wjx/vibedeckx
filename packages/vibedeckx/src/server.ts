@@ -215,6 +215,55 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   });
 
+  // 获取项目的 git worktrees
+  server.get<{ Params: { id: string } }>("/api/projects/:id/worktrees", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+      const output = execSync("git worktree list --porcelain", {
+        cwd: project.path,
+        encoding: "utf-8",
+      });
+
+      const worktrees: Array<{ path: string; branch: string | null }> = [];
+      const blocks = output.trim().split("\n\n");
+
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let worktreePath = "";
+        let branch: string | null = null;
+
+        for (const line of lines) {
+          if (line.startsWith("worktree ")) {
+            worktreePath = line.slice(9);
+          } else if (line.startsWith("branch refs/heads/")) {
+            branch = line.slice(18);
+          }
+        }
+
+        if (worktreePath) {
+          // Convert absolute path to relative path from project root
+          const relativePath = path.relative(project.path, worktreePath) || ".";
+          worktrees.push({ path: relativePath, branch });
+        }
+      }
+
+      // If no worktrees found, return project root as fallback
+      if (worktrees.length === 0) {
+        worktrees.push({ path: ".", branch: null });
+      }
+
+      return reply.code(200).send({ worktrees });
+    } catch (error) {
+      // Not a git repo or git command failed - return project root only
+      return reply.code(200).send({ worktrees: [{ path: ".", branch: null }] });
+    }
+  });
+
   // ==================== Executor API ====================
 
   // 获取项目的所有 Executor
