@@ -86,6 +86,32 @@ export type InputMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
+export interface DiffLine {
+  type: 'context' | 'add' | 'delete';
+  content: string;
+  oldLineNo?: number;
+  newLineNo?: number;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+export interface FileDiff {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed';
+  oldPath?: string;
+  hunks: DiffHunk[];
+}
+
+export interface DiffResponse {
+  files: FileDiff[];
+}
+
 export const api = {
   async getProjects(): Promise<Project[]> {
     const res = await fetch(`${getApiBase()}/api/projects`);
@@ -247,5 +273,19 @@ export const api = {
     }
     const data = await res.json();
     return data.processes;
+  },
+
+  async getDiff(projectId: string, worktreePath?: string): Promise<DiffResponse> {
+    const params = new URLSearchParams();
+    if (worktreePath) {
+      params.set('worktreePath', worktreePath);
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/diff${query}`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    return res.json();
   },
 };
