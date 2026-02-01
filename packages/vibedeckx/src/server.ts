@@ -264,6 +264,72 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   });
 
+  // 创建新的 git worktree
+  server.post<{
+    Params: { id: string };
+    Body: { branchName: string };
+  }>("/api/projects/:id/worktrees", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { branchName } = req.body;
+
+    // Validate branch name
+    if (!branchName || typeof branchName !== "string" || branchName.trim() === "") {
+      return reply.code(400).send({ error: "Branch name is required" });
+    }
+
+    // Basic branch name validation (no spaces, no special chars at start/end)
+    const trimmedBranch = branchName.trim();
+    if (!/^[a-zA-Z0-9]/.test(trimmedBranch) || /[^a-zA-Z0-9/_-]/.test(trimmedBranch)) {
+      return reply.code(400).send({ error: "Invalid branch name format" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+
+      // Check if branch already exists
+      try {
+        execSync(`git rev-parse --verify refs/heads/${trimmedBranch}`, {
+          cwd: project.path,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        // If we get here, branch exists
+        return reply.code(409).send({ error: `Branch '${trimmedBranch}' already exists` });
+      } catch {
+        // Branch doesn't exist, which is what we want
+      }
+
+      // Generate worktree path: .worktrees/<branch-with-slashes-replaced>
+      const worktreeDirName = trimmedBranch.replace(/\//g, "-");
+      const worktreeRelativePath = `.worktrees/${worktreeDirName}`;
+      const worktreeAbsolutePath = path.join(project.path, worktreeRelativePath);
+
+      // Create .worktrees directory if it doesn't exist
+      await mkdir(path.join(project.path, ".worktrees"), { recursive: true });
+
+      // Create the worktree with a new branch based on main
+      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
+        cwd: project.path,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      return reply.code(201).send({
+        worktree: {
+          path: worktreeRelativePath,
+          branch: trimmedBranch,
+        },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to create worktree: ${errorMessage}` });
+    }
+  });
+
   // ==================== Executor API ====================
 
   // 获取项目的所有 Executor

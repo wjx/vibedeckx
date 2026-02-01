@@ -145,6 +145,20 @@ export const api = {
     return data.worktrees;
   },
 
+  async createWorktree(projectId: string, branchName: string): Promise<Worktree> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchName }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.worktree;
+  },
+
   // Executor API
   async getExecutors(projectId: string): Promise<Executor[]> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`);

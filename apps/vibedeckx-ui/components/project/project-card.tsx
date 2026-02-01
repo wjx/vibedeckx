@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -9,8 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FolderOpen, Calendar, GitBranch } from "lucide-react";
+import { FolderOpen, Calendar, GitBranch, Plus } from "lucide-react";
 import { api, type Project, type Worktree } from "@/lib/api";
+import { CreateWorktreeDialog } from "./create-worktree-dialog";
 
 interface ProjectCardProps {
   project: Project;
@@ -21,9 +23,10 @@ interface ProjectCardProps {
 export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: ProjectCardProps) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
-  useEffect(() => {
+  const fetchWorktrees = useCallback(() => {
     api.getProjectWorktrees(project.id)
       .then((wts) => {
         setWorktrees(wts);
@@ -35,6 +38,15 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
       .catch(() => setWorktrees([{ path: ".", branch: null }]))
       .finally(() => setLoading(false));
   }, [project.id, selectedWorktree, onWorktreeChange]);
+
+  useEffect(() => {
+    fetchWorktrees();
+  }, [fetchWorktrees]);
+
+  const handleWorktreeCreated = (worktreePath: string) => {
+    fetchWorktrees();
+    onWorktreeChange(worktreePath);
+  };
 
   return (
     <Card>
@@ -71,8 +83,22 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setDialogOpen(true)}
+                title="Create new worktree"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
           )}
+          <CreateWorktreeDialog
+            projectId={project.id}
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            onWorktreeCreated={handleWorktreeCreated}
+          />
         </div>
       </CardContent>
     </Card>
