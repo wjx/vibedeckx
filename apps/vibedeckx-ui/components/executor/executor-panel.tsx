@@ -39,7 +39,7 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between p-4 border-b h-14">
         <h2 className="font-semibold flex items-center gap-2">
           <Terminal className="h-5 w-5" />
           Executors
