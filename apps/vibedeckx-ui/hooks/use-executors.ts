@@ -100,9 +100,9 @@ export function useExecutors(projectId: string | null) {
   }, []);
 
   // Start executor
-  const startExecutor = useCallback(async (executorId: string) => {
+  const startExecutor = useCallback(async (executorId: string, worktreePath?: string) => {
     try {
-      const processId = await api.startExecutor(executorId);
+      const processId = await api.startExecutor(executorId, worktreePath);
       setRunningProcesses((prev) => {
         const newMap = new Map(prev);
         newMap.set(executorId, processId);
