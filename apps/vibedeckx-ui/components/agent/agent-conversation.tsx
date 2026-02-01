@@ -20,7 +20,7 @@ interface AgentConversationProps {
 
 export function AgentConversation({ projectId, worktreePath }: AgentConversationProps) {
   const [input, setInput] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
     session,
@@ -34,9 +34,7 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const handleSubmit = async () => {
@@ -70,9 +68,9 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b bg-muted/30">
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-violet-500" />
           <span className="text-sm font-medium">Claude Code</span>
@@ -112,7 +110,7 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
       </div>
 
       {/* Messages area */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-4">
           {!session && messages.length === 0 ? (
             <div className="text-center py-12">
@@ -157,11 +155,13 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
               {error}
             </div>
           )}
+          {/* Scroll anchor */}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
       {/* Input area */}
-      <div className="border-t p-4">
+      <div className="flex-shrink-0 border-t p-4">
         <PromptInput
           onSubmit={() => handleSubmit()}
           className="w-full"
