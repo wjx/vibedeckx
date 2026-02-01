@@ -50,7 +50,7 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         <div className="p-4 space-y-3">
           {loading ? (
             <div className="text-center text-muted-foreground py-8">
