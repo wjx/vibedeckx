@@ -281,9 +281,9 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     };
   }, [session?.id]);
 
-  // Start or get existing session
-  const startSession = useCallback(async () => {
-    if (!projectId) return;
+  // Start or get existing session - returns the session for immediate use
+  const startSession = useCallback(async (): Promise<AgentSession | null> => {
+    if (!projectId) return null;
 
     setIsLoading(true);
     setError(null);
@@ -298,23 +298,28 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
 
       // Connect WebSocket - it will receive history via patches
       connectWebSocket(newSession.id);
+
+      // Return session for immediate use (avoids React state timing issues)
+      return newSession;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Failed to start session";
       setError(errorMsg);
       console.error("[AgentSession] Failed to start session:", e);
+      return null;
     } finally {
       setIsLoading(false);
     }
   }, [projectId, worktreePath, connectWebSocket]);
 
-  // Send user message
+  // Send user message - optionally accepts sessionId for immediate use after session creation
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!session?.id || !content.trim()) return;
+    async (content: string, sessionId?: string) => {
+      const targetSessionId = sessionId || session?.id;
+      if (!targetSessionId || !content.trim()) return;
 
       try {
         // Send via REST API (more reliable than WebSocket for important actions)
-        await sendMessageToSession(session.id, content.trim());
+        await sendMessageToSession(targetSessionId, content.trim());
       } catch (e) {
         console.error("[AgentSession] Failed to send message:", e);
         setError("Failed to send message");

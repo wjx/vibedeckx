@@ -45,11 +45,11 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
 
     if (!session) {
       // Start session with first message
-      await startSession();
-      // Wait a bit for session to initialize, then send
-      setTimeout(() => {
-        sendMessage(content);
-      }, 500);
+      const newSession = await startSession();
+      if (newSession) {
+        // Use returned session ID directly to avoid React state timing issues
+        sendMessage(content, newSession.id);
+      }
     } else {
       sendMessage(content);
     }
