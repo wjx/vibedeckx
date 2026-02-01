@@ -332,7 +332,7 @@ export const createServer = (opts: { storage: Storage }) => {
   // ==================== Process Control API ====================
 
   // 启动 Executor
-  server.post<{ Params: { id: string } }>("/api/executors/:id/start", async (req, reply) => {
+  server.post<{ Params: { id: string }; Body: { worktreePath?: string } }>("/api/executors/:id/start", async (req, reply) => {
     const executor = opts.storage.executors.getById(req.params.id);
     if (!executor) {
       return reply.code(404).send({ error: "Executor not found" });
@@ -343,7 +343,13 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const processId = processManager.start(executor, project.path);
+    // Resolve worktree path to absolute path
+    const worktreePath = req.body?.worktreePath;
+    const basePath = worktreePath && worktreePath !== "."
+      ? path.resolve(project.path, worktreePath)
+      : project.path;
+
+    const processId = processManager.start(executor, basePath);
     return reply.code(200).send({ processId });
   });
 
