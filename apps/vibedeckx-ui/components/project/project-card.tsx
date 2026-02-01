@@ -2,25 +2,39 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FolderOpen, Calendar } from "lucide-react";
-import { api, type Project, type DirectoryEntry } from "@/lib/api";
-import { FileList } from "./file-list";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FolderOpen, Calendar, GitBranch } from "lucide-react";
+import { api, type Project, type Worktree } from "@/lib/api";
 
 interface ProjectCardProps {
   project: Project;
+  selectedWorktree: string;
+  onWorktreeChange: (path: string) => void;
 }
 
-export function ProjectCard({ project }: ProjectCardProps) {
-  const [files, setFiles] = useState<DirectoryEntry[]>([]);
+export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: ProjectCardProps) {
+  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
   useEffect(() => {
-    api.getProjectFiles(project.id)
-      .then(setFiles)
-      .catch(() => setFiles([]))
+    api.getProjectWorktrees(project.id)
+      .then((wts) => {
+        setWorktrees(wts);
+        // If current selection not in list, reset to first
+        if (wts.length > 0 && !wts.some(w => w.path === selectedWorktree)) {
+          onWorktreeChange(wts[0].path);
+        }
+      })
+      .catch(() => setWorktrees([{ path: ".", branch: null }]))
       .finally(() => setLoading(false));
-  }, [project.id]);
+  }, [project.id, selectedWorktree, onWorktreeChange]);
 
   return (
     <Card>
@@ -38,9 +52,26 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
         <div className="border-t pt-2">
           {loading ? (
-            <div className="text-sm text-muted-foreground">Loading files...</div>
+            <div className="text-sm text-muted-foreground">Loading worktrees...</div>
           ) : (
-            <FileList files={files} />
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedWorktree} onValueChange={onWorktreeChange}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select worktree" />
+                </SelectTrigger>
+                <SelectContent>
+                  {worktrees.map((wt) => (
+                    <SelectItem key={wt.path} value={wt.path}>
+                      {wt.path}
+                      {wt.branch && (
+                        <span className="text-muted-foreground ml-2">({wt.branch})</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
       </CardContent>
