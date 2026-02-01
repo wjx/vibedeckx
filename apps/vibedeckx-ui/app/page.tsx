@@ -6,7 +6,7 @@ import { useProjects } from '@/hooks/use-projects';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
-import { ExecutorPanel } from '@/components/executor';
+import { RightPanel } from '@/components/right-panel';
 import { AgentConversation } from '@/components/agent';
 
 export default function Home() {
@@ -85,9 +85,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right Panel: Executor Panel */}
+        {/* Right Panel: Executors + Diff */}
         <div className="w-1/2 flex flex-col overflow-hidden">
-          <ExecutorPanel
+          <RightPanel
             projectId={currentProject?.id ?? null}
             selectedWorktree={selectedWorktree}
           />
