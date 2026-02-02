@@ -24,7 +24,7 @@ export function FileDiff({ file }: FileDiffProps) {
   return (
     <div className="border rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b">
-        <span className="font-mono text-sm flex-1">
+        <span className="font-mono text-sm flex-1 min-w-0 truncate">
           {file.oldPath && file.status === 'renamed' ? (
             <>
               <span className="text-muted-foreground">{file.oldPath}</span>
@@ -39,17 +39,19 @@ export function FileDiff({ file }: FileDiffProps) {
           {statusLabels[file.status]}
         </Badge>
       </div>
-      <div className="overflow-x-auto">
-        {file.hunks.map((hunk, hunkIndex) => (
-          <div key={hunkIndex}>
-            <div className="px-4 py-1 bg-muted/50 text-muted-foreground text-sm font-mono">
-              @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+      <div>
+        <div>
+          {file.hunks.map((hunk, hunkIndex) => (
+            <div key={hunkIndex}>
+              <div className="px-4 py-1 bg-muted/50 text-muted-foreground text-sm font-mono sticky top-0">
+                @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+              </div>
+              {hunk.lines.map((line, lineIndex) => (
+                <DiffLine key={lineIndex} line={line} />
+              ))}
             </div>
-            {hunk.lines.map((line, lineIndex) => (
-              <DiffLine key={lineIndex} line={line} />
-            ))}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

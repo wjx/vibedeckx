@@ -34,7 +34,7 @@ export function DiffPanel({ projectId, selectedWorktree }: DiffPanelProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between p-4 border-b h-14">
         <div className="flex items-center gap-4">
           <h2 className="font-semibold">Uncommitted Changes</h2>
           {fileCount > 0 && (
@@ -49,7 +49,7 @@ export function DiffPanel({ projectId, selectedWorktree }: DiffPanelProps) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         <div className="p-4 space-y-4">
           {loading && !diff ? (
             <div className="text-center text-muted-foreground py-8">

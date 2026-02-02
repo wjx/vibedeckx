@@ -25,7 +25,7 @@ export function DiffLine({ line }: DiffLineProps) {
       <span className="w-6 flex-shrink-0 text-center select-none">
         {prefix}
       </span>
-      <span className="flex-1 whitespace-pre overflow-x-auto">{line.content}</span>
+      <span className="whitespace-pre-wrap break-all pr-4 flex-1 min-w-0">{line.content}</span>
     </div>
   );
 }
