@@ -69,7 +69,6 @@ function AssistantMessage({ content }: { content: string }) {
 
 function ToolUseMessage({ tool, input }: { tool: string; input: unknown }) {
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
-  const isExpanded = inputStr.length > 200;
 
   return (
     <div className="flex gap-3 py-3">
@@ -78,7 +77,7 @@ function ToolUseMessage({ tool, input }: { tool: string; input: unknown }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-amber-500 mb-1">Tool: {tool}</p>
-        <details className={cn(!isExpanded && "open")}>
+        <details open>
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             Input
           </summary>
