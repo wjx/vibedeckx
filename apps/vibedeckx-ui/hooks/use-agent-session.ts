@@ -208,6 +208,22 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
   const containerRef = useRef<PatchContainer>({ entries: [], status: "stopped" });
   const finishedRef = useRef(false);
   const shouldAutoStartRef = useRef(true); // Auto-start on mount and worktree switch
+  const connectionStartTimeRef = useRef<number | null>(null);
+  const stabilityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shortLivedConnectionsRef = useRef(0);
+
+  // WebSocket reconnection constants
+  const MIN_STABLE_CONNECTION_MS = 5000;  // Connection must be stable for 5s before resetting backoff
+  const MAX_RECONNECT_DELAY_MS = 30000;   // Maximum reconnect delay (30s)
+  const MAX_RECONNECT_ATTEMPTS = 10;      // Stop trying after this many attempts
+  const MAX_SHORT_LIVED_CONNECTIONS = 3;  // After 3 short connections, assume session is invalid
+
+  // Calculate reconnect delay with jitter
+  const getReconnectDelay = (attempt: number): number => {
+    const baseDelay = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * Math.pow(2, attempt));
+    const jitter = baseDelay * Math.random() * 0.25;  // 0-25% jitter
+    return baseDelay + jitter;
+  };
 
   // Connect WebSocket to session
   const connectWebSocket = useCallback((sessionId: string) => {
@@ -231,7 +247,19 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
       console.log("[AgentSession] WebSocket connected");
       setIsConnected(true);
       setError(null);
-      reconnectAttemptRef.current = 0;
+
+      // Track connection start time
+      connectionStartTimeRef.current = Date.now();
+
+      // Only reset backoff counter after connection has been stable
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+      }
+      stabilityTimeoutRef.current = setTimeout(() => {
+        console.log("[AgentSession] Connection stable, resetting backoff counter");
+        reconnectAttemptRef.current = 0;
+        shortLivedConnectionsRef.current = 0;
+      }, MIN_STABLE_CONNECTION_MS);
     };
 
     ws.onmessage = (event) => {
@@ -270,6 +298,12 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
         if ("error" in msg) {
           console.error("[AgentSession] Server error:", msg.error);
           setError(msg.error);
+
+          // If session not found, prevent reconnection attempts
+          if (msg.error === "Session not found") {
+            console.log("[AgentSession] Session invalid, will create new session");
+            finishedRef.current = true;
+          }
           return;
         }
       } catch (e) {
@@ -281,13 +315,53 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
       console.log("[AgentSession] WebSocket disconnected", event.code, event.reason);
       setIsConnected(false);
 
+      // Clear stability timeout if connection closed before stability threshold
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+        stabilityTimeoutRef.current = null;
+      }
+
+      // Log if connection was short-lived
+      const connectionDuration = connectionStartTimeRef.current
+        ? Date.now() - connectionStartTimeRef.current
+        : 0;
+      connectionStartTimeRef.current = null;
+
+      if (connectionDuration > 0 && connectionDuration < MIN_STABLE_CONNECTION_MS) {
+        shortLivedConnectionsRef.current++;
+        console.log(`[AgentSession] Short-lived connection (${connectionDuration}ms), count: ${shortLivedConnectionsRef.current}, backoff attempt: ${reconnectAttemptRef.current}`);
+
+        // If we've had multiple short-lived connections, the session is likely invalid
+        if (shortLivedConnectionsRef.current >= MAX_SHORT_LIVED_CONNECTIONS) {
+          console.log("[AgentSession] Multiple short-lived connections detected, session likely invalid - will recreate");
+          // Clear current session to trigger new session creation
+          setSession(null);
+          setError(null);
+          reconnectAttemptRef.current = 0;
+          shortLivedConnectionsRef.current = 0;
+          shouldAutoStartRef.current = true;
+          return; // Don't schedule reconnect, let auto-start create new session
+        }
+      } else if (connectionDuration >= MIN_STABLE_CONNECTION_MS) {
+        // Reset short-lived counter on stable connection
+        shortLivedConnectionsRef.current = 0;
+      }
+
       // Don't reconnect if finished or intentionally closed
       if (finishedRef.current || event.code === 1000) {
         return;
       }
 
-      // Exponential backoff reconnection: 1s, 2s, 4s, 8s (max)
-      const delay = Math.min(8000, 1000 * Math.pow(2, reconnectAttemptRef.current));
+      // Check if we've exceeded max attempts
+      if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        console.log("[AgentSession] Max reconnect attempts reached");
+        setError("Unable to connect to server. Please check if the backend is running.");
+        return;
+      }
+
+      // Exponential backoff with jitter
+      const delay = getReconnectDelay(reconnectAttemptRef.current);
+      console.log(`[AgentSession] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttemptRef.current + 1})`);
       reconnectAttemptRef.current++;
 
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -378,6 +452,9 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -393,6 +470,10 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+    if (stabilityTimeoutRef.current) {
+      clearTimeout(stabilityTimeoutRef.current);
+      stabilityTimeoutRef.current = null;
+    }
 
     // Reset all state
     setSession(null);
@@ -404,6 +485,8 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     containerRef.current = { entries: [], status: "stopped" };
     finishedRef.current = false;
     reconnectAttemptRef.current = 0;
+    connectionStartTimeRef.current = null;
+    shortLivedConnectionsRef.current = 0;
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
