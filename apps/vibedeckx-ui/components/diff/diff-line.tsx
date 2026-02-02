@@ -12,8 +12,8 @@ export function DiffLine({ line }: DiffLineProps) {
     <div
       className={cn(
         'flex font-mono text-sm',
-        line.type === 'add' && 'bg-green-900/30 text-green-400',
-        line.type === 'delete' && 'bg-red-900/30 text-red-400'
+        line.type === 'add' && 'bg-green-500/30',
+        line.type === 'delete' && 'bg-red-500/30'
       )}
     >
       <span className="w-12 flex-shrink-0 text-right pr-2 text-muted-foreground select-none border-r border-border">
