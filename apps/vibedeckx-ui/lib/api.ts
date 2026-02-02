@@ -185,6 +185,18 @@ export const api = {
     return data.worktree;
   },
 
+  async deleteWorktree(projectId: string, worktreePath: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worktreePath }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
   // Executor API
   async getExecutors(projectId: string): Promise<Executor[]> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`);

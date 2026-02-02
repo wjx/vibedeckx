@@ -4,15 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FolderOpen, Calendar, GitBranch, Plus } from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2 } from "lucide-react";
 import { api, type Project, type Worktree } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
+import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
 
 interface ProjectCardProps {
   project: Project;
@@ -23,7 +23,9 @@ interface ProjectCardProps {
 export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: ProjectCardProps) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [worktreeToDelete, setWorktreeToDelete] = useState<Worktree | null>(null);
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
   const fetchWorktrees = useCallback(() => {
@@ -48,6 +50,20 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
     onWorktreeChange(worktreePath);
   };
 
+  const handleDeleteClick = (e: React.MouseEvent, worktree: Worktree) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setWorktreeToDelete(worktree);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleWorktreeDeleted = () => {
+    onWorktreeChange(".");
+    fetchWorktrees();
+  };
+
+  const selectedWorktreeData = worktrees.find(w => w.path === selectedWorktree);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -68,25 +84,50 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
           ) : (
             <div className="flex items-center gap-2">
               <GitBranch className="h-4 w-4 text-muted-foreground" />
-              <Select value={selectedWorktree} onValueChange={onWorktreeChange}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select worktree" />
-                </SelectTrigger>
-                <SelectContent>
-                  {worktrees.map((wt) => (
-                    <SelectItem key={wt.path} value={wt.path}>
-                      {wt.path}
-                      {wt.branch && (
-                        <span className="text-muted-foreground ml-2">({wt.branch})</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex-1 justify-between">
+                    <span className="truncate">
+                      {selectedWorktree}
+                      {selectedWorktreeData?.branch && (
+                        <span className="text-muted-foreground ml-2">
+                          ({selectedWorktreeData.branch})
+                        </span>
                       )}
-                    </SelectItem>
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                  {worktrees.map((wt) => (
+                    <DropdownMenuItem
+                      key={wt.path}
+                      className="flex items-center justify-between gap-2"
+                      onSelect={() => onWorktreeChange(wt.path)}
+                    >
+                      <span className="truncate">
+                        {wt.path}
+                        {wt.branch && (
+                          <span className="text-muted-foreground ml-2">({wt.branch})</span>
+                        )}
+                      </span>
+                      {wt.path !== "." && (
+                        <button
+                          onClick={(e) => handleDeleteClick(e, wt)}
+                          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                          title="Delete worktree"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </DropdownMenuItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant="outline"
                 size="icon-sm"
-                onClick={() => setDialogOpen(true)}
+                onClick={() => setCreateDialogOpen(true)}
                 title="Create new worktree"
               >
                 <Plus className="h-4 w-4" />
@@ -95,9 +136,16 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
           )}
           <CreateWorktreeDialog
             projectId={project.id}
-            open={dialogOpen}
-            onOpenChange={setDialogOpen}
+            open={createDialogOpen}
+            onOpenChange={setCreateDialogOpen}
             onWorktreeCreated={handleWorktreeCreated}
+          />
+          <DeleteWorktreeDialog
+            projectId={project.id}
+            worktree={worktreeToDelete}
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            onWorktreeDeleted={handleWorktreeDeleted}
           />
         </div>
       </CardContent>

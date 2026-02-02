@@ -306,6 +306,111 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   });
 
+  // 删除 git worktree
+  server.delete<{
+    Params: { id: string };
+    Body: { worktreePath: string };
+  }>("/api/projects/:id/worktrees", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { worktreePath } = req.body;
+
+    // Validate worktree path
+    if (!worktreePath || typeof worktreePath !== "string" || worktreePath.trim() === "") {
+      return reply.code(400).send({ error: "Worktree path is required" });
+    }
+
+    // Cannot delete main worktree
+    if (worktreePath === ".") {
+      return reply.code(400).send({ error: "Cannot delete main worktree" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+
+      // Get absolute path of the worktree
+      const worktreeAbsPath = path.resolve(project.path, worktreePath);
+
+      // Check for uncommitted changes in the worktree
+      try {
+        const statusOutput = execSync("git status --porcelain", {
+          cwd: worktreeAbsPath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        if (statusOutput.trim() !== "") {
+          return reply.code(409).send({
+            error: "Worktree has uncommitted changes. Please commit or discard changes before deleting.",
+          });
+        }
+      } catch (statusError) {
+        // If git status fails, the worktree might be in a bad state
+        // Continue with deletion attempt
+      }
+
+      // Get the branch name associated with this worktree before removing it
+      let branchToDelete: string | null = null;
+      try {
+        const worktreeListOutput = execSync("git worktree list --porcelain", {
+          cwd: project.path,
+          encoding: "utf-8",
+        });
+
+        const blocks = worktreeListOutput.trim().split("\n\n");
+        for (const block of blocks) {
+          const lines = block.split("\n");
+          let currentWorktreePath = "";
+          let currentBranch: string | null = null;
+
+          for (const line of lines) {
+            if (line.startsWith("worktree ")) {
+              currentWorktreePath = line.slice(9);
+            } else if (line.startsWith("branch refs/heads/")) {
+              currentBranch = line.slice(18);
+            }
+          }
+
+          if (currentWorktreePath === worktreeAbsPath) {
+            branchToDelete = currentBranch;
+            break;
+          }
+        }
+      } catch {
+        // Failed to get branch info, continue without deleting branch
+      }
+
+      // Remove the worktree
+      execSync(`git worktree remove "${worktreeAbsPath}"`, {
+        cwd: project.path,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      // Delete the associated branch if found
+      if (branchToDelete) {
+        try {
+          execSync(`git branch -d "${branchToDelete}"`, {
+            cwd: project.path,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        } catch {
+          // Branch deletion failed (might have unmerged changes)
+          // This is not critical, the worktree is already removed
+        }
+      }
+
+      return reply.code(200).send({ success: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to delete worktree: ${errorMessage}` });
+    }
+  });
+
   // 创建新的 git worktree
   server.post<{
     Params: { id: string };
