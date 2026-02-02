@@ -162,6 +162,14 @@ export class AgentSessionManager {
     // Handle process exit
     childProcess.on("close", (code) => {
       console.log(`[AgentSession] Process ${session.id} exited with code ${code}`);
+
+      // Don't update status or send finished signal if this is an old process
+      // (happens when we restart - old process closes but new one is already running)
+      if (session.process !== childProcess) {
+        console.log(`[AgentSession] Old process closed, new process already running, skipping finished signal`);
+        return;
+      }
+
       session.status = code === 0 ? "stopped" : "error";
       this.storage.agentSessions.updateStatus(session.id, session.status);
 
@@ -515,6 +523,53 @@ export class AgentSessionManager {
     this.stopSession(sessionId);
     this.sessions.delete(sessionId);
     this.storage.agentSessions.delete(sessionId);
+    return true;
+  }
+
+  /**
+   * Restart a session (stop process, clear history, respawn)
+   * Returns the same session ID with a fresh conversation
+   */
+  restartSession(sessionId: string, projectPath: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    console.log(`[AgentSession] Restarting session ${sessionId}`);
+
+    // 1. Kill the existing process
+    try {
+      session.process.kill("SIGTERM");
+    } catch (error) {
+      console.error(`[AgentSession] Failed to kill process:`, error);
+    }
+
+    // 2. Clear message store
+    session.store.patches = [];
+    session.store.entries = [];
+    session.store.indexProvider.reset();
+    session.store.currentAssistantIndex = null;
+    session.buffer = "";
+
+    // 3. Broadcast clear signal to all subscribers
+    // Send a special patch to clear all entries on the client
+    const clearPatch = ConversationPatch.clearAll();
+    this.broadcastPatch(sessionId, clearPatch);
+
+    // 4. Update status to running
+    session.status = "running";
+    this.storage.agentSessions.updateStatus(sessionId, "running");
+    this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
+
+    // 5. Calculate absolute worktree path and respawn
+    const absoluteWorktreePath =
+      session.worktreePath === "."
+        ? projectPath
+        : `${projectPath}/${session.worktreePath}`;
+
+    this.spawnClaudeCode(session, absoluteWorktreePath);
+
     return true;
   }
 

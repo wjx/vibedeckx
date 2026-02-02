@@ -11,7 +11,7 @@ import {
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff } from "lucide-react";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
 
 interface AgentConversationProps {
   projectId: string | null;
@@ -35,6 +35,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     error,
     startSession,
     sendMessage,
+    restartSession,
   } = useAgentSession(projectId, worktreePath);
 
   useImperativeHandle(ref, () => ({
@@ -112,18 +113,32 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             </span>
           )}
         </div>
-        {session && session.status === "running" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              // TODO: Implement stop
-            }}
-            className="h-7 text-xs"
-          >
-            <Square className="h-3 w-3 mr-1" />
-            Stop
-          </Button>
+        {session && (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={restartSession}
+              disabled={isLoading}
+              className="h-7 w-7"
+              title="New Conversation"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+            {session.status === "running" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  // TODO: Implement stop
+                }}
+                className="h-7 text-xs"
+              >
+                <Square className="h-3 w-3 mr-1" />
+                Stop
+              </Button>
+            )}
+          </div>
         )}
       </div>
 

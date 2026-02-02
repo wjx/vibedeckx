@@ -98,6 +98,16 @@ async function sendMessageToSession(sessionId: string, content: string): Promise
   }
 }
 
+async function restartSessionApi(sessionId: string): Promise<void> {
+  const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/restart`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to restart session");
+  }
+}
+
 // ============ Patch Application ============
 
 /**
@@ -107,6 +117,16 @@ function applyPatch(container: PatchContainer, patch: Patch): PatchContainer {
   return produce(container, (draft) => {
     for (const entry of patch) {
       const { op, path, value } = entry;
+
+      // Handle special clearAll patch (path is "/entries" with replace)
+      if (path === "/entries" && op === "replace") {
+        // Check if it's the special clearAll marker
+        if (value?.type === "ENTRY" && value.content?.type === "system" && value.content?.content === "__CLEAR_ALL__") {
+          console.log("[JsonPatch] Received clearAll signal - clearing all entries");
+          draft.entries = [];
+          continue;
+        }
+      }
 
       // Parse path: /entries/0 or /status
       if (path.startsWith("/entries/")) {
@@ -329,6 +349,25 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     [session?.id]
   );
 
+  // Restart session - clears conversation and respawns Claude Code process
+  const restartSession = useCallback(async () => {
+    if (!session?.id) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await restartSessionApi(session.id);
+      // The WebSocket will receive the clearAll patch and status update
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Failed to restart session";
+      setError(errorMsg);
+      console.error("[AgentSession] Failed to restart session:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [session?.id]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -395,5 +434,6 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     error,
     startSession,
     sendMessage,
+    restartSession,
   };
 }

@@ -896,6 +896,28 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   );
 
+  // 重启 Agent Session (清除对话历史，重新启动进程)
+  server.post<{ Params: { sessionId: string } }>(
+    "/api/agent-sessions/:sessionId/restart",
+    async (req, reply) => {
+      const session = agentSessionManager.getSession(req.params.sessionId);
+      if (!session) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const project = opts.storage.projects.getById(session.projectId);
+      if (!project) {
+        return reply.code(404).send({ error: "Project not found" });
+      }
+
+      const restarted = agentSessionManager.restartSession(req.params.sessionId, project.path);
+      if (!restarted) {
+        return reply.code(500).send({ error: "Failed to restart session" });
+      }
+      return reply.code(200).send({ success: true });
+    }
+  );
+
   // 删除 Agent Session
   server.delete<{ Params: { sessionId: string } }>(
     "/api/agent-sessions/:sessionId",

@@ -96,4 +96,18 @@ export const ConversationPatch = {
       },
     ];
   },
+
+  /**
+   * Create a patch to clear all entries (for session restart)
+   * Uses a special path "/entries" with "replace" to signal full clear
+   */
+  clearAll(): Patch {
+    return [
+      {
+        op: "replace",
+        path: "/entries",
+        value: { type: "ENTRY", content: { type: "system", content: "__CLEAR_ALL__", timestamp: Date.now() } as AgentMessage },
+      },
+    ];
+  },
 };
