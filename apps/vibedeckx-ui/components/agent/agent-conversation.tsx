@@ -177,7 +177,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 ? "Ask Claude to help with your code..."
                 : "Type your first message to start..."
             }
-            className="min-h-[60px] pr-12"
+            className="pr-12"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
