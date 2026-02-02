@@ -3,16 +3,17 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { RefreshCw, GitBranch } from 'lucide-react';
+import { RefreshCw, GitBranch, GitMerge } from 'lucide-react';
 import { FileDiff } from './file-diff';
 import { useDiff } from '@/hooks/use-diff';
 
 interface DiffPanelProps {
   projectId: string | null;
   selectedWorktree?: string;
+  onMergeRequest?: () => void;
 }
 
-export function DiffPanel({ projectId, selectedWorktree }: DiffPanelProps) {
+export function DiffPanel({ projectId, selectedWorktree, onMergeRequest }: DiffPanelProps) {
   const { diff, loading, error, refresh } = useDiff(projectId, selectedWorktree);
 
   useEffect(() => {
@@ -43,10 +44,16 @@ export function DiffPanel({ projectId, selectedWorktree }: DiffPanelProps) {
             </span>
           )}
         </div>
-        <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={onMergeRequest} disabled={loading || fileCount === 0}>
+            <GitMerge className="h-4 w-4 mr-1" />
+            Merge
+          </Button>
+          <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,7 +18,12 @@ interface AgentConversationProps {
   worktreePath: string;
 }
 
-export function AgentConversation({ projectId, worktreePath }: AgentConversationProps) {
+export interface AgentConversationHandle {
+  submitMessage: (content: string) => Promise<void>;
+}
+
+export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
+  function AgentConversation({ projectId, worktreePath }, ref) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -31,6 +36,19 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
     startSession,
     sendMessage,
   } = useAgentSession(projectId, worktreePath);
+
+  useImperativeHandle(ref, () => ({
+    submitMessage: async (content: string) => {
+      if (!session) {
+        const newSession = await startSession();
+        if (newSession) {
+          sendMessage(content, newSession.id);
+        }
+      } else {
+        sendMessage(content);
+      }
+    }
+  }), [session, startSession, sendMessage]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -176,4 +194,4 @@ export function AgentConversation({ projectId, worktreePath }: AgentConversation
       </div>
     </div>
   );
-}
+});

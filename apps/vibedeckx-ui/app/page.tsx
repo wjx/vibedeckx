@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ProjectSelector } from '@/components/project/project-selector';
 import { ProjectCard } from '@/components/project/project-card';
 import { useProjects } from '@/hooks/use-projects';
@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
 import { RightPanel } from '@/components/right-panel';
-import { AgentConversation } from '@/components/agent';
+import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedWorktree, setSelectedWorktree] = useState(".");
+  const agentRef = useRef<AgentConversationHandle>(null);
 
   const {
     projects,
@@ -25,6 +26,19 @@ export default function Home() {
   useEffect(() => {
     setSelectedWorktree(".");
   }, [currentProject?.id]);
+
+  const handleMergeRequest = useCallback(() => {
+    const prompt = `Please perform the following git operations for this worktree:
+
+1. Commit all current uncommitted changes with an appropriate commit message
+2. Fetch the latest changes from the remote main branch
+3. Rebase the current branch onto main (resolve any conflicts if needed)
+4. Merge the current branch into main
+
+Please proceed step by step and let me know if there are any issues or conflicts that need manual resolution.`;
+
+    agentRef.current?.submitMessage(prompt);
+  }, []);
 
   // 显示欢迎页面（无项目时）
   if (!projectsLoading && projects.length === 0) {
@@ -79,6 +93,7 @@ export default function Home() {
           {/* Agent Conversation */}
           <div className="flex-1 overflow-hidden">
             <AgentConversation
+              ref={agentRef}
               projectId={currentProject?.id ?? null}
               worktreePath={selectedWorktree}
             />
@@ -90,6 +105,7 @@ export default function Home() {
           <RightPanel
             projectId={currentProject?.id ?? null}
             selectedWorktree={selectedWorktree}
+            onMergeRequest={handleMergeRequest}
           />
         </div>
       </div>

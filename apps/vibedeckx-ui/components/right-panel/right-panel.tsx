@@ -9,11 +9,12 @@ import { DiffPanel } from '@/components/diff';
 interface RightPanelProps {
   projectId: string | null;
   selectedWorktree?: string;
+  onMergeRequest?: () => void;
 }
 
 type TabType = 'executors' | 'diff';
 
-export function RightPanel({ projectId, selectedWorktree }: RightPanelProps) {
+export function RightPanel({ projectId, selectedWorktree, onMergeRequest }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('executors');
 
   return (
@@ -57,6 +58,7 @@ export function RightPanel({ projectId, selectedWorktree }: RightPanelProps) {
           <DiffPanel
             projectId={projectId}
             selectedWorktree={selectedWorktree}
+            onMergeRequest={onMergeRequest}
           />
         )}
       </div>
