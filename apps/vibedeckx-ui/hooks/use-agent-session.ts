@@ -187,6 +187,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
   const reconnectAttemptRef = useRef(0);
   const containerRef = useRef<PatchContainer>({ entries: [], status: "stopped" });
   const finishedRef = useRef(false);
+  const shouldAutoStartRef = useRef(true); // Auto-start on mount and worktree switch
 
   // Connect WebSocket to session
   const connectWebSocket = useCallback((sessionId: string) => {
@@ -364,7 +365,18 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
     containerRef.current = { entries: [], status: "stopped" };
     finishedRef.current = false;
     reconnectAttemptRef.current = 0;
+
+    // Mark that we need to auto-start session after reset
+    shouldAutoStartRef.current = true;
   }, [projectId, worktreePath]);
+
+  // Auto-start session after mount or worktree switch
+  useEffect(() => {
+    if (shouldAutoStartRef.current && projectId && !session && !isLoading) {
+      shouldAutoStartRef.current = false;
+      startSession();
+    }
+  }, [projectId, session, isLoading, startSession]);
 
   // Reconnect when session changes
   useEffect(() => {
