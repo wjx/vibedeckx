@@ -60,6 +60,7 @@ export interface Executor {
   command: string;
   cwd: string | null;
   pty: boolean;
+  position: number;
   created_at: string;
 }
 
@@ -245,6 +246,18 @@ export const api = {
   async deleteExecutor(id: string): Promise<void> {
     const res = await fetch(`${getApiBase()}/api/executors/${id}`, {
       method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  async reorderExecutors(projectId: string, orderedIds: string[]): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors/reorder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds }),
     });
     if (!res.ok) {
       const error = await res.json();

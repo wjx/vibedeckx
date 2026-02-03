@@ -753,6 +753,34 @@ export const createServer = (opts: { storage: Storage }) => {
     return reply.code(200).send({ success: true });
   });
 
+  // Reorder Executors
+  server.put<{
+    Params: { projectId: string };
+    Body: { orderedIds: string[] };
+  }>("/api/projects/:projectId/executors/reorder", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.projectId);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return reply.code(400).send({ error: "orderedIds must be an array" });
+    }
+
+    // Validate all IDs belong to this project
+    const existingExecutors = opts.storage.executors.getByProjectId(req.params.projectId);
+    const existingIds = new Set(existingExecutors.map(e => e.id));
+    for (const id of orderedIds) {
+      if (!existingIds.has(id)) {
+        return reply.code(400).send({ error: `Executor ${id} not found in project` });
+      }
+    }
+
+    opts.storage.executors.reorder(req.params.projectId, orderedIds);
+    return reply.code(200).send({ success: true });
+  });
+
   // ==================== Process Control API ====================
 
   // 启动 Executor

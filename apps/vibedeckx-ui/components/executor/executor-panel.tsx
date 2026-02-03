@@ -7,6 +7,20 @@ import { Plus, Terminal } from "lucide-react";
 import { ExecutorItem } from "./executor-item";
 import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
 interface ExecutorPanelProps {
   projectId: string | null;
@@ -24,7 +38,31 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
     startExecutor,
     stopExecutor,
     markProcessFinished,
+    reorderExecutors,
   } = useExecutors(projectId);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = executors.findIndex((e) => e.id === active.id);
+      const newIndex = executors.findIndex((e) => e.id === over.id);
+      const newOrder = [...executors];
+      const [moved] = newOrder.splice(oldIndex, 1);
+      newOrder.splice(newIndex, 0, moved);
+      reorderExecutors(newOrder.map((e) => e.id));
+    }
+  };
 
   if (!projectId) {
     return (
@@ -64,17 +102,28 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
               </p>
             </div>
           ) : (
-            executors.map((executor) => (
-              <ExecutorItem
-                key={executor.id}
-                executor={executor}
-                onStart={() => startExecutor(executor.id, selectedWorktree)}
-                onStop={(processId) => stopExecutor(executor.id, processId || executor.currentProcessId || undefined)}
-                onUpdate={(data) => updateExecutor(executor.id, data)}
-                onDelete={() => deleteExecutor(executor.id)}
-                onProcessFinished={() => markProcessFinished(executor.id)}
-              />
-            ))
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={executors.map((e) => e.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {executors.map((executor) => (
+                  <ExecutorItem
+                    key={executor.id}
+                    executor={executor}
+                    onStart={() => startExecutor(executor.id, selectedWorktree)}
+                    onStop={(processId) => stopExecutor(executor.id, processId || executor.currentProcessId || undefined)}
+                    onUpdate={(data) => updateExecutor(executor.id, data)}
+                    onDelete={() => deleteExecutor(executor.id)}
+                    onProcessFinished={() => markProcessFinished(executor.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </ScrollArea>

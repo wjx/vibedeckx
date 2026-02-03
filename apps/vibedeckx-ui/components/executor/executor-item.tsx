@@ -22,12 +22,15 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  GripVertical,
 } from "lucide-react";
 import { ExecutorOutput } from "./executor-output";
 import { ExecutorForm } from "./executor-form";
 import { useExecutorLogs } from "@/hooks/use-executor-logs";
 import type { ExecutorWithProcess } from "@/hooks/use-executors";
 import { cn } from "@/lib/utils";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface ExecutorItemProps {
   executor: ExecutorWithProcess;
@@ -52,6 +55,20 @@ export function ExecutorItem({
     executor.currentProcessId
   );
   const processFinishedCalledRef = useRef(false);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: executor.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   const { logs, status, exitCode, isPty, sendInput, sendResize } = useExecutorLogs(localProcessId);
 
@@ -91,10 +108,23 @@ export function ExecutorItem({
   return (
     <>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="border rounded-lg">
+        <div
+          ref={setNodeRef}
+          style={style}
+          className={cn("border rounded-lg", isDragging && "opacity-50")}
+        >
           <CollapsibleTrigger asChild>
             <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50">
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="cursor-grab touch-none text-muted-foreground hover:text-foreground"
+                  {...attributes}
+                  {...listeners}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripVertical className="h-4 w-4" />
+                </button>
                 {isOpen ? (
                   <ChevronDown className="h-4 w-4" />
                 ) : (

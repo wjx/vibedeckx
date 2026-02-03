@@ -141,6 +141,29 @@ export function useExecutors(projectId: string | null) {
     });
   }, []);
 
+  // Reorder executors with optimistic update
+  const reorderExecutors = useCallback(
+    async (orderedIds: string[]) => {
+      if (!projectId) return;
+
+      // Optimistic update: reorder local state immediately
+      const previousExecutors = executors;
+      const reorderedExecutors = orderedIds
+        .map((id) => executors.find((e) => e.id === id))
+        .filter((e): e is Executor => e !== undefined);
+      setExecutors(reorderedExecutors);
+
+      try {
+        await api.reorderExecutors(projectId, orderedIds);
+      } catch (error) {
+        // Revert on error
+        console.error("Failed to reorder executors:", error);
+        setExecutors(previousExecutors);
+      }
+    },
+    [projectId, executors]
+  );
+
   // Get executor with process info
   const executorsWithProcess: ExecutorWithProcess[] = executors.map((executor) => ({
     ...executor,
@@ -157,6 +180,7 @@ export function useExecutors(projectId: string | null) {
     startExecutor,
     stopExecutor,
     markProcessFinished,
+    reorderExecutors,
     refetch: fetchExecutors,
   };
 }
