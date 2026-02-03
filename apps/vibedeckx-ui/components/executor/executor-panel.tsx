@@ -9,14 +9,14 @@ import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
 import {
   DndContext,
-  DragOverlay,
-  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
+  type CollisionDetection,
+  type DroppableContainer,
+  closestCenter,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -29,9 +29,72 @@ interface ExecutorPanelProps {
   selectedWorktree?: string;
 }
 
+// Custom collision detection that only considers the header region (52px) of each item
+const HEADER_HEIGHT = 52;
+
+const headerOnlyCollision: CollisionDetection = (args) => {
+  const { droppableContainers, pointerCoordinates } = args;
+
+  if (!pointerCoordinates) {
+    return closestCenter(args);
+  }
+
+  // Find containers where pointer is within the header region
+  const collisions: { id: string; data: { droppableContainer: DroppableContainer } }[] = [];
+
+  for (const container of droppableContainers) {
+    const rect = container.rect.current;
+    if (!rect) continue;
+
+    // Check if pointer is within the header region (top HEADER_HEIGHT pixels)
+    const headerTop = rect.top;
+    const headerBottom = rect.top + HEADER_HEIGHT;
+
+    if (
+      pointerCoordinates.x >= rect.left &&
+      pointerCoordinates.x <= rect.right &&
+      pointerCoordinates.y >= headerTop &&
+      pointerCoordinates.y <= headerBottom
+    ) {
+      collisions.push({
+        id: container.id as string,
+        data: { droppableContainer: container },
+      });
+    }
+  }
+
+  if (collisions.length > 0) {
+    return collisions;
+  }
+
+  // Fallback: find the closest header region
+  let closest: { id: string; distance: number; data: { droppableContainer: DroppableContainer } } | null = null;
+
+  for (const container of droppableContainers) {
+    const rect = container.rect.current;
+    if (!rect) continue;
+
+    const headerCenterY = rect.top + HEADER_HEIGHT / 2;
+    const centerX = rect.left + rect.width / 2;
+    const distance = Math.sqrt(
+      Math.pow(pointerCoordinates.x - centerX, 2) +
+      Math.pow(pointerCoordinates.y - headerCenterY, 2)
+    );
+
+    if (!closest || distance < closest.distance) {
+      closest = {
+        id: container.id as string,
+        distance,
+        data: { droppableContainer: container },
+      };
+    }
+  }
+
+  return closest ? [{ id: closest.id, data: closest.data }] : [];
+};
+
 export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const {
     executors,
     loading,
@@ -55,13 +118,8 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
     })
   );
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveId(null);
     if (over && active.id !== over.id) {
       const oldIndex = executors.findIndex((e) => e.id === active.id);
       const newIndex = executors.findIndex((e) => e.id === over.id);
@@ -71,8 +129,6 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
       reorderExecutors(newOrder.map((e) => e.id));
     }
   };
-
-  const activeExecutor = activeId ? executors.find((e) => e.id === activeId) : null;
 
   if (!projectId) {
     return (
@@ -114,8 +170,7 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
           ) : (
             <DndContext
               sensors={sensors}
-              collisionDetection={pointerWithin}
-              onDragStart={handleDragStart}
+              collisionDetection={headerOnlyCollision}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
@@ -134,13 +189,6 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
                   />
                 ))}
               </SortableContext>
-              <DragOverlay>
-                {activeExecutor ? (
-                  <div className="border rounded-lg bg-background shadow-lg p-3">
-                    <span className="font-medium">{activeExecutor.name}</span>
-                  </div>
-                ) : null}
-              </DragOverlay>
             </DndContext>
           )}
         </div>
