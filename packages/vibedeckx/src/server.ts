@@ -465,6 +465,18 @@ export const createServer = (opts: { storage: Storage }) => {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
+      // Fix paths to be relative (for git < 2.30 compatibility and portability)
+      // 1. Fix .git/worktrees/<name>/gitdir to point to worktree/.git using relative path
+      const gitdirFile = path.join(project.path, ".git", "worktrees", worktreeDirName, "gitdir");
+      const worktreeDotGit = path.join(worktreeAbsolutePath, ".git");
+      const relativeGitdir = path.relative(path.dirname(gitdirFile), worktreeDotGit);
+      await writeFile(gitdirFile, relativeGitdir + "\n");
+
+      // 2. Fix worktree/.git to point to main repo's .git/worktrees/<name> using relative path
+      const gitWorktreeMetaDir = path.join(project.path, ".git", "worktrees", worktreeDirName);
+      const relativeToMain = path.relative(worktreeAbsolutePath, gitWorktreeMetaDir);
+      await writeFile(worktreeDotGit, "gitdir: " + relativeToMain + "\n");
+
       return reply.code(201).send({
         worktree: {
           path: worktreeRelativePath,
