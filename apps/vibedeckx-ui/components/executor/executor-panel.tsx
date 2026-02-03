@@ -9,12 +9,14 @@ import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
 import {
   DndContext,
-  closestCenter,
+  DragOverlay,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -29,6 +31,7 @@ interface ExecutorPanelProps {
 
 export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const {
     executors,
     loading,
@@ -52,8 +55,13 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
     })
   );
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveId(null);
     if (over && active.id !== over.id) {
       const oldIndex = executors.findIndex((e) => e.id === active.id);
       const newIndex = executors.findIndex((e) => e.id === over.id);
@@ -63,6 +71,8 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
       reorderExecutors(newOrder.map((e) => e.id));
     }
   };
+
+  const activeExecutor = activeId ? executors.find((e) => e.id === activeId) : null;
 
   if (!projectId) {
     return (
@@ -104,7 +114,8 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
           ) : (
             <DndContext
               sensors={sensors}
-              collisionDetection={closestCenter}
+              collisionDetection={pointerWithin}
+              onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
@@ -123,6 +134,13 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
                   />
                 ))}
               </SortableContext>
+              <DragOverlay>
+                {activeExecutor ? (
+                  <div className="border rounded-lg bg-background shadow-lg p-3">
+                    <span className="font-medium">{activeExecutor.name}</span>
+                  </div>
+                ) : null}
+              </DragOverlay>
             </DndContext>
           )}
         </div>
