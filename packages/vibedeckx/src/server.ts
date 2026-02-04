@@ -4,12 +4,35 @@ import fastifyWebsocket from "@fastify/websocket";
 import path from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
-import { mkdir, writeFile, readFile, stat, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, readdir } from "fs/promises";
+import { existsSync } from "fs";
 import type { Storage } from "./storage/types.js";
 import { selectFolder } from "./dialog.js";
 import { ProcessManager, type LogMessage, type InputMessage } from "./process-manager.js";
 import { AgentSessionManager } from "./agent-session-manager.js";
 import type { AgentWsInput } from "./agent-types.js";
+
+// Worktree config stored in .vibedeckx/worktrees.json
+interface WorktreeConfig {
+  worktrees: Array<{ path: string; branch: string }>;
+}
+
+async function readWorktreeConfig(projectPath: string): Promise<WorktreeConfig> {
+  const configPath = path.join(projectPath, ".vibedeckx", "worktrees.json");
+  try {
+    const content = await readFile(configPath, "utf-8");
+    return JSON.parse(content);
+  } catch {
+    return { worktrees: [] };
+  }
+}
+
+async function writeWorktreeConfig(projectPath: string, config: WorktreeConfig): Promise<void> {
+  const configDir = path.join(projectPath, ".vibedeckx");
+  const configPath = path.join(configDir, "worktrees.json");
+  await mkdir(configDir, { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
+}
 
 export const createServer = (opts: { storage: Storage }) => {
   const UI_ROOT = path.join(
@@ -257,53 +280,32 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   });
 
-  // 获取项目的 git worktrees
+  // 获取项目的 worktrees (从 .vibedeckx/worktrees.json 读取)
   server.get<{ Params: { id: string } }>("/api/projects/:id/worktrees", async (req, reply) => {
     const project = opts.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    try {
-      const { execSync } = await import("child_process");
-      const output = execSync("git worktree list --porcelain", {
-        cwd: project.path,
-        encoding: "utf-8",
-      });
+    // Read worktrees from .vibedeckx/worktrees.json
+    const config = await readWorktreeConfig(project.path);
 
-      const worktrees: Array<{ path: string; branch: string | null }> = [];
-      const blocks = output.trim().split("\n\n");
+    // Filter out worktrees whose directories no longer exist
+    const validWorktrees = config.worktrees.filter((wt) => {
+      const absolutePath = path.join(project.path, wt.path);
+      return existsSync(absolutePath);
+    });
 
-      for (const block of blocks) {
-        const lines = block.split("\n");
-        let worktreePath = "";
-        let branch: string | null = null;
+    // Always include the main worktree "."
+    const worktrees: Array<{ path: string; branch: string | null }> = [
+      { path: ".", branch: null },
+    ];
 
-        for (const line of lines) {
-          if (line.startsWith("worktree ")) {
-            worktreePath = line.slice(9);
-          } else if (line.startsWith("branch refs/heads/")) {
-            branch = line.slice(18);
-          }
-        }
-
-        if (worktreePath) {
-          // Convert absolute path to relative path from project root
-          const relativePath = path.relative(project.path, worktreePath) || ".";
-          worktrees.push({ path: relativePath, branch });
-        }
-      }
-
-      // If no worktrees found, return project root as fallback
-      if (worktrees.length === 0) {
-        worktrees.push({ path: ".", branch: null });
-      }
-
-      return reply.code(200).send({ worktrees });
-    } catch (error) {
-      // Not a git repo or git command failed - return project root only
-      return reply.code(200).send({ worktrees: [{ path: ".", branch: null }] });
+    for (const wt of validWorktrees) {
+      worktrees.push({ path: wt.path, branch: wt.branch });
     }
+
+    return reply.code(200).send({ worktrees });
   });
 
   // 删除 git worktree
@@ -404,6 +406,11 @@ export const createServer = (opts: { storage: Storage }) => {
         }
       }
 
+      // Remove from .vibedeckx/worktrees.json
+      const config = await readWorktreeConfig(project.path);
+      config.worktrees = config.worktrees.filter((wt) => wt.path !== worktreePath);
+      await writeWorktreeConfig(project.path, config);
+
       return reply.code(200).send({ success: true });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -465,17 +472,21 @@ export const createServer = (opts: { storage: Storage }) => {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
-      // Fix paths to be relative (for git < 2.30 compatibility and portability)
-      // 1. Fix .git/worktrees/<name>/gitdir to point to worktree/.git using relative path
+      // Use absolute paths for gitdir files (some Git versions don't handle relative paths correctly)
+      // The worktree list API will auto-repair paths after project sync if needed
       const gitdirFile = path.join(project.path, ".git", "worktrees", worktreeDirName, "gitdir");
       const worktreeDotGit = path.join(worktreeAbsolutePath, ".git");
-      const relativeGitdir = path.relative(path.dirname(gitdirFile), worktreeDotGit);
-      await writeFile(gitdirFile, relativeGitdir + "\n");
+      await writeFile(gitdirFile, worktreeDotGit + "\n");
 
-      // 2. Fix worktree/.git to point to main repo's .git/worktrees/<name> using relative path
+      // worktree/.git can use relative path (this works reliably across Git versions)
       const gitWorktreeMetaDir = path.join(project.path, ".git", "worktrees", worktreeDirName);
       const relativeToMain = path.relative(worktreeAbsolutePath, gitWorktreeMetaDir);
       await writeFile(worktreeDotGit, "gitdir: " + relativeToMain + "\n");
+
+      // Save worktree info to .vibedeckx/worktrees.json for portable sync
+      const config = await readWorktreeConfig(project.path);
+      config.worktrees.push({ path: worktreeRelativePath, branch: trimmedBranch });
+      await writeWorktreeConfig(project.path, config);
 
       return reply.code(201).send({
         worktree: {

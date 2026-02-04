@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
+import { existsSync } from "fs";
 import type { WebSocket } from "@fastify/websocket";
 import type { Storage } from "./storage/types.js";
 import type {
@@ -84,6 +85,8 @@ export class AgentSessionManager {
         ? projectPath
         : `${projectPath}/${worktreePath}`;
 
+    console.log(`[AgentSession] projectPath=${projectPath}, worktreePath=${worktreePath}, absoluteWorktreePath=${absoluteWorktreePath}`);
+
     // Create session in database
     this.storage.agentSessions.create({
       id: sessionId,
@@ -127,6 +130,21 @@ export class AgentSessionManager {
   private spawnClaudeCode(session: RunningSession, cwd: string): void {
     console.log(`[AgentSession] Spawning Claude Code in ${cwd}`);
 
+    // Verify cwd exists
+    if (!existsSync(cwd)) {
+      console.error(`[AgentSession] ERROR: cwd does not exist: ${cwd}`);
+      session.status = "error";
+      this.storage.agentSessions.updateStatus(session.id, "error");
+      this.pushEntry(session.id, {
+        type: "error",
+        message: `Error: Working directory does not exist: ${cwd}`,
+        timestamp: Date.now(),
+      });
+      this.broadcastPatch(session.id, ConversationPatch.updateStatus("error"));
+      this.broadcastRaw(session.id, { finished: true });
+      return;
+    }
+
     const args = [
       "-y",
       "@anthropic-ai/claude-code",
@@ -141,6 +159,7 @@ export class AgentSessionManager {
       cwd,
       env: { ...process.env, FORCE_COLOR: "1" },
       stdio: ["pipe", "pipe", "pipe"],
+      shell: true,
     });
 
     session.process = childProcess;
