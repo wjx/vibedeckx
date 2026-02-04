@@ -66,8 +66,11 @@ export function ExecutorItem({
   } = useSortable({ id: executor.id });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' as const : undefined,
+    opacity: isDragging ? 1 : undefined,
   };
 
   const { logs, status, exitCode, isPty, sendInput, sendResize } = useExecutorLogs(localProcessId);
@@ -111,7 +114,7 @@ export function ExecutorItem({
         <div
           ref={setNodeRef}
           style={style}
-          className={cn("border rounded-lg", isDragging && "opacity-50")}
+          className={cn("border rounded-lg", isDragging && "shadow-lg bg-background")}
         >
           <CollapsibleTrigger asChild>
             <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50">
