@@ -37,6 +37,7 @@ export function ExecutorOutput({
       cursorBlink: isPty, // Only blink cursor in PTY mode
       cursorStyle: isPty ? "block" : "underline",
       disableStdin: !isPty, // Disable input in non-PTY mode
+      convertEol: true, // Convert \n to \r\n for proper line breaks
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {

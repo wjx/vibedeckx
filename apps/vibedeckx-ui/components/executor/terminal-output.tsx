@@ -28,6 +28,7 @@ export function TerminalOutput({
 
     const terminal = new Terminal({
       cursorBlink: true,
+      convertEol: true, // Convert \n to \r\n for proper line breaks
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {

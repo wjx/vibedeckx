@@ -43,9 +43,9 @@ function UserMessage({ content }: { content: string }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
         <User className="w-4 h-4 text-primary" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-foreground mb-1">You</p>
-        <div className="text-sm text-foreground whitespace-pre-wrap">{content}</div>
+        <div className="text-sm text-foreground whitespace-pre-wrap break-words overflow-wrap-anywhere">{content}</div>
       </div>
     </div>
   );
@@ -57,9 +57,9 @@ function AssistantMessage({ content }: { content: string }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center">
         <Bot className="w-4 h-4 text-violet-500" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-violet-500 mb-1">Claude</p>
-        <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none">
+        <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
           <MessageResponse>{content}</MessageResponse>
         </div>
       </div>
@@ -75,13 +75,13 @@ function ToolUseMessage({ tool, input }: { tool: string; input: unknown }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center">
         <Wrench className="w-4 h-4 text-amber-500" />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-amber-500 mb-1">Tool: {tool}</p>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <p className="text-sm font-medium text-amber-500 mb-1 break-words">Tool: {tool}</p>
         <details open>
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             Input
           </summary>
-          <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto">
+          <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto max-w-full whitespace-pre-wrap break-all">
             {inputStr.length > 500 ? inputStr.substring(0, 500) + "..." : inputStr}
           </pre>
         </details>
@@ -95,13 +95,13 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
 
   return (
     <div className="flex gap-3 py-3 pl-11">
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-xs text-muted-foreground mb-1">Result{tool ? ` (${tool})` : ""}</p>
         <details className={cn(!isLong && "open")}>
           <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             Output
           </summary>
-          <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto">
+          <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto max-w-full whitespace-pre-wrap break-all">
             {output.length > 1000 ? output.substring(0, 1000) + "..." : output}
           </pre>
         </details>
@@ -116,12 +116,12 @@ function ThinkingMessage({ content }: { content: string }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
         <Brain className="w-4 h-4 text-blue-500" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <details>
           <summary className="text-sm font-medium text-blue-500 cursor-pointer hover:underline">
             Thinking...
           </summary>
-          <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap bg-blue-500/5 p-2 rounded">
+          <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap break-words bg-blue-500/5 p-2 rounded overflow-hidden">
             {content.length > 500 ? content.substring(0, 500) + "..." : content}
           </div>
         </details>
@@ -136,9 +136,9 @@ function ErrorMessage({ message }: { message: string }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
         <AlertCircle className="w-4 h-4 text-red-500" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-red-500 mb-1">Error</p>
-        <p className="text-sm text-red-500/80">{message}</p>
+        <p className="text-sm text-red-500/80 break-words">{message}</p>
       </div>
     </div>
   );
@@ -150,8 +150,8 @@ function SystemMessage({ content }: { content: string }) {
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-500/10 flex items-center justify-center">
         <Info className="w-4 h-4 text-gray-500" />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground">{content}</p>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <p className="text-xs text-muted-foreground break-words">{content}</p>
       </div>
     </div>
   );
