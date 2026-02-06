@@ -32,6 +32,18 @@ export function useProjects() {
     return project;
   };
 
+  const createRemoteProject = async (
+    name: string,
+    path: string,
+    remoteUrl: string,
+    remoteApiKey: string
+  ) => {
+    const project = await api.createRemoteProject(name, path, remoteUrl, remoteApiKey);
+    setProjects((prev) => [project, ...prev]);
+    setCurrentProject(project);
+    return project;
+  };
+
   const deleteProject = async (id: string) => {
     await api.deleteProject(id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
@@ -49,6 +61,7 @@ export function useProjects() {
     currentProject,
     loading,
     createProject,
+    createRemoteProject,
     deleteProject,
     selectProject,
     refresh: fetchProjects,

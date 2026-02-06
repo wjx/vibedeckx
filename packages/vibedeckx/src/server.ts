@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import { mkdir, writeFile, readFile, readdir } from "fs/promises";
 import { existsSync } from "fs";
+import WebSocket from "ws";
 import type { Storage } from "./storage/types.js";
 import { selectFolder } from "./dialog.js";
 import { ProcessManager, type LogMessage, type InputMessage } from "./process-manager.js";
@@ -34,6 +35,9 @@ async function writeWorktreeConfig(projectPath: string, config: WorktreeConfig):
   await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
+// API Key from environment variable for remote access authentication
+const API_KEY = process.env.VIBEDECKX_API_KEY;
+
 export const createServer = (opts: { storage: Storage }) => {
   const UI_ROOT = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -48,7 +52,26 @@ export const createServer = (opts: { storage: Storage }) => {
   server.addHook("onRequest", (req, reply, done) => {
     reply.header("access-control-allow-origin", "*");
     reply.header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
-    reply.header("access-control-allow-headers", "Content-Type, Upgrade, Connection");
+    reply.header("access-control-allow-headers", "Content-Type, Upgrade, Connection, X-Vibedeckx-Api-Key");
+    done();
+  });
+
+  // API Key authentication middleware (when VIBEDECKX_API_KEY is set)
+  server.addHook("onRequest", (req, reply, done) => {
+    // Skip if no API key is configured
+    if (!API_KEY) return done();
+    // Skip non-API routes
+    if (!req.url.startsWith("/api/")) return done();
+    // Skip OPTIONS requests (CORS preflight)
+    if (req.method === "OPTIONS") return done();
+
+    // Check header first, then query parameter (for WebSocket connections)
+    const providedKey = req.headers["x-vibedeckx-api-key"] ||
+      (req.query as { apiKey?: string })?.apiKey;
+
+    if (providedKey !== API_KEY) {
+      return reply.code(401).send({ error: "Unauthorized" });
+    }
     done();
   });
 
@@ -132,7 +155,7 @@ export const createServer = (opts: { storage: Storage }) => {
     );
 
     // Agent Session WebSocket
-    server.get<{ Params: { sessionId: string } }>(
+    server.get<{ Params: { sessionId: string }; Querystring: { apiKey?: string } }>(
       "/api/agent-sessions/:sessionId/stream",
       { websocket: true },
       (socket, req) => {
@@ -140,6 +163,72 @@ export const createServer = (opts: { storage: Storage }) => {
 
         console.log(`[AgentWS] Client connected for session ${sessionId}`);
 
+        // Check if this is a remote session (created via proxy)
+        if (sessionId.startsWith("remote-")) {
+          const remoteInfo = remoteSessionMap.get(sessionId);
+          if (!remoteInfo) {
+            console.log(`[AgentWS] Remote session ${sessionId} not found in map`);
+            socket.send(JSON.stringify({ type: "error", message: "Remote session not found" }));
+            socket.close();
+            return;
+          }
+
+          // Create WebSocket connection to remote server
+          const wsProtocol = remoteInfo.remoteUrl.startsWith("https") ? "wss" : "ws";
+          const wsUrl = remoteInfo.remoteUrl.replace(/^https?/, wsProtocol);
+          const remoteWsUrl = `${wsUrl}/api/agent-sessions/${remoteInfo.remoteSessionId}/stream?apiKey=${encodeURIComponent(remoteInfo.remoteApiKey)}`;
+
+          console.log(`[AgentWS] Proxying to remote: ${remoteWsUrl.replace(remoteInfo.remoteApiKey, "***")}`);
+
+          const remoteWs = new WebSocket(remoteWsUrl);
+
+          remoteWs.on("open", () => {
+            console.log(`[AgentWS] Connected to remote session ${remoteInfo.remoteSessionId}`);
+          });
+
+          // Forward messages from remote to client
+          remoteWs.on("message", (data) => {
+            try {
+              socket.send(data.toString());
+            } catch (error) {
+              console.error("[AgentWS] Failed to forward message to client:", error);
+            }
+          });
+
+          // Forward messages from client to remote
+          socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+            try {
+              if (remoteWs.readyState === WebSocket.OPEN) {
+                remoteWs.send(data.toString());
+              }
+            } catch (error) {
+              console.error("[AgentWS] Failed to forward message to remote:", error);
+            }
+          });
+
+          // Handle remote connection close
+          remoteWs.on("close", () => {
+            console.log(`[AgentWS] Remote connection closed for session ${sessionId}`);
+            socket.close();
+          });
+
+          // Handle remote connection error
+          remoteWs.on("error", (error) => {
+            console.error(`[AgentWS] Remote connection error:`, error);
+            socket.send(JSON.stringify({ type: "error", message: "Remote connection error" }));
+            socket.close();
+          });
+
+          // Handle client connection close
+          socket.on("close", () => {
+            console.log(`[AgentWS] Client disconnected from remote session ${sessionId}`);
+            remoteWs.close();
+          });
+
+          return;
+        }
+
+        // Local session handling
         // Subscribe to session updates
         const unsubscribe = agentSessionManager.subscribe(sessionId, socket);
 
@@ -185,9 +274,15 @@ export const createServer = (opts: { storage: Storage }) => {
     return reply.status(200).sendFile("index.html");
   });
 
+  // Helper to remove API key from project response
+  function sanitizeProject(project: typeof opts.storage.projects extends { getById: (id: string) => infer T } ? NonNullable<T> : never) {
+    const { remote_api_key: _, ...safe } = project;
+    return safe;
+  }
+
   // 获取所有项目
   server.get("/api/projects", async (req, reply) => {
-    const projects = opts.storage.projects.getAll();
+    const projects = opts.storage.projects.getAll().map(sanitizeProject);
     return reply.code(200).send({ projects });
   });
 
@@ -197,7 +292,7 @@ export const createServer = (opts: { storage: Storage }) => {
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
-    return reply.code(200).send({ project });
+    return reply.code(200).send({ project: sanitizeProject(project) });
   });
 
   // 打开目录选择对话框
@@ -207,6 +302,418 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(200).send({ path: null, cancelled: true });
     }
     return reply.code(200).send({ path: folderPath, cancelled: false });
+  });
+
+  // Browse directory - for remote access to list directories
+  server.get<{
+    Querystring: { path?: string };
+  }>("/api/browse", async (req, reply) => {
+    const browsePath = req.query.path || "/";
+
+    try {
+      const entries = await readdir(browsePath, { withFileTypes: true });
+      const items = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => ({
+          name: entry.name,
+          path: path.join(browsePath, entry.name),
+          type: "directory" as const,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return reply.code(200).send({ path: browsePath, items });
+    } catch (error) {
+      return reply.code(400).send({ error: "Failed to read directory" });
+    }
+  });
+
+  // ==================== Path-based API (for remote execution) ====================
+  // These endpoints operate on paths directly, without requiring a project to be created.
+  // Used by local vibedeckx to execute operations on remote servers.
+
+  // Get worktrees for a path
+  server.get<{
+    Querystring: { path: string };
+  }>("/api/path/worktrees", async (req, reply) => {
+    const projectPath = req.query.path;
+    if (!projectPath) {
+      return reply.code(400).send({ error: "Path is required" });
+    }
+
+    const config = await readWorktreeConfig(projectPath);
+    const validWorktrees = config.worktrees.filter((wt) => {
+      const absolutePath = path.join(projectPath, wt.path);
+      return existsSync(absolutePath);
+    });
+
+    const worktrees: Array<{ path: string; branch: string | null }> = [
+      { path: ".", branch: null },
+    ];
+    for (const wt of validWorktrees) {
+      worktrees.push({ path: wt.path, branch: wt.branch });
+    }
+
+    return reply.code(200).send({ worktrees });
+  });
+
+  // Create worktree at a path
+  server.post<{
+    Body: { path: string; branchName: string };
+  }>("/api/path/worktrees", async (req, reply) => {
+    const { path: projectPath, branchName } = req.body;
+    if (!projectPath || !branchName) {
+      return reply.code(400).send({ error: "Path and branchName are required" });
+    }
+
+    const trimmedBranch = branchName.trim();
+    if (!/^[a-zA-Z0-9]/.test(trimmedBranch) || /[^a-zA-Z0-9/_-]/.test(trimmedBranch)) {
+      return reply.code(400).send({ error: "Invalid branch name format" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+
+      try {
+        execSync(`git rev-parse --verify refs/heads/${trimmedBranch}`, {
+          cwd: projectPath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        return reply.code(409).send({ error: `Branch '${trimmedBranch}' already exists` });
+      } catch {
+        // Branch doesn't exist, continue
+      }
+
+      const worktreeDirName = trimmedBranch.replace(/\//g, "-");
+      const worktreeRelativePath = `.worktrees/${worktreeDirName}`;
+      const worktreeAbsolutePath = path.join(projectPath, worktreeRelativePath);
+
+      await mkdir(path.join(projectPath, ".worktrees"), { recursive: true });
+
+      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
+        cwd: projectPath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      const config = await readWorktreeConfig(projectPath);
+      config.worktrees.push({ path: worktreeRelativePath, branch: trimmedBranch });
+      await writeWorktreeConfig(projectPath, config);
+
+      return reply.code(201).send({
+        worktree: { path: worktreeRelativePath, branch: trimmedBranch },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to create worktree: ${errorMessage}` });
+    }
+  });
+
+  // Delete worktree at a path
+  server.delete<{
+    Body: { path: string; worktreePath: string };
+  }>("/api/path/worktrees", async (req, reply) => {
+    const { path: projectPath, worktreePath } = req.body;
+    if (!projectPath || !worktreePath) {
+      return reply.code(400).send({ error: "Path and worktreePath are required" });
+    }
+
+    if (worktreePath === ".") {
+      return reply.code(400).send({ error: "Cannot delete main worktree" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+      const worktreeAbsPath = path.resolve(projectPath, worktreePath);
+
+      // Check for uncommitted changes
+      try {
+        const statusOutput = execSync("git status --porcelain", {
+          cwd: worktreeAbsPath,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        if (statusOutput.trim() !== "") {
+          return reply.code(409).send({
+            error: "Worktree has uncommitted changes",
+          });
+        }
+      } catch {
+        // Continue with deletion
+      }
+
+      // Get branch name
+      let branchToDelete: string | null = null;
+      try {
+        const worktreeListOutput = execSync("git worktree list --porcelain", {
+          cwd: projectPath,
+          encoding: "utf-8",
+        });
+        const blocks = worktreeListOutput.trim().split("\n\n");
+        for (const block of blocks) {
+          const lines = block.split("\n");
+          let currentPath = "";
+          let currentBranch: string | null = null;
+          for (const line of lines) {
+            if (line.startsWith("worktree ")) currentPath = line.slice(9);
+            else if (line.startsWith("branch refs/heads/")) currentBranch = line.slice(18);
+          }
+          if (currentPath === worktreeAbsPath) {
+            branchToDelete = currentBranch;
+            break;
+          }
+        }
+      } catch {
+        // Continue without branch deletion
+      }
+
+      execSync(`git worktree remove "${worktreeAbsPath}"`, {
+        cwd: projectPath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      if (branchToDelete) {
+        try {
+          execSync(`git branch -d "${branchToDelete}"`, {
+            cwd: projectPath,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        } catch {
+          // Branch deletion failed, not critical
+        }
+      }
+
+      const config = await readWorktreeConfig(projectPath);
+      config.worktrees = config.worktrees.filter((wt) => wt.path !== worktreePath);
+      await writeWorktreeConfig(projectPath, config);
+
+      return reply.code(200).send({ success: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to delete worktree: ${errorMessage}` });
+    }
+  });
+
+  // Get diff for a path
+  server.get<{
+    Querystring: { path: string; worktreePath?: string };
+  }>("/api/path/diff", async (req, reply) => {
+    const projectPath = req.query.path;
+    if (!projectPath) {
+      return reply.code(400).send({ error: "Path is required" });
+    }
+
+    const worktreePath = req.query.worktreePath;
+    const cwd = worktreePath && worktreePath !== "."
+      ? path.resolve(projectPath, worktreePath)
+      : projectPath;
+
+    try {
+      const { execSync } = await import("child_process");
+      const diffOutput = execSync("git diff HEAD --no-color", {
+        cwd,
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const files = parseDiffOutput(diffOutput);
+      return reply.code(200).send({ files });
+    } catch {
+      try {
+        const { execSync } = await import("child_process");
+        const diffOutput = execSync("git diff --no-color", {
+          cwd,
+          encoding: "utf-8",
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        const files = parseDiffOutput(diffOutput);
+        return reply.code(200).send({ files });
+      } catch {
+        return reply.code(200).send({ files: [] });
+      }
+    }
+  });
+
+  // Execute command at a path (for remote executor)
+  server.post<{
+    Body: { path: string; command: string; cwd?: string; pty?: boolean };
+  }>("/api/path/execute", async (req, reply) => {
+    const { path: projectPath, command, cwd, pty } = req.body;
+    if (!projectPath || !command) {
+      return reply.code(400).send({ error: "Path and command are required" });
+    }
+
+    // Create a temporary executor-like object for the process manager
+    const tempExecutor = {
+      id: randomUUID(),
+      project_id: "remote",
+      name: "remote-command",
+      command,
+      cwd: cwd ?? null,
+      pty: pty !== false,
+      position: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const processId = processManager.start(tempExecutor, projectPath);
+      return reply.code(200).send({ processId });
+    } catch (error) {
+      return reply.code(500).send({ error: String(error) });
+    }
+  });
+
+  // Start agent session at a path
+  server.post<{
+    Body: { path: string; worktreePath?: string };
+  }>("/api/path/agent-sessions", async (req, reply) => {
+    const { path: projectPath, worktreePath } = req.body;
+    if (!projectPath) {
+      return reply.code(400).send({ error: "Path is required" });
+    }
+
+    // Use path as a pseudo project ID for remote sessions
+    const pseudoProjectId = `path:${projectPath}`;
+    const sessionId = agentSessionManager.getOrCreateSession(
+      pseudoProjectId,
+      worktreePath || ".",
+      projectPath
+    );
+
+    const session = agentSessionManager.getSession(sessionId);
+    const messages = agentSessionManager.getMessages(sessionId);
+
+    return reply.code(200).send({
+      session: {
+        id: sessionId,
+        projectId: pseudoProjectId,
+        worktreePath: worktreePath || ".",
+        status: session?.status || "running",
+      },
+      messages,
+    });
+  });
+
+  // ==================== Remote Proxy API ====================
+
+  // Helper function to proxy requests to remote vibedeckx server
+  async function proxyToRemote(
+    remoteUrl: string,
+    apiKey: string,
+    method: string,
+    apiPath: string,
+    body?: unknown
+  ): Promise<{ ok: boolean; status: number; data: unknown }> {
+    try {
+      const response = await fetch(`${remoteUrl}${apiPath}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Vibedeckx-Api-Key": apiKey,
+          "User-Agent": "Vibedeckx/1.0",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      let data: unknown;
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        data = { error: `Non-JSON response (${response.status}): ${text.slice(0, 200)}` };
+      }
+
+      return { ok: response.ok, status: response.status, data };
+    } catch (error) {
+      console.error("[proxyToRemote] Error:", error);
+      return {
+        ok: false,
+        status: 0,
+        data: { error: error instanceof Error ? error.message : "Connection failed" },
+      };
+    }
+  }
+
+  // Test connection to remote vibedeckx server
+  server.post<{
+    Body: { url: string; apiKey: string };
+  }>("/api/remote/test-connection", async (req, reply) => {
+    const { url, apiKey } = req.body;
+
+    if (!url || !apiKey) {
+      return reply.code(400).send({ error: "URL and API key are required" });
+    }
+
+    // Try to fetch projects list to verify connection
+    const result = await proxyToRemote(url, apiKey, "GET", "/api/projects");
+
+    if (result.ok) {
+      return reply.code(200).send({ success: true, message: "Connection successful" });
+    } else if (result.status === 401) {
+      return reply.code(401).send({ error: "Invalid API key" });
+    } else if (result.status === 0) {
+      return reply.code(502).send({ error: "Cannot connect to remote server" });
+    } else {
+      return reply.code(result.status).send(result.data);
+    }
+  });
+
+  // Browse remote directory
+  server.post<{
+    Body: { url: string; apiKey: string; path?: string };
+  }>("/api/remote/browse", async (req, reply) => {
+    const { url, apiKey, path: browsePath } = req.body;
+
+    if (!url || !apiKey) {
+      return reply.code(400).send({ error: "URL and API key are required" });
+    }
+
+    const queryPath = browsePath || "/";
+    const result = await proxyToRemote(
+      url,
+      apiKey,
+      "GET",
+      `/api/browse?path=${encodeURIComponent(queryPath)}`
+    );
+
+    if (result.ok) {
+      return reply.code(200).send(result.data);
+    } else {
+      return reply.code(result.status || 502).send(result.data);
+    }
+  });
+
+  // Create remote project (stores connection config locally only)
+  // No project is created on the remote server - it's just an execution endpoint
+  server.post<{
+    Body: {
+      name: string;
+      path: string;
+      remoteUrl: string;
+      remoteApiKey: string;
+    };
+  }>("/api/projects/remote", async (req, reply) => {
+    const { name, path: projectPath, remoteUrl, remoteApiKey } = req.body;
+
+    if (!name || !projectPath || !remoteUrl || !remoteApiKey) {
+      return reply.code(400).send({ error: "All fields are required" });
+    }
+
+    // Just store locally - remote server is only for execution
+    const id = randomUUID();
+    const project = opts.storage.projects.createRemote({
+      id,
+      name,
+      path: projectPath,
+      remote_url: remoteUrl,
+      remote_api_key: remoteApiKey,
+    });
+
+    // Don't expose API key in response
+    const { remote_api_key: _, ...safeProject } = project;
+    return reply.code(201).send({ project: safeProject });
   });
 
   // 创建项目
@@ -287,6 +794,17 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "GET",
+        `/api/path/worktrees?path=${encodeURIComponent(project.path)}`
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
     // Read worktrees from .vibedeckx/worktrees.json
     const config = await readWorktreeConfig(project.path);
 
@@ -328,6 +846,18 @@ export const createServer = (opts: { storage: Storage }) => {
     // Cannot delete main worktree
     if (worktreePath === ".") {
       return reply.code(400).send({ error: "Cannot delete main worktree" });
+    }
+
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "DELETE",
+        `/api/path/worktrees`,
+        { path: project.path, worktreePath }
+      );
+      return reply.code(result.status || 200).send(result.data);
     }
 
     try {
@@ -439,6 +969,18 @@ export const createServer = (opts: { storage: Storage }) => {
     const trimmedBranch = branchName.trim();
     if (!/^[a-zA-Z0-9]/.test(trimmedBranch) || /[^a-zA-Z0-9/_-]/.test(trimmedBranch)) {
       return reply.code(400).send({ error: "Invalid branch name format" });
+    }
+
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "POST",
+        `/api/path/worktrees`,
+        { path: project.path, branchName: trimmedBranch }
+      );
+      return reply.code(result.status || 201).send(result.data);
     }
 
     try {
@@ -666,6 +1208,20 @@ export const createServer = (opts: { storage: Storage }) => {
     }
 
     const worktreePath = req.query.worktreePath;
+
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const params = [`path=${encodeURIComponent(project.path)}`];
+      if (worktreePath) params.push(`worktreePath=${encodeURIComponent(worktreePath)}`);
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "GET",
+        `/api/path/diff?${params.join("&")}`
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
     const cwd = worktreePath && worktreePath !== "."
       ? path.resolve(project.path, worktreePath)
       : project.path;
@@ -702,6 +1258,8 @@ export const createServer = (opts: { storage: Storage }) => {
   // ==================== Executor API ====================
 
   // 获取项目的所有 Executor
+  // Executors are always stored locally (even for remote projects)
+  // Only execution is proxied to remote
   server.get<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/executors",
     async (req, reply) => {
@@ -715,7 +1273,7 @@ export const createServer = (opts: { storage: Storage }) => {
     }
   );
 
-  // 创建 Executor
+  // 创建 Executor (stored locally even for remote projects)
   server.post<{
     Params: { projectId: string };
     Body: { name: string; command: string; cwd?: string; pty?: boolean };
@@ -806,8 +1364,30 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    // Resolve worktree path to absolute path
+    // Resolve worktree path
     const worktreePath = req.body?.worktreePath;
+    const relativeCwd = worktreePath && worktreePath !== "."
+      ? path.join(worktreePath, executor.cwd || "")
+      : executor.cwd || "";
+
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "POST",
+        `/api/path/execute`,
+        {
+          path: project.path,
+          command: executor.command,
+          cwd: relativeCwd || undefined,
+          pty: executor.pty,
+        }
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
+    // Local execution
     const basePath = worktreePath && worktreePath !== "."
       ? path.resolve(project.path, worktreePath)
       : project.path;
@@ -848,6 +1428,9 @@ export const createServer = (opts: { storage: Storage }) => {
 
   // ==================== Agent Session API ====================
 
+  // Map to track remote session IDs: localSessionId -> { remoteUrl, remoteApiKey, remoteSessionId }
+  const remoteSessionMap = new Map<string, { remoteUrl: string; remoteApiKey: string; remoteSessionId: string }>();
+
   // 获取项目的所有 Agent Sessions
   server.get<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/agent-sessions",
@@ -855,6 +1438,13 @@ export const createServer = (opts: { storage: Storage }) => {
       const project = opts.storage.projects.getById(req.params.projectId);
       if (!project) {
         return reply.code(404).send({ error: "Project not found" });
+      }
+
+      // For remote projects, agent sessions run on remote server
+      // But we don't have a way to list all sessions by path on remote
+      // So for now, return empty list for remote (sessions are created on-demand)
+      if (project.is_remote) {
+        return reply.code(200).send({ sessions: [] });
       }
 
       const sessions = opts.storage.agentSessions.getByProjectId(req.params.projectId);
@@ -873,6 +1463,40 @@ export const createServer = (opts: { storage: Storage }) => {
     }
 
     const { worktreePath } = req.body;
+
+    // Proxy to remote if this is a remote project
+    if (project.is_remote && project.remote_url && project.remote_api_key) {
+      const result = await proxyToRemote(
+        project.remote_url,
+        project.remote_api_key,
+        "POST",
+        `/api/path/agent-sessions`,
+        { path: project.path, worktreePath }
+      );
+
+      if (result.ok) {
+        const remoteData = result.data as { session: { id: string }; messages: unknown[] };
+        // Store mapping for WebSocket proxy
+        const localSessionId = `remote-${project.id}-${remoteData.session.id}`;
+        remoteSessionMap.set(localSessionId, {
+          remoteUrl: project.remote_url,
+          remoteApiKey: project.remote_api_key,
+          remoteSessionId: remoteData.session.id,
+        });
+
+        // Return with local session ID that encodes the remote info
+        return reply.code(200).send({
+          session: {
+            ...remoteData.session,
+            id: localSessionId,
+            projectId: req.params.projectId,
+          },
+          messages: remoteData.messages,
+        });
+      }
+      return reply.code(result.status || 502).send(result.data);
+    }
+
     const sessionId = agentSessionManager.getOrCreateSession(
       req.params.projectId,
       worktreePath || ".",

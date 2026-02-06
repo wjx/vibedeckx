@@ -2,6 +2,9 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  is_remote: boolean;
+  remote_url?: string;
+  remote_api_key?: string;
   created_at: string;
 }
 
@@ -40,6 +43,13 @@ export interface AgentSession {
 export interface Storage {
   projects: {
     create: (opts: { id: string; name: string; path: string }) => Project;
+    createRemote: (opts: {
+      id: string;
+      name: string;
+      path: string;
+      remote_url: string;
+      remote_api_key: string;
+    }) => Project;
     getAll: () => Project[];
     getById: (id: string) => Project | undefined;
     getByPath: (path: string) => Project | undefined;

@@ -40,7 +40,20 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  is_remote: boolean;
+  remote_url?: string;
   created_at: string;
+}
+
+export interface RemoteBrowseItem {
+  name: string;
+  path: string;
+  type: "directory";
+}
+
+export interface RemoteBrowseResponse {
+  path: string;
+  items: RemoteBrowseItem[];
 }
 
 export interface DirectoryEntry {
@@ -312,5 +325,51 @@ export const api = {
       throw new Error(error.error);
     }
     return res.json();
+  },
+
+  // Remote Project API
+  async testRemoteConnection(url: string, apiKey: string): Promise<{ success: boolean; message?: string }> {
+    const res = await fetch(`${getApiBase()}/api/remote/test-connection`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, apiKey }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Connection failed");
+    }
+    return res.json();
+  },
+
+  async browseRemoteDirectory(url: string, apiKey: string, path?: string): Promise<RemoteBrowseResponse> {
+    const res = await fetch(`${getApiBase()}/api/remote/browse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, apiKey, path }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Failed to browse directory");
+    }
+    return res.json();
+  },
+
+  async createRemoteProject(
+    name: string,
+    path: string,
+    remoteUrl: string,
+    remoteApiKey: string
+  ): Promise<Project> {
+    const res = await fetch(`${getApiBase()}/api/projects/remote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, path, remoteUrl, remoteApiKey }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Failed to create remote project");
+    }
+    const data = await res.json();
+    return data.project;
   },
 };

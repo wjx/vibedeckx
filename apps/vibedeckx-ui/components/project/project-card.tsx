@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2 } from "lucide-react";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe } from "lucide-react";
 import { api, type Project, type Worktree } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
@@ -67,12 +67,20 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg">{project.name}</CardTitle>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-lg flex-1">{project.name}</CardTitle>
+          {project.is_remote && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500" title={`Remote: ${project.remote_url}`}>
+              <Globe className="h-3 w-3" />
+              Remote
+            </span>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <FolderOpen className="h-4 w-4" />
-          <span className="truncate">{project.path}</span>
+          <span className="truncate">{project.is_remote ? `${project.remote_url}:${project.path}` : project.path}</span>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4" />

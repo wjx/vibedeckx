@@ -18,6 +18,12 @@ interface ProjectSelectorProps {
   currentProject: Project | null;
   onSelectProject: (project: Project) => void;
   onCreateProject: (name: string, path: string) => Promise<void> | Promise<unknown>;
+  onCreateRemoteProject?: (
+    name: string,
+    path: string,
+    remoteUrl: string,
+    remoteApiKey: string
+  ) => Promise<void> | Promise<unknown>;
 }
 
 export function ProjectSelector({
@@ -25,6 +31,7 @@ export function ProjectSelector({
   currentProject,
   onSelectProject,
   onCreateProject,
+  onCreateRemoteProject,
 }: ProjectSelectorProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -55,6 +62,7 @@ export function ProjectSelector({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onProjectCreated={onCreateProject}
+        onRemoteProjectCreated={onCreateRemoteProject}
       />
     </div>
   );

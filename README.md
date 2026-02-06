@@ -108,6 +108,87 @@ vibedeckx
 - **Folder Selection**: Native OS folder picker (macOS, Windows, Linux)
 - **SQLite Storage**: Project data stored in `~/.vibedeckx/data.sqlite`
 - **Static UI**: Frontend bundled with CLI for easy distribution
+- **Remote Projects**: Connect to remote vibedeckx servers to manage projects on remote machines
+
+## Remote Project Support
+
+Vibedeckx supports connecting to remote vibedeckx servers, allowing you to manage projects on remote machines through a local UI.
+
+### Architecture
+
+```
+┌──────────────┐     ┌─────────────────────┐     ┌──────────────────┐
+│  Browser UI  │◄───►│  Local vibedeckx    │◄───►│ Remote vibedeckx │
+│  (Next.js)   │     │  (Management)       │     │  (Execution)     │
+└──────────────┘     └─────────────────────┘     └──────────────────┘
+                            │                           │
+                            ▼                           ▼
+                      Local SQLite                Remote Agent
+                    (all project data)           (execution only)
+```
+
+**Data Storage** (本地管理，远程执行):
+- **Local SQLite**: 存储所有项目配置（本地是数据主源）
+  - 项目信息（名称、路径、远程连接配置）
+  - Executors 配置（命令、工作目录）
+  - 远程连接信息（URL、API Key）
+- **Remote Server**: 只负责执行
+  - 运行 Agent 会话（访问远程文件系统）
+  - 执行 Executor 命令
+  - 浏览远程目录
+
+### Setting Up a Remote Server
+
+1. Start vibedeckx on the remote machine with an API key:
+
+```bash
+# On the remote server
+VIBEDECKX_API_KEY=your-secret-key vibedeckx start --port 5174
+```
+
+The `VIBEDECKX_API_KEY` environment variable enables API authentication. All API requests must include the `X-Vibedeckx-Api-Key` header.
+
+2. Ensure the port is accessible from your local machine (firewall rules, SSH tunneling, etc.)
+
+### Connecting to a Remote Server
+
+1. In the UI, click "Create Project" and select the **Remote** tab
+
+2. Enter the remote server details:
+   - **Remote Server URL**: e.g., `http://192.168.1.100:5174`
+   - **API Key**: The key set via `VIBEDECKX_API_KEY` on the remote server
+
+3. Click **Test** to verify the connection
+
+4. Once connected, browse the remote filesystem and select a project directory
+
+5. Enter a project name and click **Create Project**
+
+### How It Works
+
+- **Connection Config**: Remote project connection details (URL, API key) are stored locally
+- **Request Proxying**: All API requests for remote projects are proxied through your local vibedeckx server
+- **WebSocket Proxying**: Agent session WebSocket connections are transparently proxied to the remote server
+- **Data Locality**: Project files and agent processes run on the remote server; only the UI runs locally
+
+### Security Considerations
+
+- API keys are stored in plain text in the local SQLite database
+- Use HTTPS in production environments
+- Consider SSH tunneling for secure connections over untrusted networks:
+
+```bash
+# Create an SSH tunnel to the remote server
+ssh -L 5174:localhost:5174 user@remote-server
+
+# Then connect to http://localhost:5174 in the UI
+```
+
+### Remote Project Indicators
+
+Remote projects are visually distinguished in the UI:
+- A **Remote** badge appears next to the project name
+- The path shows the remote URL prefix (e.g., `http://server:5174:/path/to/project`)
 
 ## CLI Commands
 
