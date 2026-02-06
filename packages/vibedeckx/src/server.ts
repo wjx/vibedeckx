@@ -617,15 +617,14 @@ export const createServer = (opts: { storage: Storage }) => {
       });
 
       const contentType = response.headers.get("content-type") || "";
-      let data: unknown;
       if (contentType.includes("application/json")) {
-        data = await response.json();
+        const data = await response.json();
+        return { ok: response.ok, status: response.status, data };
       } else {
         const text = await response.text();
-        data = { error: `Non-JSON response (${response.status}): ${text.slice(0, 200)}` };
+        const data = { error: `Non-JSON response (${response.status}): ${text.slice(0, 200)}` };
+        return { ok: false, status: response.status, data };
       }
-
-      return { ok: response.ok, status: response.status, data };
     } catch (error) {
       console.error("[proxyToRemote] Error:", error);
       return {

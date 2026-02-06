@@ -35,7 +35,7 @@ export function RemoteDirectoryBrowser({
       setError("");
       try {
         const result = await api.browseRemoteDirectory(remoteUrl, apiKey, currentPath);
-        setItems(result.items);
+        setItems(result.items ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load directory");
         setItems([]);
