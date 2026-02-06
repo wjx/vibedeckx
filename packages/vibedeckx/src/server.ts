@@ -174,8 +174,9 @@ export const createServer = (opts: { storage: Storage }) => {
           }
 
           // Create WebSocket connection to remote server
-          const wsProtocol = remoteInfo.remoteUrl.startsWith("https") ? "wss" : "ws";
-          const wsUrl = remoteInfo.remoteUrl.replace(/^https?/, wsProtocol);
+          const cleanRemoteUrl = remoteInfo.remoteUrl.replace(/\/+$/, "");
+          const wsProtocol = cleanRemoteUrl.startsWith("https") ? "wss" : "ws";
+          const wsUrl = cleanRemoteUrl.replace(/^https?/, wsProtocol);
           const remoteWsUrl = `${wsUrl}/api/agent-sessions/${remoteInfo.remoteSessionId}/stream?apiKey=${encodeURIComponent(remoteInfo.remoteApiKey)}`;
 
           console.log(`[AgentWS] Proxying to remote: ${remoteWsUrl.replace(remoteInfo.remoteApiKey, "***")}`);
@@ -606,7 +607,8 @@ export const createServer = (opts: { storage: Storage }) => {
     body?: unknown
   ): Promise<{ ok: boolean; status: number; data: unknown }> {
     try {
-      const response = await fetch(`${remoteUrl}${apiPath}`, {
+      const baseUrl = remoteUrl.replace(/\/+$/, "");
+      const response = await fetch(`${baseUrl}${apiPath}`, {
         method,
         headers: {
           "Content-Type": "application/json",
