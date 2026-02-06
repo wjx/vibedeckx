@@ -19,7 +19,6 @@ export default function Home() {
     currentProject,
     loading: projectsLoading,
     createProject,
-    createRemoteProject,
     selectProject,
   } = useProjects();
 
@@ -58,7 +57,6 @@ Please proceed step by step and let me know if there are any issues or conflicts
             open={createDialogOpen}
             onOpenChange={setCreateDialogOpen}
             onProjectCreated={createProject}
-            onRemoteProjectCreated={createRemoteProject}
           />
         </div>
       </div>
@@ -75,7 +73,6 @@ Please proceed step by step and let me know if there are any issues or conflicts
           currentProject={currentProject}
           onSelectProject={selectProject}
           onCreateProject={createProject}
-          onCreateRemoteProject={createRemoteProject}
         />
       </div>
 

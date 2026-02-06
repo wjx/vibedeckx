@@ -39,7 +39,8 @@ export function getWebSocketUrl(path: string): string {
 export interface Project {
   id: string;
   name: string;
-  path: string;
+  path?: string | null;
+  remote_path?: string;
   is_remote: boolean;
   remote_url?: string;
   created_at: string;
@@ -146,11 +147,17 @@ export const api = {
     return res.json();
   },
 
-  async createProject(name: string, path: string): Promise<Project> {
+  async createProject(opts: {
+    name: string;
+    path?: string;
+    remotePath?: string;
+    remoteUrl?: string;
+    remoteApiKey?: string;
+  }): Promise<Project> {
     const res = await fetch(`${getApiBase()}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, path }),
+      body: JSON.stringify(opts),
     });
     if (!res.ok) {
       const error = await res.json();
@@ -356,20 +363,10 @@ export const api = {
 
   async createRemoteProject(
     name: string,
-    path: string,
+    remotePath: string,
     remoteUrl: string,
     remoteApiKey: string
   ): Promise<Project> {
-    const res = await fetch(`${getApiBase()}/api/projects/remote`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, path, remoteUrl, remoteApiKey }),
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to create remote project");
-    }
-    const data = await res.json();
-    return data.project;
+    return this.createProject({ name, remotePath, remoteUrl, remoteApiKey });
   },
 };

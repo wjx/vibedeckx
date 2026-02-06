@@ -11,13 +11,13 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      path TEXT NOT NULL,
+      path TEXT,
+      remote_path TEXT,
       is_remote INTEGER DEFAULT 0,
       remote_url TEXT,
       remote_api_key TEXT,
       remote_project_id TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(path, is_remote, remote_url)
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS executors (
@@ -83,6 +83,14 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     db.exec("ALTER TABLE projects ADD COLUMN remote_project_id TEXT");
   }
 
+  // Migration: add remote_path column and migrate existing remote projects
+  const hasRemotePathColumn = projectTableInfo.some((col) => col.name === "remote_path");
+  if (!hasRemotePathColumn) {
+    db.exec("ALTER TABLE projects ADD COLUMN remote_path TEXT");
+    // Migrate existing remote projects: move path to remote_path, clear path
+    db.exec("UPDATE projects SET remote_path = path, path = NULL WHERE is_remote = 1");
+  }
+
   return db;
 };
 
@@ -94,7 +102,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
   const toProject = (row: {
     id: string;
     name: string;
-    path: string;
+    path: string | null;
+    remote_path: string | null;
     is_remote: number;
     remote_url: string | null;
     remote_api_key: string | null;
@@ -104,6 +113,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     name: row.name,
     path: row.path,
     is_remote: row.is_remote === 1,
+    remote_path: row.remote_path ?? undefined,
     remote_url: row.remote_url ?? undefined,
     remote_api_key: row.remote_api_key ?? undefined,
     created_at: row.created_at,
@@ -112,7 +122,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
   type ProjectRow = {
     id: string;
     name: string;
-    path: string;
+    path: string | null;
+    remote_path: string | null;
     is_remote: number;
     remote_url: string | null;
     remote_api_key: string | null;
@@ -121,22 +132,20 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
   return {
     projects: {
-      create: ({ id, name, path: projectPath }) => {
+      create: ({ id, name, path: projectPath, remote_path, remote_url, remote_api_key }) => {
+        const is_remote = remote_url ? 1 : 0;
         db.prepare(
-          `INSERT INTO projects (id, name, path, is_remote) VALUES (@id, @name, @path, 0)`
-        ).run({ id, name, path: projectPath });
-
-        const row = db
-          .prepare<{ id: string }, ProjectRow>(`SELECT * FROM projects WHERE id = @id`)
-          .get({ id })!;
-        return toProject(row);
-      },
-
-      createRemote: ({ id, name, path: projectPath, remote_url, remote_api_key }) => {
-        db.prepare(
-          `INSERT INTO projects (id, name, path, is_remote, remote_url, remote_api_key)
-           VALUES (@id, @name, @path, 1, @remote_url, @remote_api_key)`
-        ).run({ id, name, path: projectPath, remote_url, remote_api_key });
+          `INSERT INTO projects (id, name, path, remote_path, is_remote, remote_url, remote_api_key)
+           VALUES (@id, @name, @path, @remote_path, @is_remote, @remote_url, @remote_api_key)`
+        ).run({
+          id,
+          name,
+          path: projectPath ?? null,
+          remote_path: remote_path ?? null,
+          is_remote,
+          remote_url: remote_url ?? null,
+          remote_api_key: remote_api_key ?? null,
+        });
 
         const row = db
           .prepare<{ id: string }, ProjectRow>(`SELECT * FROM projects WHERE id = @id`)
@@ -160,7 +169,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       getByPath: (projectPath: string) => {
         const row = db
-          .prepare<{ path: string }, ProjectRow>(`SELECT * FROM projects WHERE path = @path AND is_remote = 0`)
+          .prepare<{ path: string }, ProjectRow>(`SELECT * FROM projects WHERE path = @path`)
           .get({ path: projectPath });
         return row ? toProject(row) : undefined;
       },

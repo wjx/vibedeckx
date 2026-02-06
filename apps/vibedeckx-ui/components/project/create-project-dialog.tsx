@@ -17,28 +17,26 @@ import { RemoteDirectoryBrowser } from "./remote-directory-browser";
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onProjectCreated: (name: string, path: string) => Promise<void> | Promise<unknown>;
-  onRemoteProjectCreated?: (
-    name: string,
-    path: string,
-    remoteUrl: string,
-    remoteApiKey: string
-  ) => Promise<void> | Promise<unknown>;
+  onProjectCreated: (opts: {
+    name: string;
+    path?: string;
+    remotePath?: string;
+    remoteUrl?: string;
+    remoteApiKey?: string;
+  }) => Promise<void> | Promise<unknown>;
 }
 
-type ProjectMode = "local" | "remote";
 type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
 export function CreateProjectDialog({
   open,
   onOpenChange,
   onProjectCreated,
-  onRemoteProjectCreated,
 }: CreateProjectDialogProps) {
-  const [mode, setMode] = useState<ProjectMode>("local");
+  // Project name
+  const [name, setName] = useState("");
 
   // Local project state
-  const [name, setName] = useState("");
   const [path, setPath] = useState("");
 
   // Remote project state
@@ -106,49 +104,41 @@ export function CreateProjectDialog({
     }
   };
 
-  const handleSubmitLocal = async () => {
-    if (!name.trim() || !path.trim()) {
-      setError("Please fill in all fields");
+  const hasLocalPath = path.trim().length > 0;
+  const hasRemote = remotePath.trim().length > 0 && remoteUrl.trim().length > 0 && apiKey.trim().length > 0;
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError("Project name is required");
+      return;
+    }
+
+    if (!hasLocalPath && !hasRemote) {
+      setError("Please provide a local folder, remote server, or both");
+      return;
+    }
+
+    if (remotePath.trim() && connectionStatus !== "success") {
+      setError("Please test the remote connection first");
       return;
     }
 
     setLoading(true);
     setError("");
     try {
-      await onProjectCreated(name.trim(), path.trim());
+      await onProjectCreated({
+        name: name.trim(),
+        ...(hasLocalPath ? { path: path.trim() } : {}),
+        ...(hasRemote ? {
+          remotePath: remotePath.trim(),
+          remoteUrl: remoteUrl.trim(),
+          remoteApiKey: apiKey.trim(),
+        } : {}),
+      });
       resetForm();
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create project");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitRemote = async () => {
-    if (!name.trim() || !remotePath.trim() || !remoteUrl.trim() || !apiKey.trim()) {
-      setError("Please fill in all fields");
-      return;
-    }
-
-    if (connectionStatus !== "success") {
-      setError("Please test the connection first");
-      return;
-    }
-
-    if (!onRemoteProjectCreated) {
-      setError("Remote project creation not supported");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    try {
-      await onRemoteProjectCreated(name.trim(), remotePath.trim(), remoteUrl.trim(), apiKey.trim());
-      resetForm();
-      onOpenChange(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create remote project");
     } finally {
       setLoading(false);
     }
@@ -161,135 +151,105 @@ export function CreateProjectDialog({
           <DialogTitle>Create New Project</DialogTitle>
         </DialogHeader>
 
-        {/* Mode Tabs */}
-        <div className="flex gap-1 p-1 bg-muted rounded-lg">
-          <button
-            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              mode === "local"
-                ? "bg-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setMode("local")}
-          >
-            Local
-          </button>
-          <button
-            className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              mode === "remote"
-                ? "bg-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setMode("remote")}
-          >
-            Remote
-          </button>
-        </div>
+        <div className="space-y-5 py-2">
+          {/* Project Name */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Project Name</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Project"
+            />
+          </div>
 
-        {mode === "local" ? (
-          /* Local Project Form */
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Project Name</label>
+          {/* Local Folder Section */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Local Folder</label>
+            <div className="flex gap-2">
               <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Project"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="/path/to/project (optional)"
+                className="flex-1"
               />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Project Folder</label>
-              <div className="flex gap-2">
-                <Input
-                  value={path}
-                  onChange={(e) => setPath(e.target.value)}
-                  placeholder="/path/to/project"
-                  className="flex-1"
-                />
-                <Button variant="outline" onClick={handleSelectFolder}>
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </div>
+              <Button variant="outline" onClick={handleSelectFolder}>
+                <FolderOpen className="h-4 w-4" />
+              </Button>
             </div>
           </div>
-        ) : (
-          /* Remote Project Form */
-          <div className="space-y-4 py-2">
+
+          {/* Remote Server Section */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Remote Server</label>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Remote Server URL</label>
               <Input
                 value={remoteUrl}
                 onChange={(e) => {
                   setRemoteUrl(e.target.value);
                   setConnectionStatus("idle");
                 }}
-                placeholder="http://remote-server:5173"
+                placeholder="http://remote-server:5173 (optional)"
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">API Key</label>
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    setConnectionStatus("idle");
-                  }}
-                  placeholder="Enter API key"
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleTestConnection}
-                  disabled={connectionStatus === "testing" || !remoteUrl || !apiKey}
-                >
-                  {connectionStatus === "testing" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : connectionStatus === "success" ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : connectionStatus === "error" ? (
-                    <X className="h-4 w-4 text-red-500" />
-                  ) : (
-                    "Test"
-                  )}
-                </Button>
-              </div>
-              {connectionError && (
-                <p className="text-xs text-red-500">{connectionError}</p>
-              )}
-              {connectionStatus === "success" && (
-                <p className="text-xs text-green-500">Connection successful</p>
-              )}
-            </div>
-
-            {connectionStatus === "success" && (
+            {remoteUrl && (
               <>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Select Remote Directory</label>
-                  <RemoteDirectoryBrowser
-                    remoteUrl={remoteUrl}
-                    apiKey={apiKey}
-                    onSelect={handleRemotePathSelect}
-                    selectedPath={remotePath}
-                  />
-                  {remotePath && (
-                    <p className="text-xs text-muted-foreground">
-                      Selected: <span className="font-mono">{remotePath}</span>
-                    </p>
+                  <label className="text-xs text-muted-foreground">API Key</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        setConnectionStatus("idle");
+                      }}
+                      placeholder="Enter API key"
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleTestConnection}
+                      disabled={connectionStatus === "testing" || !remoteUrl || !apiKey}
+                    >
+                      {connectionStatus === "testing" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : connectionStatus === "success" ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : connectionStatus === "error" ? (
+                        <X className="h-4 w-4 text-red-500" />
+                      ) : (
+                        "Test"
+                      )}
+                    </Button>
+                  </div>
+                  {connectionError && (
+                    <p className="text-xs text-red-500">{connectionError}</p>
+                  )}
+                  {connectionStatus === "success" && (
+                    <p className="text-xs text-green-500">Connection successful</p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Project Name</label>
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="My Remote Project"
-                  />
-                </div>
+
+                {connectionStatus === "success" && (
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground">Select Remote Directory</label>
+                    <RemoteDirectoryBrowser
+                      remoteUrl={remoteUrl}
+                      apiKey={apiKey}
+                      onSelect={handleRemotePathSelect}
+                      selectedPath={remotePath}
+                    />
+                    {remotePath && (
+                      <p className="text-xs text-muted-foreground">
+                        Selected: <span className="font-mono">{remotePath}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
-        )}
+        </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -298,7 +258,7 @@ export function CreateProjectDialog({
             Cancel
           </Button>
           <Button
-            onClick={mode === "local" ? handleSubmitLocal : handleSubmitRemote}
+            onClick={handleSubmit}
             disabled={loading}
           >
             {loading ? "Creating..." : "Create Project"}

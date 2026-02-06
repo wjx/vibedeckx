@@ -69,19 +69,32 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <CardTitle className="text-lg flex-1">{project.name}</CardTitle>
-          {project.is_remote && (
+          {project.path && project.remote_path ? (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-500" title={`Local + Remote: ${project.remote_url}`}>
+              <Globe className="h-3 w-3" />
+              Local + Remote
+            </span>
+          ) : project.remote_path ? (
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500" title={`Remote: ${project.remote_url}`}>
               <Globe className="h-3 w-3" />
               Remote
             </span>
-          )}
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <FolderOpen className="h-4 w-4" />
-          <span className="truncate">{project.is_remote ? `${project.remote_url}:${project.path}` : project.path}</span>
-        </div>
+        {project.path && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <FolderOpen className="h-4 w-4" />
+            <span className="truncate">{project.path}</span>
+          </div>
+        )}
+        {project.remote_path && project.remote_url && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Globe className="h-4 w-4" />
+            <span className="truncate">{project.remote_url}:{project.remote_path}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4" />
           <span>{createdDate}</span>

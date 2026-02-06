@@ -704,10 +704,10 @@ export const createServer = (opts: { storage: Storage }) => {
 
     // Just store locally - remote server is only for execution
     const id = randomUUID();
-    const project = opts.storage.projects.createRemote({
+    const project = opts.storage.projects.create({
       id,
       name,
-      path: projectPath,
+      remote_path: projectPath,
       remote_url: remoteUrl,
       remote_api_key: remoteApiKey,
     });
@@ -717,35 +717,64 @@ export const createServer = (opts: { storage: Storage }) => {
     return reply.code(201).send({ project: safeProject });
   });
 
-  // 创建项目
+  // 创建项目 (unified: local, remote, or both)
   server.post<{
-    Body: { name: string; path: string };
+    Body: {
+      name: string;
+      path?: string;
+      remotePath?: string;
+      remoteUrl?: string;
+      remoteApiKey?: string;
+    };
   }>("/api/projects", async (req, reply) => {
-    const { name, path: projectPath } = req.body;
+    const { name, path: projectPath, remotePath, remoteUrl, remoteApiKey } = req.body;
 
-    // 检查路径是否已存在
-    const existing = opts.storage.projects.getByPath(projectPath);
-    if (existing) {
-      return reply.code(409).send({ error: "Project with this path already exists" });
+    if (!name) {
+      return reply.code(400).send({ error: "Project name is required" });
     }
 
-    // 创建 .vibedeckx 目录
-    const vibedeckxDir = path.join(projectPath, ".vibedeckx");
-    await mkdir(vibedeckxDir, { recursive: true });
+    // At least one of local path or remote path must be provided
+    if (!projectPath && !remotePath) {
+      return reply.code(400).send({ error: "At least one of local path or remote path is required" });
+    }
 
-    // 创建配置文件
-    const configPath = path.join(vibedeckxDir, "config.json");
-    const config = {
-      name,
-      created_at: new Date().toISOString(),
-    };
-    await writeFile(configPath, JSON.stringify(config, null, 2));
+    // If remote path is provided, remote URL and API key are required
+    if (remotePath && (!remoteUrl || !remoteApiKey)) {
+      return reply.code(400).send({ error: "Remote URL and API key are required when remote path is provided" });
+    }
+
+    // Check if local path already exists
+    if (projectPath) {
+      const existing = opts.storage.projects.getByPath(projectPath);
+      if (existing) {
+        return reply.code(409).send({ error: "Project with this path already exists" });
+      }
+
+      // 创建 .vibedeckx 目录
+      const vibedeckxDir = path.join(projectPath, ".vibedeckx");
+      await mkdir(vibedeckxDir, { recursive: true });
+
+      // 创建配置文件
+      const configPath = path.join(vibedeckxDir, "config.json");
+      const config = {
+        name,
+        created_at: new Date().toISOString(),
+      };
+      await writeFile(configPath, JSON.stringify(config, null, 2));
+    }
 
     // 保存到数据库
     const id = randomUUID();
-    const project = opts.storage.projects.create({ id, name, path: projectPath });
+    const project = opts.storage.projects.create({
+      id,
+      name,
+      path: projectPath || null,
+      remote_path: remotePath,
+      remote_url: remoteUrl,
+      remote_api_key: remoteApiKey,
+    });
 
-    return reply.code(201).send({ project });
+    return reply.code(201).send({ project: sanitizeProject(project) });
   });
 
   // 删除项目
@@ -764,6 +793,10 @@ export const createServer = (opts: { storage: Storage }) => {
     const project = opts.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     try {
@@ -795,23 +828,29 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
         "GET",
-        `/api/path/worktrees?path=${encodeURIComponent(project.path)}`
+        `/api/path/worktrees?path=${encodeURIComponent(project.remote_path)}`
       );
       return reply.code(result.status || 200).send(result.data);
     }
 
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
+    }
+
+    const projectPath = project.path;
+
     // Read worktrees from .vibedeckx/worktrees.json
-    const config = await readWorktreeConfig(project.path);
+    const config = await readWorktreeConfig(projectPath);
 
     // Filter out worktrees whose directories no longer exist
     const validWorktrees = config.worktrees.filter((wt) => {
-      const absolutePath = path.join(project.path, wt.path);
+      const absolutePath = path.join(projectPath, wt.path);
       return existsSync(absolutePath);
     });
 
@@ -849,16 +888,20 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Cannot delete main worktree" });
     }
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
         "DELETE",
         `/api/path/worktrees`,
-        { path: project.path, worktreePath }
+        { path: project.remote_path, worktreePath }
       );
       return reply.code(result.status || 200).send(result.data);
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     try {
@@ -972,16 +1015,20 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Invalid branch name format" });
     }
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
         "POST",
         `/api/path/worktrees`,
-        { path: project.path, branchName: trimmedBranch }
+        { path: project.remote_path, branchName: trimmedBranch }
       );
       return reply.code(result.status || 201).send(result.data);
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     try {
@@ -1210,9 +1257,9 @@ export const createServer = (opts: { storage: Storage }) => {
 
     const worktreePath = req.query.worktreePath;
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
-      const params = [`path=${encodeURIComponent(project.path)}`];
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+      const params = [`path=${encodeURIComponent(project.remote_path)}`];
       if (worktreePath) params.push(`worktreePath=${encodeURIComponent(worktreePath)}`);
       const result = await proxyToRemote(
         project.remote_url,
@@ -1221,6 +1268,10 @@ export const createServer = (opts: { storage: Storage }) => {
         `/api/path/diff?${params.join("&")}`
       );
       return reply.code(result.status || 200).send(result.data);
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     const cwd = worktreePath && worktreePath !== "."
@@ -1371,21 +1422,25 @@ export const createServer = (opts: { storage: Storage }) => {
       ? path.join(worktreePath, executor.cwd || "")
       : executor.cwd || "";
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
         "POST",
         `/api/path/execute`,
         {
-          path: project.path,
+          path: project.remote_path,
           command: executor.command,
           cwd: relativeCwd || undefined,
           pty: executor.pty,
         }
       );
       return reply.code(result.status || 200).send(result.data);
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     // Local execution
@@ -1441,10 +1496,10 @@ export const createServer = (opts: { storage: Storage }) => {
         return reply.code(404).send({ error: "Project not found" });
       }
 
-      // For remote projects, agent sessions run on remote server
+      // For remote-only projects, agent sessions run on remote server
       // But we don't have a way to list all sessions by path on remote
-      // So for now, return empty list for remote (sessions are created on-demand)
-      if (project.is_remote) {
+      // So for now, return empty list for remote-only (sessions are created on-demand)
+      if (!project.path) {
         return reply.code(200).send({ sessions: [] });
       }
 
@@ -1465,14 +1520,14 @@ export const createServer = (opts: { storage: Storage }) => {
 
     const { worktreePath } = req.body;
 
-    // Proxy to remote if this is a remote project
-    if (project.is_remote && project.remote_url && project.remote_api_key) {
+    // Proxy to remote if this is a remote-only project (no local path)
+    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
         "POST",
         `/api/path/agent-sessions`,
-        { path: project.path, worktreePath }
+        { path: project.remote_path, worktreePath }
       );
 
       if (result.ok) {
@@ -1496,6 +1551,10 @@ export const createServer = (opts: { storage: Storage }) => {
         });
       }
       return reply.code(result.status || 502).send(result.data);
+    }
+
+    if (!project.path) {
+      return reply.code(400).send({ error: "Project has no local path" });
     }
 
     const sessionId = agentSessionManager.getOrCreateSession(
@@ -1584,6 +1643,10 @@ export const createServer = (opts: { storage: Storage }) => {
       const project = opts.storage.projects.getById(session.projectId);
       if (!project) {
         return reply.code(404).send({ error: "Project not found" });
+      }
+
+      if (!project.path) {
+        return reply.code(400).send({ error: "Project has no local path" });
       }
 
       const restarted = agentSessionManager.restartSession(req.params.sessionId, project.path);
