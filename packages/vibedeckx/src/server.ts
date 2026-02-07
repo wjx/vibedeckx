@@ -1618,41 +1618,56 @@ export const createServer = (opts: { storage: Storage }) => {
     const useRemoteAgent = project.remote_url && project.remote_api_key && project.remote_path &&
       (!project.path || project.agent_mode === 'remote');
 
+    console.log(`[API] POST agent-sessions: projectId=${req.params.projectId}, ` +
+      `path=${project.path}, remote_url=${project.remote_url}, ` +
+      `remote_path=${project.remote_path}, agent_mode=${project.agent_mode}, ` +
+      `useRemoteAgent=${useRemoteAgent}`);
+
     if (useRemoteAgent) {
-      const result = await proxyToRemote(
-        project.remote_url!,
-        project.remote_api_key!,
-        "POST",
-        `/api/path/agent-sessions`,
-        { path: project.remote_path, worktreePath }
-      );
+      try {
+        const result = await proxyToRemote(
+          project.remote_url!,
+          project.remote_api_key!,
+          "POST",
+          `/api/path/agent-sessions`,
+          { path: project.remote_path, worktreePath }
+        );
 
-      if (result.ok) {
-        const remoteData = result.data as { session: { id: string }; messages: unknown[] };
-        // Store mapping for WebSocket proxy
-        const localSessionId = `remote-${project.id}-${remoteData.session.id}`;
-        remoteSessionMap.set(localSessionId, {
-          remoteUrl: project.remote_url!,
-          remoteApiKey: project.remote_api_key!,
-          remoteSessionId: remoteData.session.id,
-        });
+        console.log(`[API] Remote proxy result: ok=${result.ok}, status=${result.status}, ` +
+          `data=${JSON.stringify(result.data).substring(0, 500)}`);
 
-        // Return with local session ID that encodes the remote info
-        return reply.code(200).send({
-          session: {
-            ...remoteData.session,
-            id: localSessionId,
-            projectId: req.params.projectId,
-          },
-          messages: remoteData.messages,
-        });
+        if (result.ok) {
+          const remoteData = result.data as { session: { id: string }; messages: unknown[] };
+          // Store mapping for WebSocket proxy
+          const localSessionId = `remote-${project.id}-${remoteData.session.id}`;
+          remoteSessionMap.set(localSessionId, {
+            remoteUrl: project.remote_url!,
+            remoteApiKey: project.remote_api_key!,
+            remoteSessionId: remoteData.session.id,
+          });
+
+          // Return with local session ID that encodes the remote info
+          return reply.code(200).send({
+            session: {
+              ...remoteData.session,
+              id: localSessionId,
+              projectId: req.params.projectId,
+            },
+            messages: remoteData.messages,
+          });
+        }
+        return reply.code(result.status || 502).send(result.data);
+      } catch (error) {
+        console.error("[API] Remote agent session proxy error:", error);
+        return reply.code(502).send({ error: `Remote agent error: ${String(error)}` });
       }
-      return reply.code(result.status || 502).send(result.data);
     }
 
     if (!project.path) {
       return reply.code(400).send({ error: "Project has no local path" });
     }
+
+    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, worktreePath=${worktreePath || "."}, path=${project.path}`);
 
     try {
       const sessionId = agentSessionManager.getOrCreateSession(
