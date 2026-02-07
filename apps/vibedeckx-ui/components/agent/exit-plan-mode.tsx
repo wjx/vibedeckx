@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useAgentConversation } from "./agent-conversation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { CheckCircle2, Play, MessageSquare } from "lucide-react";
 
@@ -48,8 +47,7 @@ function tryParse(str: string): unknown {
 }
 
 export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
-  const { sendMessage, messages, acceptPlan, permissionMode } = useAgentConversation();
-  const [feedback, setFeedback] = useState("");
+  const { messages, acceptPlan, permissionMode } = useAgentConversation();
   const [isExpanded, setIsExpanded] = useState(true);
 
   const planContent = extractPlanContent(input, messages);
@@ -108,41 +106,15 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
         )}
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-2">
-        <Button
-          onClick={() => acceptPlan(planContent)}
-          className="w-full bg-green-600 hover:bg-green-700 text-white"
-          size="sm"
-        >
-          <Play className="h-3.5 w-3.5 mr-1.5" />
-          Accept Plan & Start Editing
-        </Button>
-
-        <div className="flex gap-2">
-          <Textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="Provide feedback to revise the plan..."
-            className="text-sm min-h-[60px]"
-          />
-          <Button
-            onClick={() => {
-              if (feedback.trim()) {
-                sendMessage(feedback.trim());
-                setFeedback("");
-              }
-            }}
-            disabled={!feedback.trim()}
-            variant="outline"
-            size="sm"
-            className="self-end"
-          >
-            <MessageSquare className="h-3.5 w-3.5 mr-1" />
-            Send Feedback
-          </Button>
-        </div>
-      </div>
+      {/* Accept button only - feedback goes through the normal conversation input */}
+      <Button
+        onClick={() => acceptPlan(planContent)}
+        className="bg-green-600 hover:bg-green-700 text-white"
+        size="sm"
+      >
+        <Play className="h-3.5 w-3.5 mr-1.5" />
+        Accept Plan & Start Editing
+      </Button>
     </div>
   );
 }
