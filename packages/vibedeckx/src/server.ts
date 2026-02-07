@@ -1761,7 +1761,7 @@ export const createServer = (opts: { storage: Storage }) => {
           project.remote_api_key!,
           "POST",
           `/api/path/agent-sessions`,
-          { path: project.remote_path, worktreePath }
+          { path: project.remote_path, worktreePath, permissionMode }
         );
 
         console.log(`[API] Remote proxy result: ok=${result.ok}, status=${result.status}, ` +
