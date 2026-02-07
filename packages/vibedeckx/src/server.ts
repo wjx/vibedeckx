@@ -1611,14 +1611,12 @@ export const createServer = (opts: { storage: Storage }) => {
 
     // Determine if we should execute remotely:
     // - Remote-only projects (no local path): always remote
-    // - Hybrid projects (both paths): check executor_mode, fall back to agent_mode
-    const effectiveExecutorMode = project.executor_mode || project.agent_mode;
+    // - Hybrid projects (both paths): check executor_mode
     const useRemoteExecutor = project.remote_url && project.remote_api_key && project.remote_path &&
-      (!project.path || effectiveExecutorMode === 'remote');
+      (!project.path || project.executor_mode === 'remote');
 
     console.log(`[API] POST executors/${req.params.id}/start: ` +
-      `executor_mode=${project.executor_mode}, agent_mode=${project.agent_mode}, ` +
-      `effectiveExecutorMode=${effectiveExecutorMode}, useRemoteExecutor=${useRemoteExecutor}`);
+      `executor_mode=${project.executor_mode}, useRemoteExecutor=${useRemoteExecutor}`);
 
     if (useRemoteExecutor) {
       const result = await proxyToRemote(
