@@ -672,6 +672,26 @@ export const createServer = (opts: { storage: Storage }) => {
   });
 
   // ==================== Remote Proxy API ====================
+  //
+  // NOTE(tech-debt): 当前远程代理的路由方式
+  //
+  // 目前通过在 ID 中添加 "remote-" 前缀来区分本地/远程资源：
+  //   - Agent session: "remote-{projectId}-{remoteSessionId}"
+  //   - Executor process: "remote-{executorId}-{remoteProcessId}"
+  //
+  // 每个 REST/WS 端点都要检查 id.startsWith("remote-")，然后从对应的 Map
+  // (remoteSessionMap / remoteExecutorMap) 中查找远程连接信息再做代理。
+  //
+  // 问题：
+  //   1. 路由信息编码在字符串里，不是类型安全的
+  //   2. 每个端点重复相同的 if/else 分支，新增端点容易遗漏
+  //   3. 两个 Map 手动维护，生命周期管理分散
+  //
+  // 未来重构方向：
+  //   - 用 Fastify onRequest hook 统一拦截，集中处理远程代理逻辑
+  //   - 或者用独立的路由前缀 (e.g. /api/remote/...) 分离远程端点
+  //   - 统一成一个 remoteResourceMap，按 type 字段区分 session/executor
+  //
 
   // Helper function to proxy requests to remote vibedeckx server
   async function proxyToRemote(
