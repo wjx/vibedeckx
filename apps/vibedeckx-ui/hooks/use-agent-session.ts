@@ -22,6 +22,7 @@ export interface AgentSession {
   projectId: string;
   worktreePath: string;
   status: AgentSessionStatus;
+  permissionMode?: "plan" | "edit";
 }
 
 // ============ JSON Patch Types (RFC 6902) ============
@@ -71,12 +72,13 @@ function getApiBase(): string {
 
 async function createOrGetSession(
   projectId: string,
-  worktreePath: string
+  worktreePath: string,
+  permissionMode?: "plan" | "edit"
 ): Promise<{ session: AgentSession; messages: AgentMessage[] }> {
   const response = await fetch(`${getApiBase()}/api/projects/${projectId}/agent-sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ worktreePath }),
+    body: JSON.stringify({ worktreePath, permissionMode }),
   });
 
   if (!response.ok) {
@@ -105,6 +107,30 @@ async function restartSessionApi(sessionId: string): Promise<void> {
 
   if (!response.ok) {
     throw new Error("Failed to restart session");
+  }
+}
+
+async function switchModeApi(sessionId: string, mode: "plan" | "edit"): Promise<void> {
+  const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/switch-mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to switch mode");
+  }
+}
+
+async function acceptPlanApi(sessionId: string, planContent: string): Promise<void> {
+  const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/accept-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ planContent }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to accept plan");
   }
 }
 
@@ -377,7 +403,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
   }, [session?.id]);
 
   // Start or get existing session - returns the session for immediate use
-  const startSession = useCallback(async (): Promise<AgentSession | null> => {
+  const startSession = useCallback(async (permissionMode?: "plan" | "edit"): Promise<AgentSession | null> => {
     if (!projectId) return null;
 
     setIsLoading(true);
@@ -386,7 +412,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
 
     try {
       const { session: newSession } =
-        await createOrGetSession(projectId, worktreePath);
+        await createOrGetSession(projectId, worktreePath, permissionMode);
 
       setSession(newSession);
       setStatus(newSession.status);
@@ -439,6 +465,40 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
       console.error("[AgentSession] Failed to restart session:", e);
     } finally {
       setIsLoading(false);
+    }
+  }, [session?.id]);
+
+  // Switch permission mode (preserves conversation history)
+  const switchMode = useCallback(async (mode: "plan" | "edit") => {
+    if (!session?.id) return;
+
+    setError(null);
+
+    try {
+      await switchModeApi(session.id, mode);
+      // Update session locally - history is preserved, new messages come via WebSocket
+      setSession((prev) => prev ? { ...prev, permissionMode: mode } : prev);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Failed to switch mode";
+      setError(errorMsg);
+      console.error("[AgentSession] Failed to switch mode:", e);
+    }
+  }, [session?.id]);
+
+  // Accept plan and restart in edit mode
+  const acceptPlan = useCallback(async (planContent: string) => {
+    if (!session?.id) return;
+
+    setError(null);
+
+    try {
+      await acceptPlanApi(session.id, planContent);
+      // Update session locally - mode switches to edit
+      setSession((prev) => prev ? { ...prev, permissionMode: "edit" } : prev);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Failed to accept plan";
+      setError(errorMsg);
+      console.error("[AgentSession] Failed to accept plan:", e);
     }
   }, [session?.id]);
 
@@ -518,5 +578,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
     startSession,
     sendMessage,
     restartSession,
+    switchMode,
+    acceptPlan,
   };
 }

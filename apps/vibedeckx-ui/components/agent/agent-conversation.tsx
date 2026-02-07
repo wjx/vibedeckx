@@ -14,11 +14,14 @@ import {
 import { Loader } from "@/components/ai-elements/loader";
 import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
 import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
 import type { Project, ExecutionMode } from "@/lib/api";
 
 interface AgentConversationContextValue {
   sendMessage: (content: string, sessionId?: string) => void;
   messages: AgentMessage[];
+  acceptPlan: (planContent: string) => Promise<void>;
+  permissionMode: "plan" | "edit";
 }
 
 const AgentConversationContext = createContext<AgentConversationContextValue | null>(null);
@@ -43,6 +46,7 @@ export interface AgentConversationHandle {
 export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
   function AgentConversation({ projectId, worktreePath, project, onAgentModeChange }, ref) {
   const [input, setInput] = useState("");
+  const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -54,12 +58,27 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     startSession,
     sendMessage,
     restartSession,
+    switchMode,
+    acceptPlan,
   } = useAgentSession(projectId, worktreePath, project?.agent_mode);
+
+  const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
+    setPermissionMode(newMode);
+    if (session) {
+      await switchMode(newMode);
+    }
+    // If no session yet, the mode will be used when startSession is called
+  };
+
+  const handleAcceptPlan = async (planContent: string) => {
+    await acceptPlan(planContent);
+    setPermissionMode("edit");
+  };
 
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
       if (!session) {
-        const newSession = await startSession();
+        const newSession = await startSession(permissionMode);
         if (newSession) {
           sendMessage(content, newSession.id);
         }
@@ -67,7 +86,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         sendMessage(content);
       }
     }
-  }), [session, startSession, sendMessage]);
+  }), [session, startSession, sendMessage, permissionMode]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -81,8 +100,8 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     setInput("");
 
     if (!session) {
-      // Start session with first message
-      const newSession = await startSession();
+      // Start session with first message, passing current permission mode
+      const newSession = await startSession(permissionMode);
       if (newSession) {
         // Use returned session ID directly to avoid React state timing issues
         sendMessage(content, newSession.id);
@@ -111,6 +130,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-violet-500" />
           <span className="text-sm font-medium">Claude Code</span>
+          <PermissionModeToggle
+            mode={permissionMode}
+            onModeChange={handlePermissionModeChange}
+            disabled={isLoading}
+          />
           {project && project.path && project.remote_path && onAgentModeChange && (
             <ExecutionModeToggle
               mode={project.agent_mode}
@@ -178,7 +202,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               </p>
             </div>
           ) : (
-            <AgentConversationContext.Provider value={{ sendMessage, messages }}>
+            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode }}>
               <div className="space-y-1">
                 {messages.map((msg, index) => (
                   <AgentMessageItem key={index} message={msg} messageIndex={index} />

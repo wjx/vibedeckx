@@ -36,6 +36,7 @@ interface RunningSession {
   status: AgentSessionStatus;
   buffer: string; // Buffer for incomplete JSON lines
   skipDb: boolean; // Skip DB operations for remote path-based sessions
+  permissionMode: "plan" | "edit"; // Claude Code permission mode
 }
 
 export class AgentSessionManager {
@@ -73,7 +74,8 @@ export class AgentSessionManager {
     projectId: string,
     worktreePath: string,
     projectPath: string,
-    skipDb = false
+    skipDb = false,
+    permissionMode: "plan" | "edit" = "edit"
   ): string {
     // Check if session already exists in memory
     for (const [id, session] of this.sessions) {
@@ -82,6 +84,11 @@ export class AgentSessionManager {
         session.worktreePath === worktreePath &&
         session.status === "running"
       ) {
+        // If permission mode differs, switch mode on existing session
+        if (session.permissionMode !== permissionMode) {
+          console.log(`[AgentSession] Session ${id} exists with mode ${session.permissionMode}, switching to ${permissionMode}`);
+          this.switchMode(id, projectPath, permissionMode);
+        }
         console.log(`[AgentSession] Returning existing session ${id}`);
         return id;
       }
@@ -141,6 +148,7 @@ export class AgentSessionManager {
       status: "running",
       buffer: "",
       skipDb,
+      permissionMode,
     };
 
     this.sessions.set(sessionId, runningSession);
@@ -174,11 +182,15 @@ export class AgentSessionManager {
 
     const nativeBinary = this.detectClaudeBinary();
 
+    const permissionFlag = session.permissionMode === "plan"
+      ? "--permission-mode=plan"
+      : "--dangerously-skip-permissions";
+
     const claudeArgs = [
       "-p",
       "--output-format=stream-json",
       "--input-format=stream-json",
-      "--dangerously-skip-permissions",
+      permissionFlag,
       "--verbose",
     ];
 
@@ -629,6 +641,119 @@ export class AgentSessionManager {
     this.spawnClaudeCode(session, absoluteWorktreePath);
 
     return true;
+  }
+
+  /**
+   * Switch permission mode for a session (preserves conversation history)
+   */
+  switchMode(
+    sessionId: string,
+    projectPath: string,
+    newMode: "plan" | "edit",
+    initialMessage?: string
+  ): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    console.log(`[AgentSession] Switching session ${sessionId} from ${session.permissionMode} to ${newMode}`);
+
+    // 1. Kill existing process
+    try {
+      session.process.kill("SIGTERM");
+    } catch (error) {
+      console.error(`[AgentSession] Failed to kill process:`, error);
+    }
+
+    // 2. Keep message store intact (preserve history in UI)
+    // Only reset streaming state and buffer
+    session.store.currentAssistantIndex = null;
+    session.buffer = "";
+
+    // 3. Set new permission mode
+    session.permissionMode = newMode;
+
+    // 4. Update status to running, broadcast
+    session.status = "running";
+    if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "running");
+    this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
+
+    // 5. Respawn Claude Code with new mode flags
+    const absoluteWorktreePath =
+      session.worktreePath === "."
+        ? projectPath
+        : `${projectPath}/${session.worktreePath}`;
+
+    this.spawnClaudeCode(session, absoluteWorktreePath);
+
+    // 6. Send initial message or conversation summary
+    if (initialMessage) {
+      // Wait a bit for process to be ready, then send
+      setTimeout(() => {
+        this.sendUserMessage(sessionId, initialMessage);
+      }, 500);
+    } else {
+      // Build conversation summary from existing entries
+      const summary = this.buildConversationSummary(session.store.entries);
+      if (summary) {
+        setTimeout(() => {
+          // Send summary as context without adding to visible messages
+          const input: ClaudeUserInput = {
+            type: "user",
+            message: {
+              role: "user",
+              content: summary,
+            },
+          };
+          try {
+            session.process.stdin?.write(JSON.stringify(input) + "\n");
+          } catch (error) {
+            console.error(`[AgentSession] Failed to send context summary:`, error);
+          }
+        }, 500);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Accept a plan and restart the session in edit mode
+   */
+  acceptPlanAndRestart(
+    sessionId: string,
+    projectPath: string,
+    planContent: string
+  ): boolean {
+    return this.switchMode(sessionId, projectPath, "edit", planContent);
+  }
+
+  /**
+   * Build a conversation summary from message entries for context transfer
+   */
+  private buildConversationSummary(entries: AgentMessage[]): string | null {
+    const lines: string[] = [];
+    let pairCount = 0;
+    const maxPairs = 20;
+
+    // Iterate through entries, extract user and assistant text messages
+    for (const entry of entries) {
+      if (!entry) continue;
+      if (pairCount >= maxPairs) break;
+
+      if (entry.type === "user") {
+        lines.push(`User: ${entry.content}`);
+        pairCount++;
+      } else if (entry.type === "assistant") {
+        lines.push(`Assistant: ${entry.content}`);
+      }
+      // Skip tool_use, tool_result, thinking, system, error (too verbose)
+    }
+
+    if (lines.length === 0) return null;
+
+    return `[Previous conversation context]\n${lines.join("\n")}\n[End of previous context]\n\nPlease continue from where the previous conversation left off.`;
   }
 
   /**

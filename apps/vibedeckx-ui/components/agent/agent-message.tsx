@@ -1,10 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
+import { ExitPlanModeUI } from "./exit-plan-mode";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -79,6 +80,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
         <div className="flex-1 min-w-0 overflow-hidden">
           <p className="text-sm font-medium text-violet-500 mb-1">Question</p>
           <AskUserQuestion input={input} messageIndex={messageIndex} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "ExitPlanMode") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
+          <FileCheck className="w-4 h-4 text-green-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-green-500 mb-1">Plan Ready</p>
+          <ExitPlanModeUI input={input} messageIndex={messageIndex} />
         </div>
       </div>
     );

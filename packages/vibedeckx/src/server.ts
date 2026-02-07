@@ -634,9 +634,9 @@ export const createServer = (opts: { storage: Storage }) => {
 
   // Start agent session at a path
   server.post<{
-    Body: { path: string; worktreePath?: string };
+    Body: { path: string; worktreePath?: string; permissionMode?: "plan" | "edit" };
   }>("/api/path/agent-sessions", async (req, reply) => {
-    const { path: projectPath, worktreePath } = req.body;
+    const { path: projectPath, worktreePath, permissionMode } = req.body;
     if (!projectPath) {
       return reply.code(400).send({ error: "Path is required" });
     }
@@ -650,7 +650,8 @@ export const createServer = (opts: { storage: Storage }) => {
         pseudoProjectId,
         worktreePath || ".",
         projectPath,
-        true // skipDb: pseudo project ID doesn't exist in projects table
+        true, // skipDb: pseudo project ID doesn't exist in projects table
+        permissionMode || "edit"
       );
 
       const session = agentSessionManager.getSession(sessionId);
@@ -662,6 +663,7 @@ export const createServer = (opts: { storage: Storage }) => {
           projectId: pseudoProjectId,
           worktreePath: worktreePath || ".",
           status: session?.status || "running",
+          permissionMode: session?.permissionMode || "edit",
         },
         messages,
       });
@@ -1732,14 +1734,14 @@ export const createServer = (opts: { storage: Storage }) => {
   // 创建或获取 Agent Session（每个 worktree 最多一个）
   server.post<{
     Params: { projectId: string };
-    Body: { worktreePath: string };
+    Body: { worktreePath: string; permissionMode?: "plan" | "edit" };
   }>("/api/projects/:projectId/agent-sessions", async (req, reply) => {
     const project = opts.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { worktreePath } = req.body;
+    const { worktreePath, permissionMode } = req.body;
 
     // Determine if we should run agent remotely:
     // - Remote-only projects (no local path): always remote
@@ -1796,13 +1798,15 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, worktreePath=${worktreePath || "."}, path=${project.path}`);
+    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, worktreePath=${worktreePath || "."}, path=${project.path}, permissionMode=${permissionMode || "edit"}`);
 
     try {
       const sessionId = agentSessionManager.getOrCreateSession(
         req.params.projectId,
         worktreePath || ".",
-        project.path
+        project.path,
+        false,
+        permissionMode || "edit"
       );
 
       const session = agentSessionManager.getSession(sessionId);
@@ -1814,6 +1818,7 @@ export const createServer = (opts: { storage: Storage }) => {
           projectId: req.params.projectId,
           worktreePath: worktreePath || ".",
           status: session?.status || "running",
+          permissionMode: session?.permissionMode || "edit",
         },
         messages,
       });
@@ -1855,6 +1860,7 @@ export const createServer = (opts: { storage: Storage }) => {
           projectId: session.projectId,
           worktreePath: session.worktreePath,
           status: session.status,
+          permissionMode: session.permissionMode,
         },
         messages,
       });
@@ -1961,6 +1967,110 @@ export const createServer = (opts: { storage: Storage }) => {
         return reply.code(500).send({ error: "Failed to restart session" });
       }
       return reply.code(200).send({ success: true });
+    }
+  );
+
+  // Switch Agent Session permission mode (preserves conversation history)
+  server.post<{
+    Params: { sessionId: string };
+    Body: { mode: "plan" | "edit" };
+  }>(
+    "/api/agent-sessions/:sessionId/switch-mode",
+    async (req, reply) => {
+      const { mode } = req.body;
+      if (!mode || (mode !== "plan" && mode !== "edit")) {
+        return reply.code(400).send({ error: "Mode must be 'plan' or 'edit'" });
+      }
+
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/switch-mode`,
+          { mode }
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
+      const session = agentSessionManager.getSession(req.params.sessionId);
+      if (!session) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const project = opts.storage.projects.getById(session.projectId);
+      if (!project) {
+        return reply.code(404).send({ error: "Project not found" });
+      }
+
+      if (!project.path) {
+        return reply.code(400).send({ error: "Project has no local path" });
+      }
+
+      const switched = agentSessionManager.switchMode(req.params.sessionId, project.path, mode);
+      if (!switched) {
+        return reply.code(500).send({ error: "Failed to switch mode" });
+      }
+      return reply.code(200).send({ success: true, permissionMode: mode });
+    }
+  );
+
+  // Accept plan and restart session in edit mode
+  server.post<{
+    Params: { sessionId: string };
+    Body: { planContent: string };
+  }>(
+    "/api/agent-sessions/:sessionId/accept-plan",
+    async (req, reply) => {
+      const { planContent } = req.body;
+      if (!planContent || typeof planContent !== "string") {
+        return reply.code(400).send({ error: "planContent is required" });
+      }
+
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/accept-plan`,
+          { planContent }
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
+      const session = agentSessionManager.getSession(req.params.sessionId);
+      if (!session) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const project = opts.storage.projects.getById(session.projectId);
+      if (!project) {
+        return reply.code(404).send({ error: "Project not found" });
+      }
+
+      if (!project.path) {
+        return reply.code(400).send({ error: "Project has no local path" });
+      }
+
+      const accepted = agentSessionManager.acceptPlanAndRestart(
+        req.params.sessionId,
+        project.path,
+        planContent
+      );
+      if (!accepted) {
+        return reply.code(500).send({ error: "Failed to accept plan" });
+      }
+      return reply.code(200).send({ success: true, permissionMode: "edit" });
     }
   );
 
