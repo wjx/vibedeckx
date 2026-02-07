@@ -575,27 +575,34 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Path is required" });
     }
 
-    // Use path as a pseudo project ID for remote sessions
-    const pseudoProjectId = `path:${projectPath}`;
-    const sessionId = agentSessionManager.getOrCreateSession(
-      pseudoProjectId,
-      worktreePath || ".",
-      projectPath,
-      true // skipDb: pseudo project ID doesn't exist in projects table
-    );
+    try {
+      // Use path as a pseudo project ID for remote sessions
+      const pseudoProjectId = `path:${projectPath}`;
+      console.log(`[API] POST /api/path/agent-sessions: path=${projectPath}, worktreePath=${worktreePath}, pseudoProjectId=${pseudoProjectId}`);
 
-    const session = agentSessionManager.getSession(sessionId);
-    const messages = agentSessionManager.getMessages(sessionId);
+      const sessionId = agentSessionManager.getOrCreateSession(
+        pseudoProjectId,
+        worktreePath || ".",
+        projectPath,
+        true // skipDb: pseudo project ID doesn't exist in projects table
+      );
 
-    return reply.code(200).send({
-      session: {
-        id: sessionId,
-        projectId: pseudoProjectId,
-        worktreePath: worktreePath || ".",
-        status: session?.status || "running",
-      },
-      messages,
-    });
+      const session = agentSessionManager.getSession(sessionId);
+      const messages = agentSessionManager.getMessages(sessionId);
+
+      return reply.code(200).send({
+        session: {
+          id: sessionId,
+          projectId: pseudoProjectId,
+          worktreePath: worktreePath || ".",
+          status: session?.status || "running",
+        },
+        messages,
+      });
+    } catch (error) {
+      console.error("[API] Failed to create path-based agent session:", error);
+      return reply.code(500).send({ error: String(error) });
+    }
   });
 
   // ==================== Remote Proxy API ====================
