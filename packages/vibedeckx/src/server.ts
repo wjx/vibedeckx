@@ -1611,9 +1611,14 @@ export const createServer = (opts: { storage: Storage }) => {
 
     // Determine if we should execute remotely:
     // - Remote-only projects (no local path): always remote
-    // - Hybrid projects (both paths): check executor_mode setting
+    // - Hybrid projects (both paths): check executor_mode, fall back to agent_mode
+    const effectiveExecutorMode = project.executor_mode || project.agent_mode;
     const useRemoteExecutor = project.remote_url && project.remote_api_key && project.remote_path &&
-      (!project.path || project.executor_mode === 'remote');
+      (!project.path || effectiveExecutorMode === 'remote');
+
+    console.log(`[API] POST executors/${req.params.id}/start: ` +
+      `executor_mode=${project.executor_mode}, agent_mode=${project.agent_mode}, ` +
+      `effectiveExecutorMode=${effectiveExecutorMode}, useRemoteExecutor=${useRemoteExecutor}`);
 
     if (useRemoteExecutor) {
       const result = await proxyToRemote(
@@ -1664,6 +1669,22 @@ export const createServer = (opts: { storage: Storage }) => {
     "/api/executor-processes/:processId/stop",
     async (req, reply) => {
       console.log(`[API] Stop process requested: ${req.params.processId}`);
+
+      // Remote executor process proxy
+      if (req.params.processId.startsWith("remote-")) {
+        const remoteInfo = remoteExecutorMap.get(req.params.processId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote process not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/executor-processes/${remoteInfo.remoteProcessId}/stop`
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
       const stopped = processManager.stop(req.params.processId);
       console.log(`[API] Stop result: ${stopped}`);
       if (!stopped) {
