@@ -22,6 +22,7 @@ interface RunningProcess {
   subscribers: Set<LogSubscriber>;
   executorId: string;
   projectPath: string;
+  skipDb: boolean;
 }
 
 const LOG_RETENTION_MS = 5 * 60 * 1000; // 5 minutes
@@ -37,15 +38,19 @@ export class ProcessManager {
   /**
    * Start a new process for the given executor
    * Returns the process ID
+   * @param skipDb - When true, skip database operations (used for remote path-based execution
+   *                 where the executor doesn't exist in the local DB)
    */
-  start(executor: Executor, projectPath: string): string {
+  start(executor: Executor, projectPath: string, skipDb = false): string {
     const processId = crypto.randomUUID();
 
-    // Create process record in database
-    this.storage.executorProcesses.create({
-      id: processId,
-      executor_id: executor.id,
-    });
+    // Create process record in database (skip for remote path-based execution)
+    if (!skipDb) {
+      this.storage.executorProcesses.create({
+        id: processId,
+        executor_id: executor.id,
+      });
+    }
 
     // Determine working directory
     const cwd = executor.cwd || projectPath;
@@ -57,12 +62,12 @@ export class ProcessManager {
 
     // Always use PTY mode for proper ANSI color support
     try {
-      this.startPtyProcess(processId, executor, cwd);
+      this.startPtyProcess(processId, executor, cwd, skipDb);
       console.log(`[ProcessManager] PTY mode started successfully`);
     } catch (error) {
       // PTY failed (e.g., native module not compiled), fallback to regular process
       console.warn(`[ProcessManager] PTY spawn failed, falling back to regular process: ${error}`);
-      this.startRegularProcess(processId, executor, cwd);
+      this.startRegularProcess(processId, executor, cwd, skipDb);
     }
 
     return processId;
@@ -71,7 +76,7 @@ export class ProcessManager {
   /**
    * Start a process using node-pty (for interactive commands)
    */
-  private startPtyProcess(processId: string, executor: Executor, cwd: string): void {
+  private startPtyProcess(processId: string, executor: Executor, cwd: string, skipDb = false): void {
     // Use user's default shell or fall back to common shell paths
     let shell: string;
     if (process.platform === "win32") {
@@ -102,6 +107,7 @@ export class ProcessManager {
       subscribers: new Set(),
       executorId: executor.id,
       projectPath: cwd,
+      skipDb,
     };
 
     this.processes.set(processId, runningProcess);
@@ -121,7 +127,9 @@ export class ProcessManager {
 
       console.log(`[ProcessManager] PTY process ${processId} exited with code ${code}`);
 
-      this.storage.executorProcesses.updateStatus(processId, status, code);
+      if (!skipDb) {
+        this.storage.executorProcesses.updateStatus(processId, status, code);
+      }
 
       const msg: LogMessage = { type: "finished", exitCode: code };
       runningProcess.logs.push(msg);
@@ -138,7 +146,7 @@ export class ProcessManager {
   /**
    * Start a process using regular spawn (for non-interactive commands)
    */
-  private startRegularProcess(processId: string, executor: Executor, cwd: string): void {
+  private startRegularProcess(processId: string, executor: Executor, cwd: string, skipDb = false): void {
     const childProcess = spawn(executor.command, {
       shell: true,
       cwd,
@@ -152,6 +160,7 @@ export class ProcessManager {
       subscribers: new Set(),
       executorId: executor.id,
       projectPath: cwd,
+      skipDb,
     };
 
     this.processes.set(processId, runningProcess);
@@ -178,7 +187,9 @@ export class ProcessManager {
 
       console.log(`[ProcessManager] Process ${processId} exited with code ${exitCode}`);
 
-      this.storage.executorProcesses.updateStatus(processId, status, exitCode);
+      if (!skipDb) {
+        this.storage.executorProcesses.updateStatus(processId, status, exitCode);
+      }
 
       const msg: LogMessage = { type: "finished", exitCode };
       runningProcess.logs.push(msg);
@@ -197,7 +208,9 @@ export class ProcessManager {
       runningProcess.logs.push(msg);
       this.broadcast(processId, msg);
 
-      this.storage.executorProcesses.updateStatus(processId, "failed", 1);
+      if (!skipDb) {
+        this.storage.executorProcesses.updateStatus(processId, "failed", 1);
+      }
 
       const finishMsg: LogMessage = { type: "finished", exitCode: 1 };
       runningProcess.logs.push(finishMsg);
@@ -226,7 +239,7 @@ export class ProcessManager {
       killed = childProcess.kill("SIGTERM");
     }
 
-    if (killed) {
+    if (killed && !runningProcess.skipDb) {
       this.storage.executorProcesses.updateStatus(processId, "killed");
     }
 

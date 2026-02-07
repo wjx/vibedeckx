@@ -558,7 +558,8 @@ export const createServer = (opts: { storage: Storage }) => {
     };
 
     try {
-      const processId = processManager.start(tempExecutor, projectPath);
+      // skipDb=true: temp executor doesn't exist in DB, so skip FK-dependent operations
+      const processId = processManager.start(tempExecutor, projectPath, true);
       return reply.code(200).send({ processId });
     } catch (error) {
       return reply.code(500).send({ error: String(error) });
