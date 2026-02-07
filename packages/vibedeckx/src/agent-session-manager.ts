@@ -35,6 +35,7 @@ interface RunningSession {
   subscribers: Set<WebSocket>;
   status: AgentSessionStatus;
   buffer: string; // Buffer for incomplete JSON lines
+  skipDb: boolean; // Skip DB operations for remote path-based sessions
 }
 
 export class AgentSessionManager {
@@ -51,7 +52,8 @@ export class AgentSessionManager {
   getOrCreateSession(
     projectId: string,
     worktreePath: string,
-    projectPath: string
+    projectPath: string,
+    skipDb = false
   ): string {
     // Check if session already exists in memory
     for (const [id, session] of this.sessions) {
@@ -65,14 +67,16 @@ export class AgentSessionManager {
       }
     }
 
-    // Check database for existing session
-    const existingSession = this.storage.agentSessions.getByWorktree(
-      projectId,
-      worktreePath
-    );
-    if (existingSession && this.sessions.has(existingSession.id)) {
-      console.log(`[AgentSession] Returning existing session from DB ${existingSession.id}`);
-      return existingSession.id;
+    // Check database for existing session (skip for remote path-based sessions)
+    if (!skipDb) {
+      const existingSession = this.storage.agentSessions.getByWorktree(
+        projectId,
+        worktreePath
+      );
+      if (existingSession && this.sessions.has(existingSession.id)) {
+        console.log(`[AgentSession] Returning existing session from DB ${existingSession.id}`);
+        return existingSession.id;
+      }
     }
 
     // Create new session
@@ -87,12 +91,14 @@ export class AgentSessionManager {
 
     console.log(`[AgentSession] projectPath=${projectPath}, worktreePath=${worktreePath}, absoluteWorktreePath=${absoluteWorktreePath}`);
 
-    // Create session in database
-    this.storage.agentSessions.create({
-      id: sessionId,
-      project_id: projectId,
-      worktree_path: worktreePath,
-    });
+    // Create session in database (skip for remote path-based sessions)
+    if (!skipDb) {
+      this.storage.agentSessions.create({
+        id: sessionId,
+        project_id: projectId,
+        worktree_path: worktreePath,
+      });
+    }
 
     // Initialize message store with EntryIndexProvider
     const indexProvider = new EntryIndexProvider();
@@ -114,6 +120,7 @@ export class AgentSessionManager {
       subscribers: new Set(),
       status: "running",
       buffer: "",
+      skipDb,
     };
 
     this.sessions.set(sessionId, runningSession);
@@ -134,7 +141,7 @@ export class AgentSessionManager {
     if (!existsSync(cwd)) {
       console.error(`[AgentSession] ERROR: cwd does not exist: ${cwd}`);
       session.status = "error";
-      this.storage.agentSessions.updateStatus(session.id, "error");
+      if (!session.skipDb) this.storage.agentSessions.updateStatus(session.id, "error");
       this.pushEntry(session.id, {
         type: "error",
         message: `Error: Working directory does not exist: ${cwd}`,
@@ -190,7 +197,7 @@ export class AgentSessionManager {
       }
 
       session.status = code === 0 ? "stopped" : "error";
-      this.storage.agentSessions.updateStatus(session.id, session.status);
+      if (!session.skipDb) this.storage.agentSessions.updateStatus(session.id, session.status);
 
       // Send status patch and finished signal
       this.broadcastPatch(session.id, ConversationPatch.updateStatus(session.status));
@@ -201,7 +208,7 @@ export class AgentSessionManager {
     childProcess.on("error", (error) => {
       console.error(`[AgentSession] Process ${session.id} error:`, error);
       session.status = "error";
-      this.storage.agentSessions.updateStatus(session.id, "error");
+      if (!session.skipDb) this.storage.agentSessions.updateStatus(session.id, "error");
       this.pushEntry(session.id, {
         type: "error",
         message: error.message,
@@ -525,7 +532,7 @@ export class AgentSessionManager {
     try {
       session.process.kill("SIGTERM");
       session.status = "stopped";
-      this.storage.agentSessions.updateStatus(sessionId, "stopped");
+      if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "stopped");
       this.broadcastPatch(sessionId, ConversationPatch.updateStatus("stopped"));
       this.broadcastRaw(sessionId, { finished: true });
       return true;
@@ -539,9 +546,10 @@ export class AgentSessionManager {
    * Delete a session (stop and remove)
    */
   deleteSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
     this.stopSession(sessionId);
     this.sessions.delete(sessionId);
-    this.storage.agentSessions.delete(sessionId);
+    if (!session?.skipDb) this.storage.agentSessions.delete(sessionId);
     return true;
   }
 
@@ -578,7 +586,7 @@ export class AgentSessionManager {
 
     // 4. Update status to running
     session.status = "running";
-    this.storage.agentSessions.updateStatus(sessionId, "running");
+    if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "running");
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
 
     // 5. Calculate absolute worktree path and respawn

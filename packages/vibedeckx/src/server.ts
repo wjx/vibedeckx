@@ -580,7 +580,8 @@ export const createServer = (opts: { storage: Storage }) => {
     const sessionId = agentSessionManager.getOrCreateSession(
       pseudoProjectId,
       worktreePath || ".",
-      projectPath
+      projectPath,
+      true // skipDb: pseudo project ID doesn't exist in projects table
     );
 
     const session = agentSessionManager.getSession(sessionId);
@@ -1653,24 +1654,29 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    const sessionId = agentSessionManager.getOrCreateSession(
-      req.params.projectId,
-      worktreePath || ".",
-      project.path
-    );
+    try {
+      const sessionId = agentSessionManager.getOrCreateSession(
+        req.params.projectId,
+        worktreePath || ".",
+        project.path
+      );
 
-    const session = agentSessionManager.getSession(sessionId);
-    const messages = agentSessionManager.getMessages(sessionId);
+      const session = agentSessionManager.getSession(sessionId);
+      const messages = agentSessionManager.getMessages(sessionId);
 
-    return reply.code(200).send({
-      session: {
-        id: sessionId,
-        projectId: req.params.projectId,
-        worktreePath: worktreePath || ".",
-        status: session?.status || "running",
-      },
-      messages,
-    });
+      return reply.code(200).send({
+        session: {
+          id: sessionId,
+          projectId: req.params.projectId,
+          worktreePath: worktreePath || ".",
+          status: session?.status || "running",
+        },
+        messages,
+      });
+    } catch (error) {
+      console.error("[API] Failed to create agent session:", error);
+      return reply.code(500).send({ error: String(error) });
+    }
   });
 
   // 获取 Agent Session 详情和消息历史
