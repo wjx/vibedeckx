@@ -9,23 +9,33 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe } from "lucide-react";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil } from "lucide-react";
 import { api, type Project, type Worktree } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
+import { EditProjectDialog } from "./edit-project-dialog";
 
 interface ProjectCardProps {
   project: Project;
   selectedWorktree: string;
   onWorktreeChange: (path: string) => void;
+  onUpdateProject: (id: string, opts: {
+    name?: string;
+    path?: string | null;
+    remotePath?: string | null;
+    remoteUrl?: string | null;
+    remoteApiKey?: string | null;
+  }) => Promise<void> | Promise<unknown>;
+  onDeleteProject: (id: string) => Promise<void>;
 }
 
-export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: ProjectCardProps) {
+export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpdateProject, onDeleteProject }: ProjectCardProps) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = useState<Worktree | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
   const fetchWorktrees = useCallback(() => {
@@ -80,6 +90,26 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
               Remote
             </span>
           ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="h-7 w-7">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setEditDialogOpen(true)}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => onDeleteProject(project.id)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -170,6 +200,12 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange }: Pro
           />
         </div>
       </CardContent>
+      <EditProjectDialog
+        project={project}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onProjectUpdated={onUpdateProject}
+      />
     </Card>
   );
 }

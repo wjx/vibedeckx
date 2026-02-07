@@ -38,6 +38,21 @@ export function useProjects() {
     return project;
   };
 
+  const updateProject = async (id: string, opts: {
+    name?: string;
+    path?: string | null;
+    remotePath?: string | null;
+    remoteUrl?: string | null;
+    remoteApiKey?: string | null;
+  }) => {
+    const updated = await api.updateProject(id, opts);
+    setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    if (currentProject?.id === id) {
+      setCurrentProject(updated);
+    }
+    return updated;
+  };
+
   const deleteProject = async (id: string) => {
     await api.deleteProject(id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
@@ -55,6 +70,7 @@ export function useProjects() {
     currentProject,
     loading,
     createProject,
+    updateProject,
     deleteProject,
     selectProject,
     refresh: fetchProjects,

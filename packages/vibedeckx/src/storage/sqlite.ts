@@ -174,6 +174,47 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return row ? toProject(row) : undefined;
       },
 
+      update: (id: string, opts: { name?: string; path?: string | null; remote_path?: string | null; remote_url?: string | null; remote_api_key?: string | null }) => {
+        const updates: string[] = [];
+        const params: Record<string, unknown> = { id };
+
+        if (opts.name !== undefined) {
+          updates.push('name = @name');
+          params.name = opts.name;
+        }
+        if (opts.path !== undefined) {
+          updates.push('path = @path');
+          params.path = opts.path;
+        }
+        if (opts.remote_path !== undefined) {
+          updates.push('remote_path = @remote_path');
+          params.remote_path = opts.remote_path;
+        }
+        if (opts.remote_url !== undefined) {
+          updates.push('remote_url = @remote_url');
+          params.remote_url = opts.remote_url;
+        }
+        if (opts.remote_api_key !== undefined) {
+          updates.push('remote_api_key = @remote_api_key');
+          params.remote_api_key = opts.remote_api_key;
+        }
+
+        // Auto-derive is_remote from remote_url
+        if (opts.remote_url !== undefined) {
+          updates.push('is_remote = @is_remote');
+          params.is_remote = opts.remote_url ? 1 : 0;
+        }
+
+        if (updates.length === 0) {
+          const row = db.prepare<{ id: string }, ProjectRow>(`SELECT * FROM projects WHERE id = @id`).get({ id });
+          return row ? toProject(row) : undefined;
+        }
+
+        db.prepare(`UPDATE projects SET ${updates.join(', ')} WHERE id = @id`).run(params);
+        const row = db.prepare<{ id: string }, ProjectRow>(`SELECT * FROM projects WHERE id = @id`).get({ id });
+        return row ? toProject(row) : undefined;
+      },
+
       delete: (id: string) => {
         db.prepare(`DELETE FROM projects WHERE id = @id`).run({ id });
       },

@@ -54,6 +54,13 @@ export interface Storage {
     getAll: () => Project[];
     getById: (id: string) => Project | undefined;
     getByPath: (path: string) => Project | undefined;
+    update: (id: string, opts: {
+      name?: string;
+      path?: string | null;
+      remote_path?: string | null;
+      remote_url?: string | null;
+      remote_api_key?: string | null;
+    }) => Project | undefined;
     delete: (id: string) => void;
   };
   executors: {

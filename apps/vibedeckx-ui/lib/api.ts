@@ -167,6 +167,29 @@ export const api = {
     return data.project;
   },
 
+  async updateProject(
+    id: string,
+    opts: {
+      name?: string;
+      path?: string | null;
+      remotePath?: string | null;
+      remoteUrl?: string | null;
+      remoteApiKey?: string | null;
+    }
+  ): Promise<Project> {
+    const res = await fetch(`${getApiBase()}/api/projects/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.project;
+  },
+
   async deleteProject(id: string): Promise<void> {
     await fetch(`${getApiBase()}/api/projects/${id}`, {
       method: "DELETE",

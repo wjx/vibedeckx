@@ -19,6 +19,8 @@ export default function Home() {
     currentProject,
     loading: projectsLoading,
     createProject,
+    updateProject,
+    deleteProject,
     selectProject,
   } = useProjects();
 
@@ -86,6 +88,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 project={currentProject}
                 selectedWorktree={selectedWorktree}
                 onWorktreeChange={setSelectedWorktree}
+                onUpdateProject={updateProject}
+                onDeleteProject={deleteProject}
               />
             </div>
           )}

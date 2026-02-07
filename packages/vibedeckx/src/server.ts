@@ -777,6 +777,81 @@ export const createServer = (opts: { storage: Storage }) => {
     return reply.code(201).send({ project: sanitizeProject(project) });
   });
 
+  // 更新项目
+  server.put<{
+    Params: { id: string };
+    Body: {
+      name?: string;
+      path?: string | null;
+      remotePath?: string | null;
+      remoteUrl?: string | null;
+      remoteApiKey?: string | null;
+    };
+  }>("/api/projects/:id", async (req, reply) => {
+    const project = opts.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { name, path: newPath, remotePath, remoteUrl, remoteApiKey } = req.body;
+
+    // Build the effective state after update
+    const effectivePath = newPath !== undefined ? newPath : project.path;
+    const effectiveRemotePath = remotePath !== undefined ? remotePath : (project.remote_path ?? null);
+    const effectiveRemoteUrl = remoteUrl !== undefined ? remoteUrl : (project.remote_url ?? null);
+    const effectiveRemoteApiKey = remoteApiKey !== undefined ? remoteApiKey : (project.remote_api_key ?? null);
+
+    // Must have at least one of local path or remote path
+    if (!effectivePath && !effectiveRemotePath) {
+      return reply.code(400).send({ error: "Project must have at least one of local path or remote path" });
+    }
+
+    // If remote path is set, remote URL and API key are required
+    if (effectiveRemotePath && (!effectiveRemoteUrl || !effectiveRemoteApiKey)) {
+      return reply.code(400).send({ error: "Remote URL and API key are required when remote path is provided" });
+    }
+
+    // Check path uniqueness (excluding current project)
+    if (newPath && newPath !== project.path) {
+      const existing = opts.storage.projects.getByPath(newPath);
+      if (existing && existing.id !== req.params.id) {
+        return reply.code(409).send({ error: "Another project already uses this path" });
+      }
+
+      // Create .vibedeckx directory for new local path
+      const vibedeckxDir = path.join(newPath, ".vibedeckx");
+      await mkdir(vibedeckxDir, { recursive: true });
+      const configPath = path.join(vibedeckxDir, "config.json");
+      const config = {
+        name: name ?? project.name,
+        created_at: new Date().toISOString(),
+      };
+      await writeFile(configPath, JSON.stringify(config, null, 2));
+    }
+
+    // Build update opts for storage
+    const updateOpts: {
+      name?: string;
+      path?: string | null;
+      remote_path?: string | null;
+      remote_url?: string | null;
+      remote_api_key?: string | null;
+    } = {};
+
+    if (name !== undefined) updateOpts.name = name;
+    if (newPath !== undefined) updateOpts.path = newPath;
+    if (remotePath !== undefined) updateOpts.remote_path = remotePath;
+    if (remoteUrl !== undefined) updateOpts.remote_url = remoteUrl;
+    if (remoteApiKey !== undefined) updateOpts.remote_api_key = remoteApiKey;
+
+    const updated = opts.storage.projects.update(req.params.id, updateOpts);
+    if (!updated) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    return reply.code(200).send({ project: sanitizeProject(updated) });
+  });
+
   // 删除项目
   server.delete<{ Params: { id: string } }>("/api/projects/:id", async (req, reply) => {
     const project = opts.storage.projects.getById(req.params.id);
