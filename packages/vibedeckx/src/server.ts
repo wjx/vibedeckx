@@ -1707,6 +1707,17 @@ export const createServer = (opts: { storage: Storage }) => {
 
   // ==================== Agent Session API ====================
 
+  // Resolve project path from a session's projectId.
+  // Handles both real DB projects and path-based pseudo IDs ("path:/some/path")
+  // used by remote execution sessions.
+  function resolveProjectPath(projectId: string): string | null {
+    if (projectId.startsWith("path:")) {
+      return projectId.slice(5);
+    }
+    const project = opts.storage.projects.getById(projectId);
+    return project?.path ?? null;
+  }
+
   // Map to track remote session IDs: localSessionId -> { remoteUrl, remoteApiKey, remoteSessionId }
   const remoteSessionMap = new Map<string, { remoteUrl: string; remoteApiKey: string; remoteSessionId: string }>();
 
@@ -1953,16 +1964,12 @@ export const createServer = (opts: { storage: Storage }) => {
         return reply.code(404).send({ error: "Session not found" });
       }
 
-      const project = opts.storage.projects.getById(session.projectId);
-      if (!project) {
-        return reply.code(404).send({ error: "Project not found" });
+      const projectPath = resolveProjectPath(session.projectId);
+      if (!projectPath) {
+        return reply.code(404).send({ error: "Project not found or has no local path" });
       }
 
-      if (!project.path) {
-        return reply.code(400).send({ error: "Project has no local path" });
-      }
-
-      const restarted = agentSessionManager.restartSession(req.params.sessionId, project.path);
+      const restarted = agentSessionManager.restartSession(req.params.sessionId, projectPath);
       if (!restarted) {
         return reply.code(500).send({ error: "Failed to restart session" });
       }
@@ -2003,16 +2010,12 @@ export const createServer = (opts: { storage: Storage }) => {
         return reply.code(404).send({ error: "Session not found" });
       }
 
-      const project = opts.storage.projects.getById(session.projectId);
-      if (!project) {
-        return reply.code(404).send({ error: "Project not found" });
+      const projectPath = resolveProjectPath(session.projectId);
+      if (!projectPath) {
+        return reply.code(404).send({ error: "Project not found or has no local path" });
       }
 
-      if (!project.path) {
-        return reply.code(400).send({ error: "Project has no local path" });
-      }
-
-      const switched = agentSessionManager.switchMode(req.params.sessionId, project.path, mode);
+      const switched = agentSessionManager.switchMode(req.params.sessionId, projectPath, mode);
       if (!switched) {
         return reply.code(500).send({ error: "Failed to switch mode" });
       }
@@ -2053,18 +2056,14 @@ export const createServer = (opts: { storage: Storage }) => {
         return reply.code(404).send({ error: "Session not found" });
       }
 
-      const project = opts.storage.projects.getById(session.projectId);
-      if (!project) {
-        return reply.code(404).send({ error: "Project not found" });
-      }
-
-      if (!project.path) {
-        return reply.code(400).send({ error: "Project has no local path" });
+      const projectPath = resolveProjectPath(session.projectId);
+      if (!projectPath) {
+        return reply.code(404).send({ error: "Project not found or has no local path" });
       }
 
       const accepted = agentSessionManager.acceptPlanAndRestart(
         req.params.sessionId,
-        project.path,
+        projectPath,
         planContent
       );
       if (!accepted) {
