@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execFileSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import type { WebSocket } from "@fastify/websocket";
@@ -41,9 +41,29 @@ interface RunningSession {
 export class AgentSessionManager {
   private sessions: Map<string, RunningSession> = new Map();
   private storage: Storage;
+  private claudeBinaryPath: string | null | undefined = undefined; // undefined = not yet checked
 
   constructor(storage: Storage) {
     this.storage = storage;
+  }
+
+  private detectClaudeBinary(): string | null {
+    if (this.claudeBinaryPath !== undefined) {
+      return this.claudeBinaryPath;
+    }
+    try {
+      const cmd = process.platform === "win32" ? "where" : "which";
+      const result = execFileSync(cmd, ["claude"], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      this.claudeBinaryPath = result || null;
+      console.log(`[AgentSession] Native claude binary found: ${result}`);
+    } catch {
+      this.claudeBinaryPath = null;
+      console.log(`[AgentSession] Native claude binary not found, will use npx`);
+    }
+    return this.claudeBinaryPath;
   }
 
   /**
@@ -152,9 +172,9 @@ export class AgentSessionManager {
       return;
     }
 
-    const args = [
-      "-y",
-      "@anthropic-ai/claude-code",
+    const nativeBinary = this.detectClaudeBinary();
+
+    const claudeArgs = [
       "-p",
       "--output-format=stream-json",
       "--input-format=stream-json",
@@ -162,7 +182,18 @@ export class AgentSessionManager {
       "--verbose",
     ];
 
-    const childProcess = spawn("npx", args, {
+    let command: string;
+    let args: string[];
+
+    if (nativeBinary) {
+      command = nativeBinary;
+      args = claudeArgs;
+    } else {
+      command = "npx";
+      args = ["-y", "@anthropic-ai/claude-code", ...claudeArgs];
+    }
+
+    const childProcess = spawn(command, args, {
       cwd,
       env: { ...process.env, FORCE_COLOR: "1" },
       stdio: ["pipe", "pipe", "pipe"],
