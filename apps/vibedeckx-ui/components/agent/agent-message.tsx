@@ -1,15 +1,17 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { AskUserQuestion } from "./ask-user-question";
 
 interface AgentMessageProps {
   message: AgentMessage;
+  messageIndex: number;
 }
 
-export function AgentMessageItem({ message }: AgentMessageProps) {
+export function AgentMessageItem({ message, messageIndex }: AgentMessageProps) {
   switch (message.type) {
     case "user":
       return <UserMessage content={message.content} />;
@@ -18,7 +20,7 @@ export function AgentMessageItem({ message }: AgentMessageProps) {
       return <AssistantMessage content={message.content} />;
 
     case "tool_use":
-      return <ToolUseMessage tool={message.tool} input={message.input} />;
+      return <ToolUseMessage tool={message.tool} input={message.input} messageIndex={messageIndex} />;
 
     case "tool_result":
       return <ToolResultMessage tool={message.tool} output={message.output} />;
@@ -67,7 +69,21 @@ function AssistantMessage({ content }: { content: string }) {
   );
 }
 
-function ToolUseMessage({ tool, input }: { tool: string; input: unknown }) {
+function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: unknown; messageIndex: number }) {
+  if (tool === "AskUserQuestion") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center">
+          <HelpCircle className="w-4 h-4 text-violet-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-violet-500 mb-1">Question</p>
+          <AskUserQuestion input={input} messageIndex={messageIndex} />
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (

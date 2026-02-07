@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
+import type { AgentMessage } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,19 @@ import { Loader } from "@/components/ai-elements/loader";
 import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
 import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
 import type { Project, ExecutionMode } from "@/lib/api";
+
+interface AgentConversationContextValue {
+  sendMessage: (content: string, sessionId?: string) => void;
+  messages: AgentMessage[];
+}
+
+const AgentConversationContext = createContext<AgentConversationContextValue | null>(null);
+
+export function useAgentConversation() {
+  const ctx = useContext(AgentConversationContext);
+  if (!ctx) throw new Error("useAgentConversation must be used within AgentConversationContext");
+  return ctx;
+}
 
 interface AgentConversationProps {
   projectId: string | null;
@@ -164,17 +178,19 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               </p>
             </div>
           ) : (
-            <div className="space-y-1">
-              {messages.map((msg, index) => (
-                <AgentMessageItem key={index} message={msg} />
-              ))}
-              {isLoading && (
-                <div className="flex items-center gap-2 py-4 text-muted-foreground">
-                  <Loader className="h-4 w-4" />
-                  <span className="text-sm">Claude is thinking...</span>
-                </div>
-              )}
-            </div>
+            <AgentConversationContext.Provider value={{ sendMessage, messages }}>
+              <div className="space-y-1">
+                {messages.map((msg, index) => (
+                  <AgentMessageItem key={index} message={msg} messageIndex={index} />
+                ))}
+                {isLoading && (
+                  <div className="flex items-center gap-2 py-4 text-muted-foreground">
+                    <Loader className="h-4 w-4" />
+                    <span className="text-sm">Claude is thinking...</span>
+                  </div>
+                )}
+              </div>
+            </AgentConversationContext.Provider>
           )}
 
           {error && (
