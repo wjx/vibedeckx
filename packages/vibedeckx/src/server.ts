@@ -93,6 +93,72 @@ export const createServer = (opts: { storage: Storage }) => {
 
         console.log(`[WebSocket] Client connected for process ${processId}`);
 
+        // Remote executor process proxy
+        if (processId.startsWith("remote-")) {
+          const remoteInfo = remoteExecutorMap.get(processId);
+          if (!remoteInfo) {
+            console.log(`[WebSocket] Remote process ${processId} not found in map`);
+            socket.send(JSON.stringify({ type: "error", message: "Remote process not found" }));
+            socket.close();
+            return;
+          }
+
+          // Create WebSocket connection to remote server
+          const cleanRemoteUrl = remoteInfo.remoteUrl.replace(/\/+$/, "");
+          const wsProtocol = cleanRemoteUrl.startsWith("https") ? "wss" : "ws";
+          const wsUrl = cleanRemoteUrl.replace(/^https?/, wsProtocol);
+          const remoteWsUrl = `${wsUrl}/api/executor-processes/${remoteInfo.remoteProcessId}/logs?apiKey=${encodeURIComponent(remoteInfo.remoteApiKey)}`;
+
+          console.log(`[WebSocket] Proxying to remote: ${remoteWsUrl.replace(remoteInfo.remoteApiKey, "***")}`);
+
+          const remoteWs = new WebSocket(remoteWsUrl);
+
+          remoteWs.on("open", () => {
+            console.log(`[WebSocket] Connected to remote process ${remoteInfo.remoteProcessId}`);
+          });
+
+          // Forward messages from remote to client
+          remoteWs.on("message", (data) => {
+            try {
+              socket.send(data.toString());
+            } catch (error) {
+              console.error("[WebSocket] Failed to forward message to client:", error);
+            }
+          });
+
+          // Forward messages from client to remote (input, resize for PTY)
+          socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+            try {
+              if (remoteWs.readyState === WebSocket.OPEN) {
+                remoteWs.send(data.toString());
+              }
+            } catch (error) {
+              console.error("[WebSocket] Failed to forward message to remote:", error);
+            }
+          });
+
+          // Handle remote connection close
+          remoteWs.on("close", () => {
+            console.log(`[WebSocket] Remote connection closed for process ${processId}`);
+            socket.close();
+          });
+
+          // Handle remote connection error
+          remoteWs.on("error", (error) => {
+            console.error(`[WebSocket] Remote connection error:`, error);
+            socket.send(JSON.stringify({ type: "error", message: "Remote connection error" }));
+            socket.close();
+          });
+
+          // Handle client connection close
+          socket.on("close", () => {
+            console.log(`[WebSocket] Client disconnected from remote process ${processId}`);
+            remoteWs.close();
+          });
+
+          return;
+        }
+
         // Send PTY mode info first
         const isPty = processManager.isPtyProcess(processId);
         socket.send(JSON.stringify({ type: "init", isPty }));
@@ -1498,6 +1564,13 @@ export const createServer = (opts: { storage: Storage }) => {
 
   // ==================== Process Control API ====================
 
+  // Map to track remote executor processes: localProcessId -> { remoteUrl, remoteApiKey, remoteProcessId }
+  const remoteExecutorMap = new Map<string, {
+    remoteUrl: string;
+    remoteApiKey: string;
+    remoteProcessId: string;
+  }>();
+
   // 启动 Executor
   server.post<{ Params: { id: string }; Body: { worktreePath?: string } }>("/api/executors/:id/start", async (req, reply) => {
     const executor = opts.storage.executors.getById(req.params.id);
@@ -1535,7 +1608,17 @@ export const createServer = (opts: { storage: Storage }) => {
           pty: executor.pty,
         }
       );
-      return reply.code(result.status || 200).send(result.data);
+      if (result.ok) {
+        const remoteData = result.data as { processId: string };
+        const localProcessId = `remote-${executor.id}-${remoteData.processId}`;
+        remoteExecutorMap.set(localProcessId, {
+          remoteUrl: project.remote_url!,
+          remoteApiKey: project.remote_api_key!,
+          remoteProcessId: remoteData.processId,
+        });
+        return reply.code(200).send({ processId: localProcessId });
+      }
+      return reply.code(result.status || 502).send(result.data);
     }
 
     if (!project.path) {
@@ -1705,6 +1788,21 @@ export const createServer = (opts: { storage: Storage }) => {
   server.get<{ Params: { sessionId: string } }>(
     "/api/agent-sessions/:sessionId",
     async (req, reply) => {
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "GET",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}`
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
       const session = agentSessionManager.getSession(req.params.sessionId);
       if (!session) {
         return reply.code(404).send({ error: "Session not found" });
@@ -1735,6 +1833,22 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(400).send({ error: "Content is required" });
     }
 
+    // Remote session proxy
+    if (req.params.sessionId.startsWith("remote-")) {
+      const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+      if (!remoteInfo) {
+        return reply.code(404).send({ error: "Remote session not found" });
+      }
+      const result = await proxyToRemote(
+        remoteInfo.remoteUrl,
+        remoteInfo.remoteApiKey,
+        "POST",
+        `/api/agent-sessions/${remoteInfo.remoteSessionId}/message`,
+        { content }
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
     const success = agentSessionManager.sendUserMessage(req.params.sessionId, content);
     if (!success) {
       return reply.code(404).send({ error: "Session not found or not running" });
@@ -1747,6 +1861,21 @@ export const createServer = (opts: { storage: Storage }) => {
   server.post<{ Params: { sessionId: string } }>(
     "/api/agent-sessions/:sessionId/stop",
     async (req, reply) => {
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/stop`
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
       const stopped = agentSessionManager.stopSession(req.params.sessionId);
       if (!stopped) {
         return reply.code(404).send({ error: "Session not found" });
@@ -1759,6 +1888,21 @@ export const createServer = (opts: { storage: Storage }) => {
   server.post<{ Params: { sessionId: string } }>(
     "/api/agent-sessions/:sessionId/restart",
     async (req, reply) => {
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/restart`
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
       const session = agentSessionManager.getSession(req.params.sessionId);
       if (!session) {
         return reply.code(404).send({ error: "Session not found" });
@@ -1785,6 +1929,22 @@ export const createServer = (opts: { storage: Storage }) => {
   server.delete<{ Params: { sessionId: string } }>(
     "/api/agent-sessions/:sessionId",
     async (req, reply) => {
+      // Remote session proxy
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "DELETE",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}`
+        );
+        remoteSessionMap.delete(req.params.sessionId);
+        return reply.code(result.status || 200).send(result.data);
+      }
+
       const deleted = agentSessionManager.deleteSession(req.params.sessionId);
       if (!deleted) {
         return reply.code(404).send({ error: "Session not found" });
