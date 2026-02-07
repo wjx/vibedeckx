@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage } from "./types.js";
+import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -91,6 +91,15 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     db.exec("UPDATE projects SET remote_path = path, path = NULL WHERE is_remote = 1");
   }
 
+  // Migration: add agent_mode and executor_mode columns
+  const hasAgentModeColumn = projectTableInfo.some((col) => col.name === "agent_mode");
+  if (!hasAgentModeColumn) {
+    db.exec("ALTER TABLE projects ADD COLUMN agent_mode TEXT DEFAULT 'local'");
+    db.exec("ALTER TABLE projects ADD COLUMN executor_mode TEXT DEFAULT 'local'");
+    db.exec("UPDATE projects SET agent_mode = 'local' WHERE agent_mode IS NULL");
+    db.exec("UPDATE projects SET executor_mode = 'local' WHERE executor_mode IS NULL");
+  }
+
   return db;
 };
 
@@ -107,6 +116,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     is_remote: number;
     remote_url: string | null;
     remote_api_key: string | null;
+    agent_mode: string | null;
+    executor_mode: string | null;
     created_at: string;
   }): Project => ({
     id: row.id,
@@ -116,6 +127,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     remote_path: row.remote_path ?? undefined,
     remote_url: row.remote_url ?? undefined,
     remote_api_key: row.remote_api_key ?? undefined,
+    agent_mode: (row.agent_mode as ExecutionMode) ?? 'local',
+    executor_mode: (row.executor_mode as ExecutionMode) ?? 'local',
     created_at: row.created_at,
   });
 
@@ -127,16 +140,18 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     is_remote: number;
     remote_url: string | null;
     remote_api_key: string | null;
+    agent_mode: string | null;
+    executor_mode: string | null;
     created_at: string;
   };
 
   return {
     projects: {
-      create: ({ id, name, path: projectPath, remote_path, remote_url, remote_api_key }) => {
+      create: ({ id, name, path: projectPath, remote_path, remote_url, remote_api_key, agent_mode, executor_mode }) => {
         const is_remote = remote_url ? 1 : 0;
         db.prepare(
-          `INSERT INTO projects (id, name, path, remote_path, is_remote, remote_url, remote_api_key)
-           VALUES (@id, @name, @path, @remote_path, @is_remote, @remote_url, @remote_api_key)`
+          `INSERT INTO projects (id, name, path, remote_path, is_remote, remote_url, remote_api_key, agent_mode, executor_mode)
+           VALUES (@id, @name, @path, @remote_path, @is_remote, @remote_url, @remote_api_key, @agent_mode, @executor_mode)`
         ).run({
           id,
           name,
@@ -145,6 +160,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           is_remote,
           remote_url: remote_url ?? null,
           remote_api_key: remote_api_key ?? null,
+          agent_mode: agent_mode ?? 'local',
+          executor_mode: executor_mode ?? 'local',
         });
 
         const row = db
@@ -174,7 +191,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return row ? toProject(row) : undefined;
       },
 
-      update: (id: string, opts: { name?: string; path?: string | null; remote_path?: string | null; remote_url?: string | null; remote_api_key?: string | null }) => {
+      update: (id: string, opts: { name?: string; path?: string | null; remote_path?: string | null; remote_url?: string | null; remote_api_key?: string | null; agent_mode?: ExecutionMode; executor_mode?: ExecutionMode }) => {
         const updates: string[] = [];
         const params: Record<string, unknown> = { id };
 
@@ -197,6 +214,14 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         if (opts.remote_api_key !== undefined) {
           updates.push('remote_api_key = @remote_api_key');
           params.remote_api_key = opts.remote_api_key;
+        }
+        if (opts.agent_mode !== undefined) {
+          updates.push('agent_mode = @agent_mode');
+          params.agent_mode = opts.agent_mode;
+        }
+        if (opts.executor_mode !== undefined) {
+          updates.push('executor_mode = @executor_mode');
+          params.executor_mode = opts.executor_mode;
         }
 
         // Auto-derive is_remote from remote_url

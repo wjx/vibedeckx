@@ -7,6 +7,8 @@ import { Plus, Terminal } from "lucide-react";
 import { ExecutorItem } from "./executor-item";
 import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
+import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import type { Project, ExecutionMode } from "@/lib/api";
 import {
   DndContext,
   KeyboardSensor,
@@ -27,6 +29,8 @@ import {
 interface ExecutorPanelProps {
   projectId: string | null;
   selectedWorktree?: string;
+  project?: Project | null;
+  onExecutorModeChange?: (mode: ExecutionMode) => void;
 }
 
 // Custom collision detection that only considers the header region (52px) of each item
@@ -93,7 +97,7 @@ const headerOnlyCollision: CollisionDetection = (args) => {
   return closest ? [{ id: closest.id, data: closest.data }] : [];
 };
 
-export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProps) {
+export function ExecutorPanel({ projectId, selectedWorktree, project, onExecutorModeChange }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const {
     executors,
@@ -144,10 +148,18 @@ export function ExecutorPanel({ projectId, selectedWorktree }: ExecutorPanelProp
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between p-4 border-b h-14">
-        <h2 className="font-semibold flex items-center gap-2">
-          <Terminal className="h-5 w-5" />
-          Executors
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Terminal className="h-5 w-5" />
+            Executors
+          </h2>
+          {project && project.path && project.remote_path && onExecutorModeChange && (
+            <ExecutionModeToggle
+              mode={project.executor_mode}
+              onModeChange={onExecutorModeChange}
+            />
+          )}
+        </div>
         <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
           Add

@@ -36,6 +36,8 @@ export function getWebSocketUrl(path: string): string {
   return `${protocol}//${host}${path}`;
 }
 
+export type ExecutionMode = 'local' | 'remote';
+
 export interface Project {
   id: string;
   name: string;
@@ -43,6 +45,8 @@ export interface Project {
   remote_path?: string;
   is_remote: boolean;
   remote_url?: string;
+  agent_mode: ExecutionMode;
+  executor_mode: ExecutionMode;
   created_at: string;
 }
 
@@ -175,6 +179,8 @@ export const api = {
       remotePath?: string | null;
       remoteUrl?: string | null;
       remoteApiKey?: string | null;
+      agentMode?: ExecutionMode;
+      executorMode?: ExecutionMode;
     }
   ): Promise<Project> {
     const res = await fetch(`${getApiBase()}/api/projects/${id}`, {
@@ -391,5 +397,13 @@ export const api = {
     remoteApiKey: string
   ): Promise<Project> {
     return this.createProject({ name, remotePath, remoteUrl, remoteApiKey });
+  },
+
+  async updateProjectMode(
+    id: string,
+    field: 'agentMode' | 'executorMode',
+    mode: ExecutionMode
+  ): Promise<Project> {
+    return this.updateProject(id, { [field]: mode });
   },
 };

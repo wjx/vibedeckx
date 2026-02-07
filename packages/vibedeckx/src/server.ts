@@ -725,9 +725,11 @@ export const createServer = (opts: { storage: Storage }) => {
       remotePath?: string;
       remoteUrl?: string;
       remoteApiKey?: string;
+      agentMode?: 'local' | 'remote';
+      executorMode?: 'local' | 'remote';
     };
   }>("/api/projects", async (req, reply) => {
-    const { name, path: projectPath, remotePath, remoteUrl, remoteApiKey } = req.body;
+    const { name, path: projectPath, remotePath, remoteUrl, remoteApiKey, agentMode, executorMode } = req.body;
 
     if (!name) {
       return reply.code(400).send({ error: "Project name is required" });
@@ -772,6 +774,8 @@ export const createServer = (opts: { storage: Storage }) => {
       remote_path: remotePath,
       remote_url: remoteUrl,
       remote_api_key: remoteApiKey,
+      agent_mode: agentMode,
+      executor_mode: executorMode,
     });
 
     return reply.code(201).send({ project: sanitizeProject(project) });
@@ -786,6 +790,8 @@ export const createServer = (opts: { storage: Storage }) => {
       remotePath?: string | null;
       remoteUrl?: string | null;
       remoteApiKey?: string | null;
+      agentMode?: 'local' | 'remote';
+      executorMode?: 'local' | 'remote';
     };
   }>("/api/projects/:id", async (req, reply) => {
     const project = opts.storage.projects.getById(req.params.id);
@@ -793,7 +799,7 @@ export const createServer = (opts: { storage: Storage }) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { name, path: newPath, remotePath, remoteUrl, remoteApiKey } = req.body;
+    const { name, path: newPath, remotePath, remoteUrl, remoteApiKey, agentMode, executorMode } = req.body;
 
     // Build the effective state after update
     const effectivePath = newPath !== undefined ? newPath : project.path;
@@ -836,6 +842,8 @@ export const createServer = (opts: { storage: Storage }) => {
       remote_path?: string | null;
       remote_url?: string | null;
       remote_api_key?: string | null;
+      agent_mode?: 'local' | 'remote';
+      executor_mode?: 'local' | 'remote';
     } = {};
 
     if (name !== undefined) updateOpts.name = name;
@@ -843,6 +851,8 @@ export const createServer = (opts: { storage: Storage }) => {
     if (remotePath !== undefined) updateOpts.remote_path = remotePath;
     if (remoteUrl !== undefined) updateOpts.remote_url = remoteUrl;
     if (remoteApiKey !== undefined) updateOpts.remote_api_key = remoteApiKey;
+    if (agentMode !== undefined) updateOpts.agent_mode = agentMode;
+    if (executorMode !== undefined) updateOpts.executor_mode = executorMode;
 
     const updated = opts.storage.projects.update(req.params.id, updateOpts);
     if (!updated) {
@@ -1497,11 +1507,16 @@ export const createServer = (opts: { storage: Storage }) => {
       ? path.join(worktreePath, executor.cwd || "")
       : executor.cwd || "";
 
-    // Proxy to remote if this is a remote-only project (no local path)
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    // Determine if we should execute remotely:
+    // - Remote-only projects (no local path): always remote
+    // - Hybrid projects (both paths): check executor_mode setting
+    const useRemoteExecutor = project.remote_url && project.remote_api_key && project.remote_path &&
+      (!project.path || project.executor_mode === 'remote');
+
+    if (useRemoteExecutor) {
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        project.remote_url!,
+        project.remote_api_key!,
         "POST",
         `/api/path/execute`,
         {
@@ -1595,11 +1610,16 @@ export const createServer = (opts: { storage: Storage }) => {
 
     const { worktreePath } = req.body;
 
-    // Proxy to remote if this is a remote-only project (no local path)
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    // Determine if we should run agent remotely:
+    // - Remote-only projects (no local path): always remote
+    // - Hybrid projects (both paths): check agent_mode setting
+    const useRemoteAgent = project.remote_url && project.remote_api_key && project.remote_path &&
+      (!project.path || project.agent_mode === 'remote');
+
+    if (useRemoteAgent) {
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        project.remote_url!,
+        project.remote_api_key!,
         "POST",
         `/api/path/agent-sessions`,
         { path: project.remote_path, worktreePath }
@@ -1610,8 +1630,8 @@ export const createServer = (opts: { storage: Storage }) => {
         // Store mapping for WebSocket proxy
         const localSessionId = `remote-${project.id}-${remoteData.session.id}`;
         remoteSessionMap.set(localSessionId, {
-          remoteUrl: project.remote_url,
-          remoteApiKey: project.remote_api_key,
+          remoteUrl: project.remote_url!,
+          remoteApiKey: project.remote_api_key!,
           remoteSessionId: remoteData.session.id,
         });
 

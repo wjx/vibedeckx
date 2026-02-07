@@ -1,3 +1,5 @@
+export type ExecutionMode = 'local' | 'remote';
+
 export interface Project {
   id: string;
   name: string;
@@ -6,6 +8,8 @@ export interface Project {
   is_remote: boolean;
   remote_url?: string;
   remote_api_key?: string;
+  agent_mode: ExecutionMode;
+  executor_mode: ExecutionMode;
   created_at: string;
 }
 
@@ -50,6 +54,8 @@ export interface Storage {
       remote_path?: string;
       remote_url?: string;
       remote_api_key?: string;
+      agent_mode?: ExecutionMode;
+      executor_mode?: ExecutionMode;
     }) => Project;
     getAll: () => Project[];
     getById: (id: string) => Project | undefined;
@@ -60,6 +66,8 @@ export interface Storage {
       remote_path?: string | null;
       remote_url?: string | null;
       remote_api_key?: string | null;
+      agent_mode?: ExecutionMode;
+      executor_mode?: ExecutionMode;
     }) => Project | undefined;
     delete: (id: string) => void;
   };

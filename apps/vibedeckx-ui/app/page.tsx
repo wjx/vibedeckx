@@ -8,6 +8,7 @@ import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
+import type { ExecutionMode } from '@/lib/api';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -41,6 +42,24 @@ Please proceed step by step and let me know if there are any issues or conflicts
 
     agentRef.current?.submitMessage(prompt);
   }, []);
+
+  const handleAgentModeChange = useCallback(async (mode: ExecutionMode) => {
+    if (!currentProject) return;
+    try {
+      await updateProject(currentProject.id, { agentMode: mode });
+    } catch (error) {
+      console.error('Failed to update agent mode:', error);
+    }
+  }, [currentProject, updateProject]);
+
+  const handleExecutorModeChange = useCallback(async (mode: ExecutionMode) => {
+    if (!currentProject) return;
+    try {
+      await updateProject(currentProject.id, { executorMode: mode });
+    } catch (error) {
+      console.error('Failed to update executor mode:', error);
+    }
+  }, [currentProject, updateProject]);
 
   // 显示欢迎页面（无项目时）
   if (!projectsLoading && projects.length === 0) {
@@ -100,6 +119,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
               ref={agentRef}
               projectId={currentProject?.id ?? null}
               worktreePath={selectedWorktree}
+              project={currentProject}
+              onAgentModeChange={handleAgentModeChange}
             />
           </div>
         </div>
@@ -110,6 +131,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
             projectId={currentProject?.id ?? null}
             selectedWorktree={selectedWorktree}
             onMergeRequest={handleMergeRequest}
+            project={currentProject}
+            onExecutorModeChange={handleExecutorModeChange}
           />
         </div>
       </div>

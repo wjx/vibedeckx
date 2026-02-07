@@ -12,10 +12,14 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
 import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
+import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import type { Project, ExecutionMode } from "@/lib/api";
 
 interface AgentConversationProps {
   projectId: string | null;
   worktreePath: string;
+  project?: Project | null;
+  onAgentModeChange?: (mode: ExecutionMode) => void;
 }
 
 export interface AgentConversationHandle {
@@ -23,7 +27,7 @@ export interface AgentConversationHandle {
 }
 
 export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
-  function AgentConversation({ projectId, worktreePath }, ref) {
+  function AgentConversation({ projectId, worktreePath, project, onAgentModeChange }, ref) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +97,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-violet-500" />
           <span className="text-sm font-medium">Claude Code</span>
+          {project && project.path && project.remote_path && onAgentModeChange && (
+            <ExecutionModeToggle
+              mode={project.agent_mode}
+              onModeChange={onAgentModeChange}
+            />
+          )}
           {session && (
             <span
               className={`flex items-center gap-1 text-xs ${

@@ -5,16 +5,19 @@ import { cn } from '@/lib/utils';
 import { Terminal, GitBranch } from 'lucide-react';
 import { ExecutorPanel } from '@/components/executor';
 import { DiffPanel } from '@/components/diff';
+import type { Project, ExecutionMode } from '@/lib/api';
 
 interface RightPanelProps {
   projectId: string | null;
   selectedWorktree?: string;
   onMergeRequest?: () => void;
+  project?: Project | null;
+  onExecutorModeChange?: (mode: ExecutionMode) => void;
 }
 
 type TabType = 'executors' | 'diff';
 
-export function RightPanel({ projectId, selectedWorktree, onMergeRequest }: RightPanelProps) {
+export function RightPanel({ projectId, selectedWorktree, onMergeRequest, project, onExecutorModeChange }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('executors');
 
   return (
@@ -53,6 +56,8 @@ export function RightPanel({ projectId, selectedWorktree, onMergeRequest }: Righ
           <ExecutorPanel
             projectId={projectId}
             selectedWorktree={selectedWorktree}
+            project={project}
+            onExecutorModeChange={onExecutorModeChange}
           />
         ) : (
           <DiffPanel

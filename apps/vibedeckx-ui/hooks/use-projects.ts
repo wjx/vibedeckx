@@ -44,6 +44,8 @@ export function useProjects() {
     remotePath?: string | null;
     remoteUrl?: string | null;
     remoteApiKey?: string | null;
+    agentMode?: 'local' | 'remote';
+    executorMode?: 'local' | 'remote';
   }) => {
     const updated = await api.updateProject(id, opts);
     setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
