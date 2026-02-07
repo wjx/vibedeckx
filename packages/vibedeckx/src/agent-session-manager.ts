@@ -178,7 +178,7 @@ export class AgentSessionManager {
       "-p",
       "--output-format=stream-json",
       "--input-format=stream-json",
-      "--permission-mode plan",
+      "--dangerously-skip-permissions",
       "--verbose",
     ];
 
