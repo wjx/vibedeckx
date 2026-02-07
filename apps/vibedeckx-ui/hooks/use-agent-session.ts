@@ -193,7 +193,7 @@ function deduplicatePatches(patches: Patch[]): Patch {
 
 // ============ Hook ============
 
-export function useAgentSession(projectId: string | null, worktreePath: string) {
+export function useAgentSession(projectId: string | null, worktreePath: string, agentMode?: string) {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentSessionStatus>("stopped");
@@ -490,7 +490,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string) 
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
-  }, [projectId, worktreePath]);
+  }, [projectId, worktreePath, agentMode]);
 
   // Auto-start session after mount or worktree switch
   useEffect(() => {

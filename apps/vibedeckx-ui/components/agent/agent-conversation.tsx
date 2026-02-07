@@ -40,7 +40,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     startSession,
     sendMessage,
     restartSession,
-  } = useAgentSession(projectId, worktreePath);
+  } = useAgentSession(projectId, worktreePath, project?.agent_mode);
 
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
