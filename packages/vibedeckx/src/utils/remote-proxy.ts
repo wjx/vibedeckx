@@ -13,14 +13,17 @@ export async function proxyToRemote(
 ): Promise<ProxyResult> {
   try {
     const baseUrl = remoteUrl.replace(/\/+$/, "");
+    const headers: Record<string, string> = {
+      "X-Vibedeckx-Api-Key": apiKey,
+      "User-Agent": "Vibedeckx/1.0",
+    };
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
     const response = await fetch(`${baseUrl}${apiPath}`, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Vibedeckx-Api-Key": apiKey,
-        "User-Agent": "Vibedeckx/1.0",
-      },
-      body: body ? JSON.stringify(body) : undefined,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     const contentType = response.headers.get("content-type") || "";
