@@ -185,7 +185,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       </div>
 
       {/* Messages area */}
-      <Conversation className="flex-1 min-h-0">
+      <Conversation className="flex-1 min-h-0" initial="instant">
         <ConversationContent className="gap-1 p-4">
           {!session && messages.length === 0 ? (
             <div className="text-center py-12">

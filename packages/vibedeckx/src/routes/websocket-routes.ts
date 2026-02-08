@@ -140,6 +140,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
         console.log(`[AgentWS] Client connected for session ${sessionId}`);
 
+        // Ping/pong keepalive to prevent idle disconnections (code 1005)
+        const pingInterval = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.ping();
+          }
+        }, 30000); // Ping every 30 seconds
+
         if (sessionId.startsWith("remote-")) {
           const remoteInfo = fastify.remoteSessionMap.get(sessionId);
           if (!remoteInfo) {
@@ -193,6 +200,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
           socket.on("close", () => {
             console.log(`[AgentWS] Client disconnected from remote session ${sessionId}`);
+            clearInterval(pingInterval);
             remoteWs.close();
           });
 
@@ -204,7 +212,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
         if (!unsubscribe) {
           console.log(`[AgentWS] Session ${sessionId} not found`);
-          socket.send(JSON.stringify({ type: "error", message: "Session not found" }));
+          clearInterval(pingInterval);
+          socket.send(JSON.stringify({ error: "Session not found" }));
           socket.close();
           return;
         }
@@ -222,6 +231,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
         socket.on("close", () => {
           console.log(`[AgentWS] Client disconnected from session ${sessionId}`);
+          clearInterval(pingInterval);
           unsubscribe?.();
         });
       }

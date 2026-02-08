@@ -237,6 +237,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
   const connectionStartTimeRef = useRef<number | null>(null);
   const stabilityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shortLivedConnectionsRef = useRef(0);
+  const isReplayingRef = useRef(false); // True during history replay (before Ready signal)
 
   // WebSocket reconnection constants
   const MIN_STABLE_CONNECTION_MS = 5000;  // Connection must be stable for 5s before resetting backoff
@@ -262,6 +263,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
     // Reset state for new connection
     containerRef.current = { entries: [], status: "running" };
     finishedRef.current = false;
+    isReplayingRef.current = true; // Buffer patches until Ready signal
 
     const wsUrl = getWebSocketUrl(`/api/agent-sessions/${sessionId}/stream`);
     console.log("[AgentSession] Connecting to WebSocket:", wsUrl);
@@ -296,18 +298,24 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
         if ("JsonPatch" in msg) {
           const patch = msg.JsonPatch;
 
-          // Apply patch to container using Immer
+          // Apply patch to container (always)
           containerRef.current = applyPatch(containerRef.current, patch);
 
-          // Update React state
-          setMessages([...containerRef.current.entries.filter(Boolean)]);
-          setStatus(containerRef.current.status);
+          // During replay, skip React state updates to avoid scroll jump
+          if (!isReplayingRef.current) {
+            setMessages([...containerRef.current.entries.filter(Boolean)]);
+            setStatus(containerRef.current.status);
+          }
           return;
         }
 
-        // Handle Ready signal - history complete
+        // Handle Ready signal - history replay complete, flush state
         if ("Ready" in msg) {
           console.log("[AgentSession] Received Ready signal - history complete");
+          isReplayingRef.current = false;
+          // Flush accumulated state to React in a single update
+          setMessages([...containerRef.current.entries.filter(Boolean)]);
+          setStatus(containerRef.current.status);
           setIsInitialized(true);
           return;
         }
