@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown } from "lucide-react";
-import { api, type Project, type Worktree, type SyncButtonConfig, type SyncExecutionResult } from "@/lib/api";
+import { api, type Project, type Worktree, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
 import { EditProjectDialog } from "./edit-project-dialog";
@@ -30,7 +30,7 @@ interface ProjectCardProps {
     syncDownConfig?: SyncButtonConfig | null;
   }) => Promise<void> | Promise<unknown>;
   onDeleteProject: (id: string) => Promise<void>;
-  onSyncPrompt?: (prompt: string) => void;
+  onSyncPrompt?: (prompt: string, executionMode: ExecutionMode) => void;
 }
 
 export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpdateProject, onDeleteProject, onSyncPrompt }: ProjectCardProps) {
@@ -87,7 +87,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
     if (!config || !config.enabled) return;
 
     if (config.actionType === 'prompt') {
-      onSyncPrompt?.(config.content);
+      onSyncPrompt?.(config.content, config.executionMode);
       return;
     }
 

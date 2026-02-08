@@ -43,7 +43,7 @@ interface SyncConfigState {
 }
 
 const defaultSyncConfig: SyncConfigState = {
-  enabled: false,
+  enabled: true,
   actionType: 'command',
   executionMode: 'local',
   content: '',
@@ -139,17 +139,15 @@ function SyncConfigForm({
             </div>
           </div>
 
-          {config.actionType === 'command' && (
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">Execution Environment</label>
-              <div>
-                <ExecutionModeToggle
-                  mode={config.executionMode}
-                  onModeChange={(executionMode) => onChange({ ...config, executionMode })}
-                />
-              </div>
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">Execution Environment</label>
+            <div>
+              <ExecutionModeToggle
+                mode={config.executionMode}
+                onModeChange={(executionMode) => onChange({ ...config, executionMode })}
+              />
             </div>
-          )}
+          </div>
 
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">

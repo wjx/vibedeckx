@@ -30,9 +30,15 @@ export default function Home() {
     setSelectedWorktree(".");
   }, [currentProject?.id]);
 
-  const handleSyncPrompt = useCallback((prompt: string) => {
-    agentRef.current?.submitMessage(prompt);
-  }, []);
+  const handleSyncPrompt = useCallback((prompt: string, executionMode: ExecutionMode) => {
+    if (currentProject && executionMode !== currentProject.agent_mode) {
+      updateProject(currentProject.id, { agentMode: executionMode }).then(() => {
+        agentRef.current?.submitMessage(prompt);
+      });
+    } else {
+      agentRef.current?.submitMessage(prompt);
+    }
+  }, [currentProject, updateProject]);
 
   const handleMergeRequest = useCallback(() => {
     const prompt = `Please perform the following git operations for this worktree:
