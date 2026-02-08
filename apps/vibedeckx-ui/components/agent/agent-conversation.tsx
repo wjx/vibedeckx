@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle, createContext, useContext } from "react";
+import { useState, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
 import {
   PromptInput,
@@ -47,7 +47,6 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   function AgentConversation({ projectId, worktreePath, project, onAgentModeChange }, ref) {
   const [input, setInput] = useState("");
   const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
     session,
@@ -87,11 +86,6 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       }
     }
   }), [session, startSession, sendMessage, permissionMode]);
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   const handleSubmit = async () => {
     if (!input.trim()) return;
@@ -191,8 +185,8 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       </div>
 
       {/* Messages area */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-4">
+      <Conversation className="flex-1 min-h-0">
+        <ConversationContent className="gap-1 p-4">
           {!session && messages.length === 0 ? (
             <div className="text-center py-12">
               <Bot className="h-16 w-16 mx-auto mb-4 text-violet-500/30" />
@@ -223,10 +217,9 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               {error}
             </div>
           )}
-          {/* Scroll anchor */}
-          <div ref={messagesEndRef} />
-        </div>
-      </ScrollArea>
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t p-4">
