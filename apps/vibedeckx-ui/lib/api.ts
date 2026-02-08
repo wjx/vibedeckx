@@ -85,6 +85,12 @@ export interface WorktreeCreateResult {
   partialSuccess?: boolean;
 }
 
+export interface WorktreeDeleteResult {
+  success: boolean;
+  results?: Partial<Record<WorktreeTarget, { success: boolean; error?: string }>>;
+  partialSuccess?: boolean;
+}
+
 export interface Executor {
   id: string;
   project_id: string;
@@ -262,16 +268,23 @@ export const api = {
     };
   },
 
-  async deleteWorktree(projectId: string, worktreePath: string): Promise<void> {
+  async deleteWorktree(projectId: string, worktreePath: string): Promise<WorktreeDeleteResult> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ worktreePath }),
     });
-    if (!res.ok) {
+    // Accept 207 as partial success
+    if (!res.ok && res.status !== 207) {
       const error = await res.json();
       throw new Error(error.error);
     }
+    const data = await res.json();
+    return {
+      success: data.success,
+      results: data.results,
+      partialSuccess: res.status === 207,
+    };
   },
 
   // Executor API

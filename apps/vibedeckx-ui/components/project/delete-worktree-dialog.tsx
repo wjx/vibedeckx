@@ -29,17 +29,27 @@ export function DeleteWorktreeDialog({
 }: DeleteWorktreeDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const handleDelete = async () => {
     if (!worktree) return;
 
     setLoading(true);
     setError(null);
+    setWarning(null);
 
     try {
-      await api.deleteWorktree(projectId, worktree.path);
+      const result = await api.deleteWorktree(projectId, worktree.path);
+
+      if (result.partialSuccess) {
+        const remoteError = result.results?.remote?.error || "Unknown error";
+        setWarning(`Local worktree deleted, but remote deletion failed: ${remoteError}`);
+      }
+
       onWorktreeDeleted();
-      onOpenChange(false);
+      if (!result.partialSuccess) {
+        onOpenChange(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete worktree");
     } finally {
@@ -50,6 +60,7 @@ export function DeleteWorktreeDialog({
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       setError(null);
+      setWarning(null);
     }
     onOpenChange(newOpen);
   };
@@ -76,6 +87,12 @@ export function DeleteWorktreeDialog({
                 <span className="text-muted-foreground">{worktree.branch}</span>
               </div>
             )}
+          </div>
+        )}
+
+        {warning && (
+          <div className="text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-500/10 px-3 py-2 rounded-md">
+            {warning}
           </div>
         )}
 

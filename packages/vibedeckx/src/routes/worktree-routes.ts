@@ -236,11 +236,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Cannot delete main worktree" });
     }
 
-    // Proxy to remote if this is a remote-only project
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    const hasLocal = !!project.path;
+    const hasRemote = !!(project.remote_url && project.remote_api_key && project.remote_path);
+
+    // Remote-only project: proxy to remote
+    if (!hasLocal && hasRemote) {
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        project.remote_url!,
+        project.remote_api_key!,
         "DELETE",
         `/api/path/worktrees`,
         { path: project.remote_path, worktreePath }
@@ -248,13 +251,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(result.status || 200).send(result.data);
     }
 
-    if (!project.path) {
+    if (!hasLocal) {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    try {
+    // Local deletion helper
+    const deleteLocal = async () => {
       const { execSync } = await import("child_process");
-      const worktreeAbsPath = path.resolve(project.path, worktreePath);
+      const worktreeAbsPath = path.resolve(project.path!, worktreePath);
 
       try {
         const statusOutput = execSync("git status --porcelain", {
@@ -264,18 +268,17 @@ const routes: FastifyPluginAsync = async (fastify) => {
         });
 
         if (statusOutput.trim() !== "") {
-          return reply.code(409).send({
-            error: "Worktree has uncommitted changes. Please commit or discard changes before deleting.",
-          });
+          throw new Error("Worktree has uncommitted changes. Please commit or discard changes before deleting.");
         }
-      } catch {
-        // If git status fails, continue with deletion attempt
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("uncommitted changes")) throw err;
+        // If git status fails for other reasons, continue with deletion attempt
       }
 
       let branchToDelete: string | null = null;
       try {
         const worktreeListOutput = execSync("git worktree list --porcelain", {
-          cwd: project.path,
+          cwd: project.path!,
           encoding: "utf-8",
         });
 
@@ -303,7 +306,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       }
 
       execSync(`git worktree remove "${worktreeAbsPath}"`, {
-        cwd: project.path,
+        cwd: project.path!,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -311,7 +314,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (branchToDelete) {
         try {
           execSync(`git branch -d "${branchToDelete}"`, {
-            cwd: project.path,
+            cwd: project.path!,
             encoding: "utf-8",
             stdio: ["pipe", "pipe", "pipe"],
           });
@@ -320,15 +323,63 @@ const routes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      const config = await readWorktreeConfig(project.path);
+      const config = await readWorktreeConfig(project.path!);
       config.worktrees = config.worktrees.filter((wt) => wt.path !== worktreePath);
-      await writeWorktreeConfig(project.path, config);
+      await writeWorktreeConfig(project.path!, config);
+    };
 
-      return reply.code(200).send({ success: true });
+    // Local-only project
+    if (!hasRemote) {
+      try {
+        await deleteLocal();
+        return reply.code(200).send({ success: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        if (errorMessage.includes("uncommitted changes")) {
+          return reply.code(409).send({ error: errorMessage });
+        }
+        return reply.code(500).send({ error: `Failed to delete worktree: ${errorMessage}` });
+      }
+    }
+
+    // Hybrid project: delete from both local and remote
+    const results: Record<string, { success: boolean; error?: string }> = {};
+
+    // Delete local first
+    try {
+      await deleteLocal();
+      results.local = { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      return reply.code(500).send({ error: `Failed to delete worktree: ${errorMessage}` });
+      // Local failure: return error immediately, don't attempt remote
+      return reply.code(500).send({ error: `Failed to delete local worktree: ${errorMessage}` });
     }
+
+    // Delete remote
+    try {
+      const remoteResult = await proxyToRemote(
+        project.remote_url!,
+        project.remote_api_key!,
+        "DELETE",
+        `/api/path/worktrees`,
+        { path: project.remote_path, worktreePath }
+      );
+      if (remoteResult.ok) {
+        results.remote = { success: true };
+      } else {
+        const remoteData = remoteResult.data as { error?: string };
+        results.remote = { success: false, error: remoteData.error || "Remote deletion failed" };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      results.remote = { success: false, error: errorMessage };
+    }
+
+    if (!results.remote?.success) {
+      return reply.code(207).send({ success: true, results });
+    }
+
+    return reply.code(200).send({ success: true, results });
   });
 
   // 创建新的 git worktree
