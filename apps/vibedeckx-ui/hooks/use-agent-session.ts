@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { produce } from "immer";
+import { toast } from "sonner";
 import { getWebSocketUrl } from "@/lib/api";
 
 // ============ Types ============
@@ -48,7 +49,8 @@ type AgentWsMessage =
   | { JsonPatch: Patch }
   | { Ready: true }
   | { finished: true }
-  | { error: string };
+  | { error: string }
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number } };
 
 // Container for patch target
 interface PatchContainer {
@@ -325,6 +327,23 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
           console.log("[AgentSession] Received finished signal");
           finishedRef.current = true;
           ws.close(1000, "finished");
+          return;
+        }
+
+        // Handle task completed - show toast
+        if ("taskCompleted" in msg) {
+          const { duration_ms, cost_usd } = msg.taskCompleted;
+          const parts: string[] = [];
+          if (duration_ms != null) {
+            const secs = (duration_ms / 1000).toFixed(1);
+            parts.push(`${secs}s`);
+          }
+          if (cost_usd != null) {
+            parts.push(`$${cost_usd.toFixed(4)}`);
+          }
+          toast.success("Task completed", {
+            description: parts.length > 0 ? parts.join(" · ") : undefined,
+          });
           return;
         }
 

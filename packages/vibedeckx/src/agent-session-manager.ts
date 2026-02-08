@@ -321,15 +321,24 @@ export class AgentSessionManager {
     }
 
     if (msg.type === "result") {
-      const resultMsg = msg as { type: "result"; subtype?: string; error?: string };
+      const resultMsg = msg as { type: "result"; subtype?: string; error?: string; duration_ms?: number; cost_usd?: number };
+      session.store.currentAssistantIndex = null;
+
       if (resultMsg.subtype === "error" && resultMsg.error) {
-        // Clear current assistant key - error breaks streaming
-        session.store.currentAssistantIndex = null;
         this.pushEntry(sessionId, {
           type: "error",
           message: resultMsg.error,
           timestamp,
         }, true);
+      }
+
+      if (resultMsg.subtype === "success") {
+        this.broadcastRaw(sessionId, {
+          taskCompleted: {
+            duration_ms: resultMsg.duration_ms,
+            cost_usd: resultMsg.cost_usd,
+          },
+        });
       }
       return;
     }

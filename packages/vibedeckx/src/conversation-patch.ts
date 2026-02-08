@@ -38,7 +38,8 @@ export type AgentWsMessage =
   | { JsonPatch: Patch }
   | { Ready: true }
   | { finished: true }
-  | { error: string };
+  | { error: string }
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number } };
 
 // ============ Conversation Patch Builder ============
 
