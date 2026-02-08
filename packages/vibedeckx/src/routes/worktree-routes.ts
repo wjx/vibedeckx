@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { readWorktreeConfig, writeWorktreeConfig } from "../utils/worktree-config.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
@@ -465,14 +465,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
-
-      const gitdirFile = path.join(project.path!, ".git", "worktrees", worktreeDirName, "gitdir");
-      const worktreeDotGit = path.join(worktreeAbsolutePath, ".git");
-      await writeFile(gitdirFile, worktreeDotGit + "\n");
-
-      const gitWorktreeMetaDir = path.join(project.path!, ".git", "worktrees", worktreeDirName);
-      const relativeToMain = path.relative(worktreeAbsolutePath, gitWorktreeMetaDir);
-      await writeFile(worktreeDotGit, "gitdir: " + relativeToMain + "\n");
 
       const config = await readWorktreeConfig(project.path!);
       config.worktrees.push({ path: worktreeRelativePath, branch: trimmedBranch });
