@@ -71,6 +71,20 @@ export interface Worktree {
   branch: string | null;
 }
 
+export type WorktreeTarget = "local" | "remote";
+
+export interface WorktreeTargetResult {
+  success: boolean;
+  worktree?: { path: string; branch: string };
+  error?: string;
+}
+
+export interface WorktreeCreateResult {
+  worktree: Worktree;
+  results?: Partial<Record<WorktreeTarget, WorktreeTargetResult>>;
+  partialSuccess?: boolean;
+}
+
 export interface Executor {
   id: string;
   project_id: string;
@@ -221,18 +235,31 @@ export const api = {
     return data.worktrees;
   },
 
-  async createWorktree(projectId: string, branchName: string): Promise<Worktree> {
+  async createWorktree(
+    projectId: string,
+    branchName: string,
+    targets?: WorktreeTarget[]
+  ): Promise<WorktreeCreateResult> {
+    const body: { branchName: string; targets?: WorktreeTarget[] } = { branchName };
+    if (targets && targets.length > 0) {
+      body.targets = targets;
+    }
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ branchName }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) {
+    // Accept 207 as partial success
+    if (!res.ok && res.status !== 207) {
       const error = await res.json();
       throw new Error(error.error);
     }
     const data = await res.json();
-    return data.worktree;
+    return {
+      worktree: data.worktree,
+      results: data.results,
+      partialSuccess: res.status === 207,
+    };
   },
 
   async deleteWorktree(projectId: string, worktreePath: string): Promise<void> {

@@ -334,7 +334,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 创建新的 git worktree
   fastify.post<{
     Params: { id: string };
-    Body: { branchName: string };
+    Body: { branchName: string; targets?: ("local" | "remote")[] };
   }>("/api/projects/:id/worktrees", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
@@ -352,11 +352,32 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Invalid branch name format" });
     }
 
-    // Proxy to remote if this is a remote-only project
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    // Determine targets
+    const hasLocal = !!project.path;
+    const hasRemote = !!(project.remote_url && project.remote_api_key && project.remote_path);
+    let targets: ("local" | "remote")[];
+
+    if (req.body.targets && req.body.targets.length > 0) {
+      targets = req.body.targets;
+    } else if (!hasLocal && hasRemote) {
+      targets = ["remote"];
+    } else {
+      targets = ["local"];
+    }
+
+    // Validate targets against project capabilities
+    if (targets.includes("local") && !hasLocal) {
+      return reply.code(400).send({ error: "Project has no local path" });
+    }
+    if (targets.includes("remote") && !hasRemote) {
+      return reply.code(400).send({ error: "Project has no remote configuration" });
+    }
+
+    // Single-target: remote only (backward-compatible path)
+    if (targets.length === 1 && targets[0] === "remote") {
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        project.remote_url!,
+        project.remote_api_key!,
         "POST",
         `/api/path/worktrees`,
         { path: project.remote_path, branchName: trimmedBranch }
@@ -364,58 +385,111 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(result.status || 201).send(result.data);
     }
 
-    if (!project.path) {
-      return reply.code(400).send({ error: "Project has no local path" });
-    }
-
-    try {
+    // Local creation helper
+    const createLocal = async () => {
       const { execSync } = await import("child_process");
 
       try {
         execSync(`git rev-parse --verify refs/heads/${trimmedBranch}`, {
-          cwd: project.path,
+          cwd: project.path!,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
         });
-        return reply.code(409).send({ error: `Branch '${trimmedBranch}' already exists` });
-      } catch {
-        // Branch doesn't exist, which is what we want
+        throw new Error(`Branch '${trimmedBranch}' already exists`);
+      } catch (err) {
+        // If it's our own "already exists" error, rethrow
+        if (err instanceof Error && err.message.includes("already exists")) throw err;
+        // Otherwise branch doesn't exist, which is what we want
       }
 
       const worktreeDirName = trimmedBranch.replace(/\//g, "-");
       const worktreeRelativePath = `.worktrees/${worktreeDirName}`;
-      const worktreeAbsolutePath = path.join(project.path, worktreeRelativePath);
+      const worktreeAbsolutePath = path.join(project.path!, worktreeRelativePath);
 
-      await mkdir(path.join(project.path, ".worktrees"), { recursive: true });
+      await mkdir(path.join(project.path!, ".worktrees"), { recursive: true });
 
       execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
-        cwd: project.path,
+        cwd: project.path!,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
 
-      const gitdirFile = path.join(project.path, ".git", "worktrees", worktreeDirName, "gitdir");
+      const gitdirFile = path.join(project.path!, ".git", "worktrees", worktreeDirName, "gitdir");
       const worktreeDotGit = path.join(worktreeAbsolutePath, ".git");
       await writeFile(gitdirFile, worktreeDotGit + "\n");
 
-      const gitWorktreeMetaDir = path.join(project.path, ".git", "worktrees", worktreeDirName);
+      const gitWorktreeMetaDir = path.join(project.path!, ".git", "worktrees", worktreeDirName);
       const relativeToMain = path.relative(worktreeAbsolutePath, gitWorktreeMetaDir);
       await writeFile(worktreeDotGit, "gitdir: " + relativeToMain + "\n");
 
-      const config = await readWorktreeConfig(project.path);
+      const config = await readWorktreeConfig(project.path!);
       config.worktrees.push({ path: worktreeRelativePath, branch: trimmedBranch });
-      await writeWorktreeConfig(project.path, config);
+      await writeWorktreeConfig(project.path!, config);
 
-      return reply.code(201).send({
-        worktree: {
-          path: worktreeRelativePath,
-          branch: trimmedBranch,
-        },
-      });
+      return { path: worktreeRelativePath, branch: trimmedBranch };
+    };
+
+    // Single-target: local only (backward-compatible path)
+    if (targets.length === 1 && targets[0] === "local") {
+      try {
+        const worktree = await createLocal();
+        return reply.code(201).send({ worktree });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        if (errorMessage.includes("already exists")) {
+          return reply.code(409).send({ error: errorMessage });
+        }
+        return reply.code(500).send({ error: `Failed to create worktree: ${errorMessage}` });
+      }
+    }
+
+    // Multi-target: local + remote
+    const results: Record<string, { success: boolean; worktree?: { path: string; branch: string }; error?: string }> = {};
+
+    // Local first
+    let localWorktree: { path: string; branch: string } | undefined;
+    try {
+      localWorktree = await createLocal();
+      results.local = { success: true, worktree: localWorktree };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      return reply.code(500).send({ error: `Failed to create worktree: ${errorMessage}` });
+      // Local failure: return error immediately, don't attempt remote
+      return reply.code(500).send({ error: `Failed to create local worktree: ${errorMessage}` });
     }
+
+    // Remote second
+    try {
+      const remoteResult = await proxyToRemote(
+        project.remote_url!,
+        project.remote_api_key!,
+        "POST",
+        `/api/path/worktrees`,
+        { path: project.remote_path, branchName: trimmedBranch }
+      );
+      if (remoteResult.ok) {
+        const remoteData = remoteResult.data as { worktree?: { path: string; branch: string } };
+        results.remote = { success: true, worktree: remoteData.worktree };
+      } else {
+        const remoteData = remoteResult.data as { error?: string };
+        results.remote = { success: false, error: remoteData.error || "Remote creation failed" };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      results.remote = { success: false, error: errorMessage };
+    }
+
+    // If remote failed, return 207 partial success
+    if (!results.remote?.success) {
+      return reply.code(207).send({
+        worktree: localWorktree,
+        results,
+      });
+    }
+
+    return reply.code(201).send({
+      worktree: localWorktree,
+      results,
+    });
   });
 };
 

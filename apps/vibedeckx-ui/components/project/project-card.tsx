@@ -187,6 +187,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
           )}
           <CreateWorktreeDialog
             projectId={project.id}
+            project={project}
             open={createDialogOpen}
             onOpenChange={setCreateDialogOpen}
             onWorktreeCreated={handleWorktreeCreated}
