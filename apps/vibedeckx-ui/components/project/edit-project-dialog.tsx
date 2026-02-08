@@ -115,21 +115,21 @@ function SyncConfigForm({
       <label className="text-sm font-medium">{label}</label>
 
       <div className="space-y-2">
-        <label className="text-xs text-muted-foreground">Action Type</label>
-        <div>
-          <ActionTypeToggle
-            actionType={config.actionType}
-            onActionTypeChange={(actionType) => onChange({ ...config, actionType })}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
         <label className="text-xs text-muted-foreground">Execution Environment</label>
         <div>
           <ExecutionModeToggle
             mode={config.executionMode}
             onModeChange={(executionMode) => onChange({ ...config, executionMode })}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">Action Type</label>
+        <div>
+          <ActionTypeToggle
+            actionType={config.actionType}
+            onActionTypeChange={(actionType) => onChange({ ...config, actionType })}
           />
         </div>
       </div>
