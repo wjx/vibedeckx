@@ -12,6 +12,7 @@ import type {
 } from "./agent-types.js";
 import { ConversationPatch, type Patch, type AgentWsMessage } from "./conversation-patch.js";
 import { EntryIndexProvider } from "./entry-index-provider.js";
+import { resolveWorktreePath } from "./utils/worktree-paths.js";
 
 // ============ Session Store Types ============
 
@@ -111,10 +112,7 @@ export class AgentSessionManager {
     console.log(`[AgentSession] Creating new session ${sessionId}`);
 
     // Calculate absolute worktree path
-    const absoluteWorktreePath =
-      worktreePath === "."
-        ? projectPath
-        : `${projectPath}/${worktreePath}`;
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, worktreePath);
 
     console.log(`[AgentSession] projectPath=${projectPath}, worktreePath=${worktreePath}, absoluteWorktreePath=${absoluteWorktreePath}`);
 
@@ -633,10 +631,7 @@ export class AgentSessionManager {
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
 
     // 5. Calculate absolute worktree path and respawn
-    const absoluteWorktreePath =
-      session.worktreePath === "."
-        ? projectPath
-        : `${projectPath}/${session.worktreePath}`;
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.worktreePath);
 
     this.spawnClaudeCode(session, absoluteWorktreePath);
 
@@ -680,10 +675,7 @@ export class AgentSessionManager {
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
 
     // 5. Respawn Claude Code with new mode flags
-    const absoluteWorktreePath =
-      session.worktreePath === "."
-        ? projectPath
-        : `${projectPath}/${session.worktreePath}`;
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.worktreePath);
 
     this.spawnClaudeCode(session, absoluteWorktreePath);
 

@@ -7,6 +7,7 @@ import { mkdir, writeFile, readdir } from "fs/promises";
 import type { Project, SyncButtonConfig } from "../storage/types.js";
 import { selectFolder } from "../dialog.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
+import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import "../server-types.js";
 
 function sanitizeProject(project: Project) {
@@ -235,9 +236,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (!project.remote_url || !project.remote_api_key) {
         return reply.code(400).send({ error: "Remote not configured for this project" });
       }
-      const remoteCwd = worktreePath && worktreePath !== '.'
-        ? path.join(project.remote_path ?? '', worktreePath)
-        : (project.remote_path ?? '/');
+      const remoteCwd = resolveWorktreePath(project.remote_path ?? '', worktreePath || ".");
       const result = await proxyToRemote(project.remote_url, project.remote_api_key, 'POST', '/api/execute-one-shot', {
         command: config.content,
         cwd: remoteCwd,
@@ -253,9 +252,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     if (!basePath) {
       return reply.code(400).send({ error: "Project has no local path" });
     }
-    const cwd = worktreePath && worktreePath !== '.'
-      ? path.join(basePath, worktreePath)
-      : basePath;
+    const cwd = resolveWorktreePath(basePath, worktreePath || ".");
 
     try {
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {

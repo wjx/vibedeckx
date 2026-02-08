@@ -3,31 +3,35 @@ import fp from "fastify-plugin";
 import path from "path";
 import { randomUUID } from "crypto";
 import { proxyToRemote } from "../utils/remote-proxy.js";
+import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
   // Execute command at a path (for remote executor)
   fastify.post<{
-    Body: { path: string; command: string; cwd?: string; pty?: boolean };
+    Body: { path: string; command: string; cwd?: string; worktreePath?: string; pty?: boolean };
   }>("/api/path/execute", async (req, reply) => {
-    const { path: projectPath, command, cwd, pty } = req.body;
+    const { path: projectPath, command, cwd, worktreePath, pty } = req.body;
     if (!projectPath || !command) {
       return reply.code(400).send({ error: "Path and command are required" });
     }
+
+    const resolvedBase = resolveWorktreePath(projectPath, worktreePath || ".");
+    const resolvedCwd = cwd ? path.join(resolvedBase, cwd) : null;
 
     const tempExecutor = {
       id: randomUUID(),
       project_id: "remote",
       name: "remote-command",
       command,
-      cwd: cwd ?? null,
+      cwd: resolvedCwd,
       pty: pty !== false,
       position: 0,
       created_at: new Date().toISOString(),
     };
 
     try {
-      const processId = fastify.processManager.start(tempExecutor, projectPath, true);
+      const processId = fastify.processManager.start(tempExecutor, resolvedBase, true);
       return reply.code(200).send({ processId });
     } catch (error) {
       return reply.code(500).send({ error: String(error) });
@@ -47,9 +51,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     const worktreePath = req.body?.worktreePath;
-    const relativeCwd = worktreePath && worktreePath !== "."
-      ? path.join(worktreePath, executor.cwd || "")
-      : executor.cwd || "";
 
     const useRemoteExecutor = project.remote_url && project.remote_api_key && project.remote_path &&
       (!project.path || project.executor_mode === 'remote');
@@ -66,7 +67,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
         {
           path: project.remote_path,
           command: executor.command,
-          cwd: relativeCwd || undefined,
+          worktreePath: worktreePath || undefined,
+          cwd: executor.cwd || undefined,
           pty: executor.pty,
         }
       );
@@ -87,9 +89,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    const basePath = worktreePath && worktreePath !== "."
-      ? path.resolve(project.path, worktreePath)
-      : project.path;
+    const basePath = resolveWorktreePath(project.path, worktreePath || ".");
 
     try {
       const processId = fastify.processManager.start(executor, basePath);

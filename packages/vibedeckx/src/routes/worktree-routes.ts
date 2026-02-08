@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { readWorktreeConfig, writeWorktreeConfig } from "../utils/worktree-config.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
+import { resolveWorktreePath, getWorktreeBaseForProject } from "../utils/worktree-paths.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -21,7 +22,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     const config = await readWorktreeConfig(projectPath);
     const validWorktrees = config.worktrees.filter((wt) => {
-      const absolutePath = path.join(projectPath, wt.path);
+      const absolutePath = resolveWorktreePath(projectPath, wt.path);
       return existsSync(absolutePath);
     });
 
@@ -65,9 +66,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       const worktreeDirName = trimmedBranch.replace(/\//g, "-");
       const worktreeRelativePath = `.worktrees/${worktreeDirName}`;
-      const worktreeAbsolutePath = path.join(projectPath, worktreeRelativePath);
+      const worktreeAbsolutePath = resolveWorktreePath(projectPath, worktreeRelativePath);
 
-      await mkdir(path.join(projectPath, ".worktrees"), { recursive: true });
+      await mkdir(getWorktreeBaseForProject(projectPath), { recursive: true });
 
       execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
         cwd: projectPath,
@@ -103,7 +104,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const { execSync } = await import("child_process");
-      const worktreeAbsPath = path.resolve(projectPath, worktreePath);
+      const worktreeAbsPath = resolveWorktreePath(projectPath, worktreePath);
 
       try {
         const statusOutput = execSync("git status --porcelain", {
@@ -201,7 +202,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const config = await readWorktreeConfig(projectPath);
 
     const validWorktrees = config.worktrees.filter((wt) => {
-      const absolutePath = path.join(projectPath, wt.path);
+      const absolutePath = resolveWorktreePath(projectPath, wt.path);
       return existsSync(absolutePath);
     });
 
@@ -258,7 +259,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     // Local deletion helper
     const deleteLocal = async () => {
       const { execSync } = await import("child_process");
-      const worktreeAbsPath = path.resolve(project.path!, worktreePath);
+      const worktreeAbsPath = resolveWorktreePath(project.path!, worktreePath);
 
       try {
         const statusOutput = execSync("git status --porcelain", {
@@ -455,9 +456,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       const worktreeDirName = trimmedBranch.replace(/\//g, "-");
       const worktreeRelativePath = `.worktrees/${worktreeDirName}`;
-      const worktreeAbsolutePath = path.join(project.path!, worktreeRelativePath);
+      const worktreeAbsolutePath = resolveWorktreePath(project.path!, worktreeRelativePath);
 
-      await mkdir(path.join(project.path!, ".worktrees"), { recursive: true });
+      await mkdir(getWorktreeBaseForProject(project.path!), { recursive: true });
 
       execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
         cwd: project.path!,

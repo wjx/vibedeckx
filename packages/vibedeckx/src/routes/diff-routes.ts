@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import path from "path";
 import { parseDiffOutput } from "../utils/diff-parser.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
+import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -16,9 +17,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     const worktreePath = req.query.worktreePath;
-    const cwd = worktreePath && worktreePath !== "."
-      ? path.resolve(projectPath, worktreePath)
-      : projectPath;
+    const cwd = resolveWorktreePath(projectPath, worktreePath || ".");
 
     try {
       const { execSync } = await import("child_process");
@@ -74,9 +73,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    const cwd = worktreePath && worktreePath !== "."
-      ? path.resolve(project.path, worktreePath)
-      : project.path;
+    const cwd = resolveWorktreePath(project.path, worktreePath || ".");
 
     try {
       const { execSync } = await import("child_process");

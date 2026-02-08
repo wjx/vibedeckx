@@ -161,7 +161,7 @@ export function CreateWorktreeDialog({
           {worktreePath && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">
-                Worktree Path (auto-generated)
+                Worktree ID (auto-generated)
               </label>
               <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
                 {worktreePath}
