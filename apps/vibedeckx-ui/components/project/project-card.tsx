@@ -9,11 +9,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil } from "lucide-react";
-import { api, type Project, type Worktree } from "@/lib/api";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown } from "lucide-react";
+import { api, type Project, type Worktree, type SyncButtonConfig, type SyncExecutionResult } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
 import { EditProjectDialog } from "./edit-project-dialog";
+import { SyncOutputDialog } from "./sync-output-dialog";
 
 interface ProjectCardProps {
   project: Project;
@@ -25,17 +26,26 @@ interface ProjectCardProps {
     remotePath?: string | null;
     remoteUrl?: string | null;
     remoteApiKey?: string | null;
+    syncUpConfig?: SyncButtonConfig | null;
+    syncDownConfig?: SyncButtonConfig | null;
   }) => Promise<void> | Promise<unknown>;
   onDeleteProject: (id: string) => Promise<void>;
+  onSyncPrompt?: (prompt: string) => void;
 }
 
-export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpdateProject, onDeleteProject }: ProjectCardProps) {
+export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpdateProject, onDeleteProject, onSyncPrompt }: ProjectCardProps) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = useState<Worktree | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [syncOutputOpen, setSyncOutputOpen] = useState(false);
+  const [syncOutput, setSyncOutput] = useState<{
+    type: 'up' | 'down';
+    result: SyncExecutionResult | null;
+    loading: boolean;
+  }>({ type: 'up', result: null, loading: false });
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
   const fetchWorktrees = useCallback(() => {
@@ -72,7 +82,40 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
     fetchWorktrees();
   };
 
+  const handleSyncButton = async (syncType: 'up' | 'down') => {
+    const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
+    if (!config || !config.enabled) return;
+
+    if (config.actionType === 'prompt') {
+      onSyncPrompt?.(config.content);
+      return;
+    }
+
+    // Command execution
+    setSyncOutput({ type: syncType, result: null, loading: true });
+    setSyncOutputOpen(true);
+
+    try {
+      const result = await api.executeSyncCommand(project.id, syncType, selectedWorktree);
+      setSyncOutput({ type: syncType, result, loading: false });
+    } catch (e) {
+      setSyncOutput({
+        type: syncType,
+        result: {
+          success: false,
+          stdout: '',
+          stderr: e instanceof Error ? e.message : 'Command execution failed',
+          exitCode: 1,
+        },
+        loading: false,
+      });
+    }
+  };
+
   const selectedWorktreeData = worktrees.find(w => w.path === selectedWorktree);
+
+  const showSyncUp = project.sync_up_config?.enabled;
+  const showSyncDown = project.sync_down_config?.enabled;
 
   return (
     <Card>
@@ -90,6 +133,28 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
               Remote
             </span>
           ) : null}
+          {showSyncUp && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-7 w-7"
+              onClick={() => handleSyncButton('up')}
+              title={`Sync Up: ${project.sync_up_config!.content.slice(0, 50)}${project.sync_up_config!.content.length > 50 ? '...' : ''}`}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          )}
+          {showSyncDown && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-7 w-7"
+              onClick={() => handleSyncButton('down')}
+              title={`Sync Down: ${project.sync_down_config!.content.slice(0, 50)}${project.sync_down_config!.content.length > 50 ? '...' : ''}`}
+            >
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="h-7 w-7">
@@ -206,6 +271,13 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         onProjectUpdated={onUpdateProject}
+      />
+      <SyncOutputDialog
+        open={syncOutputOpen}
+        onOpenChange={setSyncOutputOpen}
+        syncType={syncOutput.type}
+        result={syncOutput.result}
+        loading={syncOutput.loading}
       />
     </Card>
   );

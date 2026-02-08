@@ -38,6 +38,22 @@ export function getWebSocketUrl(path: string): string {
 
 export type ExecutionMode = 'local' | 'remote';
 
+export type SyncActionType = 'command' | 'prompt';
+
+export interface SyncButtonConfig {
+  enabled: boolean;
+  actionType: SyncActionType;
+  executionMode: ExecutionMode;
+  content: string;
+}
+
+export interface SyncExecutionResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -47,6 +63,8 @@ export interface Project {
   remote_url?: string;
   agent_mode: ExecutionMode;
   executor_mode: ExecutionMode;
+  sync_up_config?: SyncButtonConfig;
+  sync_down_config?: SyncButtonConfig;
   created_at: string;
 }
 
@@ -201,6 +219,8 @@ export const api = {
       remoteApiKey?: string | null;
       agentMode?: ExecutionMode;
       executorMode?: ExecutionMode;
+      syncUpConfig?: SyncButtonConfig | null;
+      syncDownConfig?: SyncButtonConfig | null;
     }
   ): Promise<Project> {
     const res = await fetch(`${getApiBase()}/api/projects/${id}`, {
@@ -445,5 +465,22 @@ export const api = {
     mode: ExecutionMode
   ): Promise<Project> {
     return this.updateProject(id, { [field]: mode });
+  },
+
+  async executeSyncCommand(
+    projectId: string,
+    syncType: 'up' | 'down',
+    worktreePath?: string
+  ): Promise<SyncExecutionResult> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/execute-sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ syncType, worktreePath }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    return res.json();
   },
 };

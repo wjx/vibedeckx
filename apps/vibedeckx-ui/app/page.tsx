@@ -30,6 +30,10 @@ export default function Home() {
     setSelectedWorktree(".");
   }, [currentProject?.id]);
 
+  const handleSyncPrompt = useCallback((prompt: string) => {
+    agentRef.current?.submitMessage(prompt);
+  }, []);
+
   const handleMergeRequest = useCallback(() => {
     const prompt = `Please perform the following git operations for this worktree:
 
@@ -109,6 +113,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 onWorktreeChange={setSelectedWorktree}
                 onUpdateProject={updateProject}
                 onDeleteProject={deleteProject}
+                onSyncPrompt={handleSyncPrompt}
               />
             </div>
           )}

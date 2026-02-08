@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode } from "./types.js";
+import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -100,6 +100,13 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     db.exec("UPDATE projects SET executor_mode = 'local' WHERE executor_mode IS NULL");
   }
 
+  // Migration: add sync button config columns
+  const hasSyncUpConfigColumn = projectTableInfo.some((col) => col.name === "sync_up_config");
+  if (!hasSyncUpConfigColumn) {
+    db.exec("ALTER TABLE projects ADD COLUMN sync_up_config TEXT");
+    db.exec("ALTER TABLE projects ADD COLUMN sync_down_config TEXT");
+  }
+
   return db;
 };
 
@@ -108,18 +115,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
   const db = createDatabase(dbPath);
 
   // Helper to convert SQLite project row to Project interface
-  const toProject = (row: {
-    id: string;
-    name: string;
-    path: string | null;
-    remote_path: string | null;
-    is_remote: number;
-    remote_url: string | null;
-    remote_api_key: string | null;
-    agent_mode: string | null;
-    executor_mode: string | null;
-    created_at: string;
-  }): Project => ({
+  const toProject = (row: ProjectRow): Project => ({
     id: row.id,
     name: row.name,
     path: row.path,
@@ -129,6 +125,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     remote_api_key: row.remote_api_key ?? undefined,
     agent_mode: (row.agent_mode as ExecutionMode) ?? 'local',
     executor_mode: (row.executor_mode as ExecutionMode) ?? 'local',
+    sync_up_config: row.sync_up_config ? JSON.parse(row.sync_up_config) as SyncButtonConfig : undefined,
+    sync_down_config: row.sync_down_config ? JSON.parse(row.sync_down_config) as SyncButtonConfig : undefined,
     created_at: row.created_at,
   });
 
@@ -142,16 +140,18 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     remote_api_key: string | null;
     agent_mode: string | null;
     executor_mode: string | null;
+    sync_up_config: string | null;
+    sync_down_config: string | null;
     created_at: string;
   };
 
   return {
     projects: {
-      create: ({ id, name, path: projectPath, remote_path, remote_url, remote_api_key, agent_mode, executor_mode }) => {
+      create: ({ id, name, path: projectPath, remote_path, remote_url, remote_api_key, agent_mode, executor_mode, sync_up_config, sync_down_config }) => {
         const is_remote = remote_url ? 1 : 0;
         db.prepare(
-          `INSERT INTO projects (id, name, path, remote_path, is_remote, remote_url, remote_api_key, agent_mode, executor_mode)
-           VALUES (@id, @name, @path, @remote_path, @is_remote, @remote_url, @remote_api_key, @agent_mode, @executor_mode)`
+          `INSERT INTO projects (id, name, path, remote_path, is_remote, remote_url, remote_api_key, agent_mode, executor_mode, sync_up_config, sync_down_config)
+           VALUES (@id, @name, @path, @remote_path, @is_remote, @remote_url, @remote_api_key, @agent_mode, @executor_mode, @sync_up_config, @sync_down_config)`
         ).run({
           id,
           name,
@@ -162,6 +162,8 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           remote_api_key: remote_api_key ?? null,
           agent_mode: agent_mode ?? 'local',
           executor_mode: executor_mode ?? 'local',
+          sync_up_config: sync_up_config ? JSON.stringify(sync_up_config) : null,
+          sync_down_config: sync_down_config ? JSON.stringify(sync_down_config) : null,
         });
 
         const row = db
@@ -191,7 +193,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return row ? toProject(row) : undefined;
       },
 
-      update: (id: string, opts: { name?: string; path?: string | null; remote_path?: string | null; remote_url?: string | null; remote_api_key?: string | null; agent_mode?: ExecutionMode; executor_mode?: ExecutionMode }) => {
+      update: (id: string, opts: { name?: string; path?: string | null; remote_path?: string | null; remote_url?: string | null; remote_api_key?: string | null; agent_mode?: ExecutionMode; executor_mode?: ExecutionMode; sync_up_config?: SyncButtonConfig | null; sync_down_config?: SyncButtonConfig | null }) => {
         const updates: string[] = [];
         const params: Record<string, unknown> = { id };
 
@@ -222,6 +224,14 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         if (opts.executor_mode !== undefined) {
           updates.push('executor_mode = @executor_mode');
           params.executor_mode = opts.executor_mode;
+        }
+        if (opts.sync_up_config !== undefined) {
+          updates.push('sync_up_config = @sync_up_config');
+          params.sync_up_config = opts.sync_up_config ? JSON.stringify(opts.sync_up_config) : null;
+        }
+        if (opts.sync_down_config !== undefined) {
+          updates.push('sync_down_config = @sync_down_config');
+          params.sync_down_config = opts.sync_down_config ? JSON.stringify(opts.sync_down_config) : null;
         }
 
         // Auto-derive is_remote from remote_url

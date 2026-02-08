@@ -2,9 +2,11 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path from "path";
 import { randomUUID } from "crypto";
+import { exec } from "child_process";
 import { mkdir, writeFile, readdir } from "fs/promises";
-import type { Project } from "../storage/types.js";
+import type { Project, SyncButtonConfig } from "../storage/types.js";
 import { selectFolder } from "../dialog.js";
+import { proxyToRemote } from "../utils/remote-proxy.js";
 import "../server-types.js";
 
 function sanitizeProject(project: Project) {
@@ -129,6 +131,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
       remoteApiKey?: string | null;
       agentMode?: 'local' | 'remote';
       executorMode?: 'local' | 'remote';
+      syncUpConfig?: SyncButtonConfig | null;
+      syncDownConfig?: SyncButtonConfig | null;
     };
   }>("/api/projects/:id", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
@@ -136,7 +140,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { name, path: newPath, remotePath, remoteUrl, remoteApiKey, agentMode, executorMode } = req.body;
+    const { name, path: newPath, remotePath, remoteUrl, remoteApiKey, agentMode, executorMode, syncUpConfig, syncDownConfig } = req.body;
 
     const effectivePath = newPath !== undefined ? newPath : project.path;
     const effectiveRemotePath = remotePath !== undefined ? remotePath : (project.remote_path ?? null);
@@ -175,6 +179,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
       remote_api_key?: string | null;
       agent_mode?: 'local' | 'remote';
       executor_mode?: 'local' | 'remote';
+      sync_up_config?: SyncButtonConfig | null;
+      sync_down_config?: SyncButtonConfig | null;
     } = {};
 
     if (name !== undefined) updateOpts.name = name;
@@ -184,6 +190,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
     if (remoteApiKey !== undefined) updateOpts.remote_api_key = remoteApiKey;
     if (agentMode !== undefined) updateOpts.agent_mode = agentMode;
     if (executorMode !== undefined) updateOpts.executor_mode = executorMode;
+    if (syncUpConfig !== undefined) updateOpts.sync_up_config = syncUpConfig;
+    if (syncDownConfig !== undefined) updateOpts.sync_down_config = syncDownConfig;
 
     const updated = fastify.storage.projects.update(req.params.id, updateOpts);
     if (!updated) {
@@ -202,6 +210,92 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     fastify.storage.projects.delete(req.params.id);
     return reply.code(200).send({ success: true });
+  });
+
+  // Execute sync command for a project
+  fastify.post<{
+    Params: { id: string };
+    Body: { syncType: 'up' | 'down'; worktreePath?: string };
+  }>("/api/projects/:id/execute-sync", async (req, reply) => {
+    const project = fastify.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const { syncType, worktreePath } = req.body;
+    const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
+
+    if (!config || !config.enabled || config.actionType !== 'command') {
+      return reply.code(400).send({ error: "Sync command not configured or not a command type" });
+    }
+
+    const executionMode = config.executionMode;
+
+    if (executionMode === 'remote') {
+      if (!project.remote_url || !project.remote_api_key) {
+        return reply.code(400).send({ error: "Remote not configured for this project" });
+      }
+      const remoteCwd = worktreePath && worktreePath !== '.'
+        ? path.join(project.remote_path ?? '', worktreePath)
+        : (project.remote_path ?? '/');
+      const result = await proxyToRemote(project.remote_url, project.remote_api_key, 'POST', '/api/execute-one-shot', {
+        command: config.content,
+        cwd: remoteCwd,
+      });
+      if (!result.ok) {
+        return reply.code(result.status || 500).send(result.data);
+      }
+      return reply.code(200).send(result.data);
+    }
+
+    // Local execution
+    const basePath = project.path;
+    if (!basePath) {
+      return reply.code(400).send({ error: "Project has no local path" });
+    }
+    const cwd = worktreePath && worktreePath !== '.'
+      ? path.join(basePath, worktreePath)
+      : basePath;
+
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+        exec(config.content, { cwd, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+          resolve({
+            stdout: stdout || '',
+            stderr: stderr || '',
+            exitCode: error ? (error.code ?? 1) : 0,
+          });
+        });
+      });
+      return reply.code(200).send({ success: result.exitCode === 0, ...result });
+    } catch {
+      return reply.code(500).send({ error: "Command execution failed" });
+    }
+  });
+
+  // Execute one-shot command (for remote instances)
+  fastify.post<{
+    Body: { command: string; cwd: string };
+  }>("/api/execute-one-shot", async (req, reply) => {
+    const { command, cwd } = req.body;
+    if (!command || !cwd) {
+      return reply.code(400).send({ error: "command and cwd are required" });
+    }
+
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+        exec(command, { cwd, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+          resolve({
+            stdout: stdout || '',
+            stderr: stderr || '',
+            exitCode: error ? (error.code ?? 1) : 0,
+          });
+        });
+      });
+      return reply.code(200).send({ success: result.exitCode === 0, ...result });
+    } catch {
+      return reply.code(500).send({ error: "Command execution failed" });
+    }
   });
 
   // 获取项目目录文件列表

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { api, type Project } from "@/lib/api";
+import { api, type Project, type SyncButtonConfig } from "@/lib/api";
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -46,6 +46,8 @@ export function useProjects() {
     remoteApiKey?: string | null;
     agentMode?: 'local' | 'remote';
     executorMode?: 'local' | 'remote';
+    syncUpConfig?: SyncButtonConfig | null;
+    syncDownConfig?: SyncButtonConfig | null;
   }) => {
     const updated = await api.updateProject(id, opts);
     setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));

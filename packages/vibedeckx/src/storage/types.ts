@@ -1,5 +1,14 @@
 export type ExecutionMode = 'local' | 'remote';
 
+export type SyncActionType = 'command' | 'prompt';
+
+export interface SyncButtonConfig {
+  enabled: boolean;
+  actionType: SyncActionType;
+  executionMode: ExecutionMode;
+  content: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -10,6 +19,8 @@ export interface Project {
   remote_api_key?: string;
   agent_mode: ExecutionMode;
   executor_mode: ExecutionMode;
+  sync_up_config?: SyncButtonConfig;
+  sync_down_config?: SyncButtonConfig;
   created_at: string;
 }
 
@@ -56,6 +67,8 @@ export interface Storage {
       remote_api_key?: string;
       agent_mode?: ExecutionMode;
       executor_mode?: ExecutionMode;
+      sync_up_config?: SyncButtonConfig;
+      sync_down_config?: SyncButtonConfig;
     }) => Project;
     getAll: () => Project[];
     getById: (id: string) => Project | undefined;
@@ -68,6 +81,8 @@ export interface Storage {
       remote_api_key?: string | null;
       agent_mode?: ExecutionMode;
       executor_mode?: ExecutionMode;
+      sync_up_config?: SyncButtonConfig | null;
+      sync_down_config?: SyncButtonConfig | null;
     }) => Project | undefined;
     delete: (id: string) => void;
   };
