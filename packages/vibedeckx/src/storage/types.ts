@@ -3,7 +3,6 @@ export type ExecutionMode = 'local' | 'remote';
 export type SyncActionType = 'command' | 'prompt';
 
 export interface SyncButtonConfig {
-  enabled: boolean;
   actionType: SyncActionType;
   executionMode: ExecutionMode;
   content: string;

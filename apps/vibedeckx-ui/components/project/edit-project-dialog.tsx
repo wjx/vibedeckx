@@ -36,14 +36,12 @@ interface EditProjectDialogProps {
 type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
 interface SyncConfigState {
-  enabled: boolean;
   actionType: SyncActionType;
   executionMode: ExecutionMode;
   content: string;
 }
 
 const defaultSyncConfig: SyncConfigState = {
-  enabled: true,
   actionType: 'command',
   executionMode: 'local',
   content: '',
@@ -52,7 +50,6 @@ const defaultSyncConfig: SyncConfigState = {
 function fromSyncButtonConfig(config?: SyncButtonConfig): SyncConfigState {
   if (!config) return { ...defaultSyncConfig };
   return {
-    enabled: config.enabled,
     actionType: config.actionType,
     executionMode: config.executionMode,
     content: config.content,
@@ -61,7 +58,6 @@ function fromSyncButtonConfig(config?: SyncButtonConfig): SyncConfigState {
 
 function toSyncButtonConfig(state: SyncConfigState): SyncButtonConfig {
   return {
-    enabled: state.enabled,
     actionType: state.actionType,
     executionMode: state.executionMode,
     content: state.content,
@@ -116,52 +112,39 @@ function SyncConfigForm({
 }) {
   return (
     <div className="space-y-4 py-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">{label}</label>
-        <Button
-          variant={config.enabled ? "default" : "outline"}
-          size="sm"
-          onClick={() => onChange({ ...config, enabled: !config.enabled })}
-        >
-          {config.enabled ? "Enabled" : "Disabled"}
-        </Button>
+      <label className="text-sm font-medium">{label}</label>
+
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">Action Type</label>
+        <div>
+          <ActionTypeToggle
+            actionType={config.actionType}
+            onActionTypeChange={(actionType) => onChange({ ...config, actionType })}
+          />
+        </div>
       </div>
 
-      {config.enabled && (
-        <>
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Action Type</label>
-            <div>
-              <ActionTypeToggle
-                actionType={config.actionType}
-                onActionTypeChange={(actionType) => onChange({ ...config, actionType })}
-              />
-            </div>
-          </div>
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">Execution Environment</label>
+        <div>
+          <ExecutionModeToggle
+            mode={config.executionMode}
+            onModeChange={(executionMode) => onChange({ ...config, executionMode })}
+          />
+        </div>
+      </div>
 
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Execution Environment</label>
-            <div>
-              <ExecutionModeToggle
-                mode={config.executionMode}
-                onModeChange={(executionMode) => onChange({ ...config, executionMode })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">
-              {config.actionType === 'command' ? 'Shell Command' : 'Agent Prompt'}
-            </label>
-            <Textarea
-              value={config.content}
-              onChange={(e) => onChange({ ...config, content: e.target.value })}
-              placeholder={config.actionType === 'command' ? 'git push origin HEAD' : 'Please pull the latest changes and rebase...'}
-              rows={3}
-            />
-          </div>
-        </>
-      )}
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">
+          {config.actionType === 'command' ? 'Shell Command' : 'Agent Prompt'}
+        </label>
+        <Textarea
+          value={config.content}
+          onChange={(e) => onChange({ ...config, content: e.target.value })}
+          placeholder={config.actionType === 'command' ? 'git push origin HEAD' : 'Please pull the latest changes and rebase...'}
+          rows={3}
+        />
+      </div>
     </div>
   );
 }

@@ -225,7 +225,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const { syncType, worktreePath } = req.body;
     const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
 
-    if (!config || !config.enabled || config.actionType !== 'command') {
+    if (!config || config.actionType !== 'command') {
       return reply.code(400).send({ error: "Sync command not configured or not a command type" });
     }
 

@@ -84,7 +84,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
 
   const handleSyncButton = async (syncType: 'up' | 'down') => {
     const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
-    if (!config || !config.enabled) return;
+    if (!config) return;
 
     if (config.actionType === 'prompt') {
       onSyncPrompt?.(config.content, config.executionMode);
@@ -114,8 +114,8 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
 
   const selectedWorktreeData = worktrees.find(w => w.path === selectedWorktree);
 
-  const showSyncUp = project.sync_up_config?.enabled;
-  const showSyncDown = project.sync_down_config?.enabled;
+  const showSyncUp = !!project.sync_up_config;
+  const showSyncDown = !!project.sync_down_config;
 
   return (
     <Card>
