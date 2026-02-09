@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { randomUUID } from "crypto";
+import { generateText } from "ai";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -21,16 +23,30 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Create task
   fastify.post<{
     Params: { projectId: string };
-    Body: { title: string; description?: string; status?: string; priority?: string };
+    Body: { title?: string; description: string; status?: string; priority?: string };
   }>("/api/projects/:projectId/tasks", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { title, description, status, priority } = req.body;
+    const { title: providedTitle, description, status, priority } = req.body;
+    if (!description) {
+      return reply.code(400).send({ error: "description is required" });
+    }
+
+    let title = providedTitle;
     if (!title) {
-      return reply.code(400).send({ error: "title is required" });
+      try {
+        const deepseek = createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY ?? "" });
+        const { text } = await generateText({
+          model: deepseek("deepseek-chat"),
+          prompt: `Generate a concise task title (under 10 words) that captures the essence of this task description. Return only the title text, nothing else.\n\nDescription: ${description}`,
+        });
+        title = text.trim();
+      } catch {
+        title = description.length > 50 ? description.slice(0, 50) + "..." : description;
+      }
     }
 
     const id = randomUUID();

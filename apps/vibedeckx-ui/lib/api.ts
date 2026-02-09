@@ -609,7 +609,7 @@ export const api = {
 
   async createTask(
     projectId: string,
-    opts: { title: string; description?: string; status?: TaskStatus; priority?: TaskPriority }
+    opts: { title?: string; description: string; status?: TaskStatus; priority?: TaskPriority }
   ): Promise<Task> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`, {
       method: "POST",

@@ -19,9 +19,10 @@ interface TaskRowProps {
   task: Task;
   onUpdate: (id: string, opts: { title?: string; status?: TaskStatus; priority?: TaskPriority }) => void;
   onDelete: (id: string) => void;
+  onClick?: (task: Task) => void;
 }
 
-export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
+export function TaskRow({ task, onUpdate, onDelete, onClick }: TaskRowProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,8 +51,8 @@ export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
   const isDone = task.status === "done" || task.status === "cancelled";
 
   return (
-    <TableRow className="group">
-      <TableCell className="w-10">
+    <TableRow className="group cursor-pointer" onClick={() => onClick?.(task)}>
+      <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={task.status === "done"}
           onCheckedChange={(checked) => {
@@ -67,6 +68,7 @@ export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
             value={titleValue}
             onChange={(e) => setTitleValue(e.target.value)}
             onBlur={commitTitle}
+            onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitTitle();
               if (e.key === "Escape") {
@@ -76,15 +78,22 @@ export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
             }}
           />
         ) : (
-          <span
-            className={`cursor-pointer hover:underline text-sm ${isDone ? "line-through text-muted-foreground" : ""}`}
-            onClick={() => setEditingTitle(true)}
-          >
-            {task.title}
-          </span>
+          <div>
+            <span
+              className={`cursor-pointer hover:underline text-sm ${isDone ? "line-through text-muted-foreground" : ""}`}
+              onClick={(e) => { e.stopPropagation(); setEditingTitle(true); }}
+            >
+              {task.title}
+            </span>
+            {task.description && (
+              <p className="text-xs text-muted-foreground truncate max-w-[400px] mt-0.5">
+                {task.description.length > 80 ? task.description.slice(0, 80) + "..." : task.description}
+              </p>
+            )}
+          </div>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="focus:outline-none">
@@ -103,7 +112,7 @@ export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
-      <TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="focus:outline-none">
@@ -125,7 +134,7 @@ export function TaskRow({ task, onUpdate, onDelete }: TaskRowProps) {
       <TableCell className="text-muted-foreground text-xs">
         {new Date(task.created_at).toLocaleDateString()}
       </TableCell>
-      <TableCell className="w-10">
+      <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
         <Button
           variant="ghost"
           size="icon"

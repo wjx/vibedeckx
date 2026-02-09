@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TaskRow } from "./task-row";
+import { TaskDetailDialog } from "./task-detail-dialog";
 
 type SortField = "title" | "status" | "priority" | "created_at";
 type SortDir = "asc" | "desc";
@@ -26,6 +27,8 @@ interface TaskTableProps {
 export function TaskTable({ tasks, onUpdate, onDelete }: TaskTableProps) {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -61,6 +64,7 @@ export function TaskTable({ tasks, onUpdate, onDelete }: TaskTableProps) {
   };
 
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -87,6 +91,7 @@ export function TaskTable({ tasks, onUpdate, onDelete }: TaskTableProps) {
             task={task}
             onUpdate={onUpdate}
             onDelete={onDelete}
+            onClick={(t) => { setSelectedTask(t); setDetailOpen(true); }}
           />
         ))}
         {tasks.length === 0 && (
@@ -98,5 +103,7 @@ export function TaskTable({ tasks, onUpdate, onDelete }: TaskTableProps) {
         )}
       </TableBody>
     </Table>
+    <TaskDetailDialog task={selectedTask} open={detailOpen} onOpenChange={setDetailOpen} />
+    </>
   );
 }

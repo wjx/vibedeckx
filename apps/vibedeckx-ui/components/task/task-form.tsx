@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -25,31 +24,27 @@ interface TaskFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (opts: {
-    title: string;
-    description?: string;
+    description: string;
     status?: TaskStatus;
     priority?: TaskPriority;
   }) => void;
 }
 
 export function TaskForm({ open, onOpenChange, onSubmit }: TaskFormProps) {
-  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [priority, setPriority] = useState<TaskPriority>("medium");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!description.trim()) return;
 
     onSubmit({
-      title: title.trim(),
-      description: description.trim() || undefined,
+      description: description.trim(),
       status,
       priority,
     });
 
-    setTitle("");
     setDescription("");
     setStatus("todo");
     setPriority("medium");
@@ -64,19 +59,12 @@ export function TaskForm({ open, onOpenChange, onSubmit }: TaskFormProps) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Input
-              placeholder="Task title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-2">
             <Textarea
-              placeholder="Description (optional)"
+              placeholder="Describe the task..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
+              autoFocus
             />
           </div>
           <div className="flex gap-3">
@@ -115,7 +103,7 @@ export function TaskForm({ open, onOpenChange, onSubmit }: TaskFormProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!title.trim()}>
+            <Button type="submit" disabled={!description.trim()}>
               Create
             </Button>
           </DialogFooter>
