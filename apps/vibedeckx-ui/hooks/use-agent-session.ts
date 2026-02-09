@@ -563,10 +563,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
   // Reset session when projectId or branch changes
   useEffect(() => {
-    // Close existing WebSocket
+    // Close existing WebSocket with code 1000 to prevent onclose reconnect handler
+    // (onclose fires asynchronously, after finishedRef is reset to false below)
     if (wsRef.current) {
-      finishedRef.current = true;
-      wsRef.current.close();
+      wsRef.current.close(1000, "branch-switch");
       wsRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
