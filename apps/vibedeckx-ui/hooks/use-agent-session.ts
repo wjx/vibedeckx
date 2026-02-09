@@ -240,6 +240,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const stabilityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shortLivedConnectionsRef = useRef(0);
   const isReplayingRef = useRef(false); // True during history replay (before Ready signal)
+  const sessionGenerationRef = useRef(0); // Incremented on branch/project change to discard stale API responses
 
   // WebSocket reconnection constants
   const MIN_STABLE_CONNECTION_MS = 5000;  // Connection must be stable for 5s before resetting backoff
@@ -433,6 +434,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const startSession = useCallback(async (permissionMode?: "plan" | "edit"): Promise<AgentSession | null> => {
     if (!projectId) return null;
 
+    // Capture generation at call time to detect stale responses
+    const generation = sessionGenerationRef.current;
+
     setIsLoading(true);
     setError(null);
     setIsInitialized(false);
@@ -440,6 +444,12 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     try {
       const { session: newSession } =
         await createOrGetSession(projectId, branch, permissionMode);
+
+      // If branch/project changed while the API call was in flight, discard the result
+      if (sessionGenerationRef.current !== generation) {
+        console.log("[AgentSession] Discarding stale session response (generation mismatch)");
+        return null;
+      }
 
       setSession(newSession);
       setStatus(newSession.status);
@@ -450,12 +460,18 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       // Return session for immediate use (avoids React state timing issues)
       return newSession;
     } catch (e) {
+      // Don't set error if the request was invalidated by a branch switch
+      if (sessionGenerationRef.current !== generation) return null;
+
       const errorMsg = e instanceof Error ? e.message : "Failed to start session";
       setError(errorMsg);
       console.error("[AgentSession] Failed to start session:", e);
       return null;
     } finally {
-      setIsLoading(false);
+      // Only clear loading if this is still the current generation
+      if (sessionGenerationRef.current === generation) {
+        setIsLoading(false);
+      }
     }
   }, [projectId, branch, connectWebSocket]);
 
@@ -561,6 +577,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       clearTimeout(stabilityTimeoutRef.current);
       stabilityTimeoutRef.current = null;
     }
+
+    // Increment generation to invalidate any in-flight startSession API calls
+    sessionGenerationRef.current += 1;
 
     // Reset all state
     setSession(null);
