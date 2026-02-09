@@ -8,7 +8,6 @@ import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
-import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import type { ExecutionMode } from '@/lib/api';
@@ -16,7 +15,7 @@ import type { ExecutionMode } from '@/lib/api';
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<ActiveView>('workspace');
+  const [activeView, setActiveView] = useState<ActiveView>('tasks');
   const agentRef = useRef<AgentConversationHandle>(null);
 
   const {
@@ -98,8 +97,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
   }
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <div className="h-screen flex flex-col w-full">
+    <div className="h-screen flex flex-col w-full">
         {/* Header with Project Selector */}
         <div className="border-b p-3 h-14 flex items-center justify-between">
           <h1 className="text-lg font-semibold">Vibedeckx</h1>
@@ -162,6 +160,5 @@ Please proceed step by step and let me know if there are any issues or conflicts
           )}
         </div>
       </div>
-    </SidebarProvider>
   );
 }
