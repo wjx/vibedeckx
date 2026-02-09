@@ -13,6 +13,7 @@ import processRoutes from "./routes/process-routes.js";
 import worktreeRoutes from "./routes/worktree-routes.js";
 import diffRoutes from "./routes/diff-routes.js";
 import agentSessionRoutes from "./routes/agent-session-routes.js";
+import taskRoutes from "./routes/task-routes.js";
 import websocketRoutes from "./routes/websocket-routes.js";
 
 // API Key from environment variable for remote access authentication
@@ -86,6 +87,7 @@ export const createServer = (opts: { storage: Storage }) => {
   server.register(worktreeRoutes);
   server.register(diffRoutes);
   server.register(agentSessionRoutes);
+  server.register(taskRoutes);
 
   // 提供静态 UI 文件
   server.register(fastifyStatic, {

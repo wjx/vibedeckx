@@ -54,6 +54,21 @@ export interface ExecutorProcess {
   finished_at: string | null;
 }
 
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'cancelled';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface Task {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AgentSessionStatus = 'running' | 'stopped' | 'error';
 
 export interface AgentSession {
@@ -124,6 +139,14 @@ export interface Storage {
     getByBranch: (projectId: string, branch: string) => AgentSession | undefined;
     updateStatus: (id: string, status: AgentSessionStatus) => void;
     delete: (id: string) => void;
+  };
+  tasks: {
+    create: (opts: { id: string; project_id: string; title: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority }) => Task;
+    getByProjectId: (projectId: string) => Task[];
+    getById: (id: string) => Task | undefined;
+    update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }) => Task | undefined;
+    delete: (id: string) => void;
+    reorder: (projectId: string, orderedIds: string[]) => void;
   };
   close: () => void;
 }

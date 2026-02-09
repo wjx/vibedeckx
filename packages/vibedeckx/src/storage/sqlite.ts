@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
+import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -60,6 +60,19 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       status TEXT NOT NULL DEFAULT 'running',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(project_id, branch),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'todo',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
@@ -521,6 +534,93 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       delete: (id: string) => {
         db.prepare(`DELETE FROM agent_sessions WHERE id = @id`).run({ id });
+      },
+    },
+
+    tasks: {
+      create: ({ id, project_id, title, description, status, priority }) => {
+        const maxPos = db.prepare<{ project_id: string }, { max_pos: number | null }>(
+          `SELECT MAX(position) as max_pos FROM tasks WHERE project_id = @project_id`
+        ).get({ project_id });
+        const position = (maxPos?.max_pos ?? -1) + 1;
+
+        db.prepare(
+          `INSERT INTO tasks (id, project_id, title, description, status, priority, position)
+           VALUES (@id, @project_id, @title, @description, @status, @priority, @position)`
+        ).run({
+          id,
+          project_id,
+          title,
+          description: description ?? null,
+          status: status ?? 'todo',
+          priority: priority ?? 'medium',
+          position,
+        });
+
+        return db
+          .prepare<{ id: string }, Task>(`SELECT * FROM tasks WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getByProjectId: (projectId: string) => {
+        return db
+          .prepare<{ project_id: string }, Task>(`SELECT * FROM tasks WHERE project_id = @project_id ORDER BY position ASC`)
+          .all({ project_id: projectId });
+      },
+
+      getById: (id: string) => {
+        return db
+          .prepare<{ id: string }, Task>(`SELECT * FROM tasks WHERE id = @id`)
+          .get({ id });
+      },
+
+      update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }) => {
+        const updates: string[] = [];
+        const params: Record<string, unknown> = { id };
+
+        if (opts.title !== undefined) {
+          updates.push('title = @title');
+          params.title = opts.title;
+        }
+        if (opts.description !== undefined) {
+          updates.push('description = @description');
+          params.description = opts.description;
+        }
+        if (opts.status !== undefined) {
+          updates.push('status = @status');
+          params.status = opts.status;
+        }
+        if (opts.priority !== undefined) {
+          updates.push('priority = @priority');
+          params.priority = opts.priority;
+        }
+        if (opts.position !== undefined) {
+          updates.push('position = @position');
+          params.position = opts.position;
+        }
+
+        if (updates.length === 0) {
+          return db.prepare<{ id: string }, Task>(`SELECT * FROM tasks WHERE id = @id`).get({ id });
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = @id`).run(params);
+        return db.prepare<{ id: string }, Task>(`SELECT * FROM tasks WHERE id = @id`).get({ id });
+      },
+
+      delete: (id: string) => {
+        db.prepare(`DELETE FROM tasks WHERE id = @id`).run({ id });
+      },
+
+      reorder: (projectId: string, orderedIds: string[]) => {
+        const transaction = db.transaction(() => {
+          for (let i = 0; i < orderedIds.length; i++) {
+            db.prepare(
+              `UPDATE tasks SET position = @position, updated_at = CURRENT_TIMESTAMP WHERE id = @id AND project_id = @project_id`
+            ).run({ id: orderedIds[i], project_id: projectId, position: i });
+          }
+        });
+        transaction();
       },
     },
 

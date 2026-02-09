@@ -8,11 +8,15 @@ import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
+import { SidebarProvider } from '@/components/ui/sidebar';
+import { AppSidebar, type ActiveView } from '@/components/layout';
+import { TasksView } from '@/components/task';
 import type { ExecutionMode } from '@/lib/api';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>('workspace');
   const agentRef = useRef<AgentConversationHandle>(null);
 
   const {
@@ -71,7 +75,6 @@ Please proceed step by step and let me know if there are any issues or conflicts
     }
   }, [currentProject, updateProject]);
 
-  // 显示欢迎页面（无项目时）
   if (!projectsLoading && projects.length === 0) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -95,58 +98,70 @@ Please proceed step by step and let me know if there are any issues or conflicts
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header with Project Selector */}
-      <div className="border-b p-3 h-14 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Vibedeckx</h1>
-        <ProjectSelector
-          projects={projects}
-          currentProject={currentProject}
-          onSelectProject={selectProject}
-          onCreateProject={createProject}
-        />
-      </div>
-
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Project Card + Agent Conversation */}
-        <div className="w-1/2 flex flex-col border-r overflow-hidden">
-          {/* Project Info */}
-          {currentProject && (
-            <div className="p-4 border-b flex-shrink-0">
-              <ProjectCard
-                project={currentProject}
-                selectedBranch={selectedBranch}
-                onBranchChange={setSelectedBranch}
-                onUpdateProject={updateProject}
-                onDeleteProject={deleteProject}
-                onSyncPrompt={handleSyncPrompt}
-              />
-            </div>
-          )}
-
-          {/* Agent Conversation */}
-          <div className="flex-1 overflow-hidden">
-            <AgentConversation
-              ref={agentRef}
-              projectId={currentProject?.id ?? null}
-              branch={selectedBranch}
-              project={currentProject}
-              onAgentModeChange={handleAgentModeChange}
-            />
-          </div>
-        </div>
-
-        {/* Right Panel: Executors + Diff */}
-        <div className="w-1/2 flex flex-col overflow-hidden">
-          <RightPanel
-            projectId={currentProject?.id ?? null}
-            selectedBranch={selectedBranch}
-            onMergeRequest={handleMergeRequest}
-            project={currentProject}
-            onExecutorModeChange={handleExecutorModeChange}
+    <SidebarProvider defaultOpen={false}>
+      <div className="h-screen flex flex-col w-full">
+        {/* Header with Project Selector */}
+        <div className="border-b p-3 h-14 flex items-center justify-between">
+          <h1 className="text-lg font-semibold">Vibedeckx</h1>
+          <ProjectSelector
+            projects={projects}
+            currentProject={currentProject}
+            onSelectProject={selectProject}
+            onCreateProject={createProject}
           />
         </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar Navigation */}
+          <AppSidebar activeView={activeView} onViewChange={setActiveView} />
+
+          {/* Main Content */}
+          {activeView === 'workspace' ? (
+            <>
+              {/* Left Panel: Project Card + Agent Conversation */}
+              <div className="w-1/2 flex flex-col border-r overflow-hidden">
+                {currentProject && (
+                  <div className="p-4 border-b flex-shrink-0">
+                    <ProjectCard
+                      project={currentProject}
+                      selectedBranch={selectedBranch}
+                      onBranchChange={setSelectedBranch}
+                      onUpdateProject={updateProject}
+                      onDeleteProject={deleteProject}
+                      onSyncPrompt={handleSyncPrompt}
+                    />
+                  </div>
+                )}
+                <div className="flex-1 overflow-hidden">
+                  <AgentConversation
+                    ref={agentRef}
+                    projectId={currentProject?.id ?? null}
+                    branch={selectedBranch}
+                    project={currentProject}
+                    onAgentModeChange={handleAgentModeChange}
+                  />
+                </div>
+              </div>
+
+              {/* Right Panel: Executors + Diff */}
+              <div className="w-1/2 flex flex-col overflow-hidden">
+                <RightPanel
+                  projectId={currentProject?.id ?? null}
+                  selectedBranch={selectedBranch}
+                  onMergeRequest={handleMergeRequest}
+                  project={currentProject}
+                  onExecutorModeChange={handleExecutorModeChange}
+                />
+              </div>
+            </>
+          ) : (
+            /* Tasks View — full width */
+            <div className="flex-1 overflow-hidden">
+              <TasksView projectId={currentProject?.id ?? null} />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }

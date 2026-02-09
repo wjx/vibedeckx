@@ -152,6 +152,21 @@ export type InputMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'cancelled';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface Task {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DiffLine {
   type: 'context' | 'add' | 'delete';
   content: string;
@@ -579,5 +594,72 @@ export const api = {
       throw new Error(error.error);
     }
     return res.json();
+  },
+
+  // Task API
+  async getTasks(projectId: string): Promise<Task[]> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.tasks;
+  },
+
+  async createTask(
+    projectId: string,
+    opts: { title: string; description?: string; status?: TaskStatus; priority?: TaskPriority }
+  ): Promise<Task> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.task;
+  },
+
+  async updateTask(
+    id: string,
+    opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }
+  ): Promise<Task> {
+    const res = await fetch(`${getApiBase()}/api/tasks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.task;
+  },
+
+  async deleteTask(id: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/tasks/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  async reorderTasks(projectId: string, orderedIds: string[]): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/tasks/reorder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
   },
 };
