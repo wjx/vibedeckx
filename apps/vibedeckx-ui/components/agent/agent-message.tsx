@@ -1,11 +1,19 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
 import { ExitPlanModeUI } from "./exit-plan-mode";
+import {
+  TodoWriteUI,
+  TaskCreateUI,
+  TaskUpdateUI,
+  TaskListUI,
+  TaskGetUI,
+  TaskListResultUI,
+} from "./task-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -99,6 +107,30 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  // Task management tools
+  const taskToolLabels: Record<string, { label: string; ui: React.ReactNode }> = {
+    TodoWrite: { label: "Tasks", ui: <TodoWriteUI input={input} /> },
+    TaskCreate: { label: "Create Task", ui: <TaskCreateUI input={input} /> },
+    TaskUpdate: { label: "Update Task", ui: <TaskUpdateUI input={input} /> },
+    TaskList: { label: "Task List", ui: <TaskListUI /> },
+    TaskGet: { label: "Get Task", ui: <TaskGetUI input={input} /> },
+  };
+
+  const taskTool = taskToolLabels[tool];
+  if (taskTool) {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center">
+          <ListTodo className="w-4 h-4 text-cyan-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-cyan-500 mb-1">{taskTool.label}</p>
+          {taskTool.ui}
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
@@ -122,6 +154,29 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
 }
 
 function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
+  // Task tool results get custom rendering
+  const isTaskTool = ["TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"].includes(tool);
+  if (isTaskTool) {
+    const taskListResult = tool === "TaskList" ? <TaskListResultUI output={output} /> : null;
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-xs text-muted-foreground mb-1">Result ({tool})</p>
+          {taskListResult || (
+            <details>
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                Output
+              </summary>
+              <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto max-w-full whitespace-pre-wrap break-all">
+                {output.length > 1000 ? output.substring(0, 1000) + "..." : output}
+              </pre>
+            </details>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const isLong = output.length > 200;
 
   return (
