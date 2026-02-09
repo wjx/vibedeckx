@@ -93,7 +93,7 @@ export type AgentSessionStatus = 'running' | 'stopped' | 'error';
 export interface AgentSession {
   id: string;
   project_id: string;
-  worktree_path: string;
+  branch: string;
   status: AgentSessionStatus;
   created_at: string;
 }

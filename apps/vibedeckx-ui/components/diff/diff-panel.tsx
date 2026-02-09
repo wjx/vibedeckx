@@ -9,12 +9,12 @@ import { useDiff } from '@/hooks/use-diff';
 
 interface DiffPanelProps {
   projectId: string | null;
-  selectedWorktree?: string;
+  selectedBranch?: string | null;
   onMergeRequest?: () => void;
 }
 
-export function DiffPanel({ projectId, selectedWorktree, onMergeRequest }: DiffPanelProps) {
-  const { diff, loading, error, refresh } = useDiff(projectId, selectedWorktree);
+export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPanelProps) {
+  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch);
 
   useEffect(() => {
     refresh();

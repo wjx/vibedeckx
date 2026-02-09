@@ -18,8 +18,8 @@ import { SyncOutputDialog } from "./sync-output-dialog";
 
 interface ProjectCardProps {
   project: Project;
-  selectedWorktree: string;
-  onWorktreeChange: (path: string) => void;
+  selectedBranch: string | null;
+  onBranchChange: (branch: string | null) => void;
   onUpdateProject: (id: string, opts: {
     name?: string;
     path?: string | null;
@@ -33,7 +33,7 @@ interface ProjectCardProps {
   onSyncPrompt?: (prompt: string, executionMode: ExecutionMode) => void;
 }
 
-export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpdateProject, onDeleteProject, onSyncPrompt }: ProjectCardProps) {
+export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt }: ProjectCardProps) {
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -53,21 +53,21 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
       .then((wts) => {
         setWorktrees(wts);
         // If current selection not in list, reset to first
-        if (wts.length > 0 && !wts.some(w => w.path === selectedWorktree)) {
-          onWorktreeChange(wts[0].path);
+        if (wts.length > 0 && !wts.some(w => w.branch === selectedBranch)) {
+          onBranchChange(wts[0].branch);
         }
       })
-      .catch(() => setWorktrees([{ path: ".", branch: null }]))
+      .catch(() => setWorktrees([{ branch: null }]))
       .finally(() => setLoading(false));
-  }, [project.id, selectedWorktree, onWorktreeChange]);
+  }, [project.id, selectedBranch, onBranchChange]);
 
   useEffect(() => {
     fetchWorktrees();
   }, [fetchWorktrees]);
 
-  const handleWorktreeCreated = (worktreePath: string) => {
+  const handleWorktreeCreated = (branch: string) => {
     fetchWorktrees();
-    onWorktreeChange(worktreePath);
+    onBranchChange(branch);
   };
 
   const handleDeleteClick = (e: React.MouseEvent, worktree: Worktree) => {
@@ -78,7 +78,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
   };
 
   const handleWorktreeDeleted = () => {
-    onWorktreeChange(".");
+    onBranchChange(null);
     fetchWorktrees();
   };
 
@@ -96,7 +96,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
     setSyncOutputOpen(true);
 
     try {
-      const result = await api.executeSyncCommand(project.id, syncType, selectedWorktree);
+      const result = await api.executeSyncCommand(project.id, syncType, selectedBranch);
       setSyncOutput({ type: syncType, result, loading: false });
     } catch (e) {
       setSyncOutput({
@@ -112,7 +112,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
     }
   };
 
-  const selectedWorktreeData = worktrees.find(w => w.path === selectedWorktree);
+  const selectedWorktreeData = worktrees.find(w => w.branch === selectedBranch);
 
   const showSyncUp = !!project.sync_up_config;
   const showSyncDown = !!project.sync_down_config;
@@ -204,12 +204,7 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="flex-1 justify-between">
                     <span className="truncate">
-                      {selectedWorktree}
-                      {selectedWorktreeData?.branch && (
-                        <span className="text-muted-foreground ml-2">
-                          ({selectedWorktreeData.branch})
-                        </span>
-                      )}
+                      {selectedBranch ?? "main"}
                     </span>
                     <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -217,17 +212,14 @@ export function ProjectCard({ project, selectedWorktree, onWorktreeChange, onUpd
                 <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
                   {worktrees.map((wt) => (
                     <DropdownMenuItem
-                      key={wt.path}
+                      key={wt.branch ?? "__main__"}
                       className="flex items-center justify-between gap-2"
-                      onSelect={() => onWorktreeChange(wt.path)}
+                      onSelect={() => onBranchChange(wt.branch)}
                     >
                       <span className="truncate">
-                        {wt.path}
-                        {wt.branch && (
-                          <span className="text-muted-foreground ml-2">({wt.branch})</span>
-                        )}
+                        {wt.branch ?? "main"}
                       </span>
-                      {wt.path !== "." && (
+                      {wt.branch !== null && (
                         <button
                           onClick={(e) => handleDeleteClick(e, wt)}
                           className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"

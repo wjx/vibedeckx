@@ -216,14 +216,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Execute sync command for a project
   fastify.post<{
     Params: { id: string };
-    Body: { syncType: 'up' | 'down'; worktreePath?: string };
+    Body: { syncType: 'up' | 'down'; branch?: string | null };
   }>("/api/projects/:id/execute-sync", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { syncType, worktreePath } = req.body;
+    const { syncType, branch } = req.body;
     const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
 
     if (!config || config.actionType !== 'command') {
@@ -236,7 +236,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (!project.remote_url || !project.remote_api_key) {
         return reply.code(400).send({ error: "Remote not configured for this project" });
       }
-      const remoteCwd = resolveWorktreePath(project.remote_path ?? '', worktreePath || ".");
+      const remoteCwd = resolveWorktreePath(project.remote_path ?? '', branch ?? null);
       const result = await proxyToRemote(project.remote_url, project.remote_api_key, 'POST', '/api/execute-one-shot', {
         command: config.content,
         cwd: remoteCwd,
@@ -252,7 +252,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     if (!basePath) {
       return reply.code(400).send({ error: "Project has no local path" });
     }
-    const cwd = resolveWorktreePath(basePath, worktreePath || ".");
+    const cwd = resolveWorktreePath(basePath, branch ?? null);
 
     try {
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {

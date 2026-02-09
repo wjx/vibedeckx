@@ -50,7 +50,7 @@ export type AgentSessionStatus = 'running' | 'stopped' | 'error';
 export interface AgentSession {
   id: string;
   project_id: string;
-  worktree_path: string;
+  branch: string;
   status: AgentSessionStatus;
   created_at: string;
 }
@@ -100,10 +100,10 @@ export interface Storage {
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
   };
   agentSessions: {
-    create: (opts: { id: string; project_id: string; worktree_path: string }) => AgentSession;
+    create: (opts: { id: string; project_id: string; branch: string }) => AgentSession;
     getById: (id: string) => AgentSession | undefined;
     getByProjectId: (projectId: string) => AgentSession[];
-    getByWorktree: (projectId: string, worktreePath: string) => AgentSession | undefined;
+    getByBranch: (projectId: string, branch: string) => AgentSession | undefined;
     updateStatus: (id: string, status: AgentSessionStatus) => void;
     delete: (id: string) => void;
   };

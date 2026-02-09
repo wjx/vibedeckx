@@ -39,7 +39,7 @@ export function DeleteWorktreeDialog({
     setWarning(null);
 
     try {
-      const result = await api.deleteWorktree(projectId, worktree.path);
+      const result = await api.deleteWorktree(projectId, worktree.branch!);
 
       if (result.partialSuccess) {
         const remoteError = result.results?.remote?.error || "Unknown error";
@@ -78,15 +78,9 @@ export function DeleteWorktreeDialog({
         {worktree && (
           <div className="space-y-2">
             <div className="text-sm">
-              <span className="font-medium">Path:</span>{" "}
-              <span className="text-muted-foreground">{worktree.path}</span>
+              <span className="font-medium">Branch:</span>{" "}
+              <span className="text-muted-foreground">{worktree.branch}</span>
             </div>
-            {worktree.branch && (
-              <div className="text-sm">
-                <span className="font-medium">Branch:</span>{" "}
-                <span className="text-muted-foreground">{worktree.branch}</span>
-              </div>
-            )}
           </div>
         )}
 

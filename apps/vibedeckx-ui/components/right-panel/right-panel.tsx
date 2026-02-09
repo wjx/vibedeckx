@@ -9,7 +9,7 @@ import type { Project, ExecutionMode } from '@/lib/api';
 
 interface RightPanelProps {
   projectId: string | null;
-  selectedWorktree?: string;
+  selectedBranch?: string | null;
   onMergeRequest?: () => void;
   project?: Project | null;
   onExecutorModeChange?: (mode: ExecutionMode) => void;
@@ -17,7 +17,7 @@ interface RightPanelProps {
 
 type TabType = 'executors' | 'diff';
 
-export function RightPanel({ projectId, selectedWorktree, onMergeRequest, project, onExecutorModeChange }: RightPanelProps) {
+export function RightPanel({ projectId, selectedBranch, onMergeRequest, project, onExecutorModeChange }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('executors');
 
   return (
@@ -55,14 +55,14 @@ export function RightPanel({ projectId, selectedWorktree, onMergeRequest, projec
         {activeTab === 'executors' ? (
           <ExecutorPanel
             projectId={projectId}
-            selectedWorktree={selectedWorktree}
+            selectedBranch={selectedBranch}
             project={project}
             onExecutorModeChange={onExecutorModeChange}
           />
         ) : (
           <DiffPanel
             projectId={projectId}
-            selectedWorktree={selectedWorktree}
+            selectedBranch={selectedBranch}
             onMergeRequest={onMergeRequest}
           />
         )}

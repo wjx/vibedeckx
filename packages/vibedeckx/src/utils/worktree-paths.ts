@@ -10,10 +10,10 @@ function getProjectIdentifier(projectPath: string): string {
   return `${basename}-${hash}`;
 }
 
-/** Resolve abstract worktree path (e.g. ".worktrees/feature-x") to absolute filesystem path */
-export function resolveWorktreePath(projectPath: string, worktreePath: string): string {
-  if (!worktreePath || worktreePath === ".") return projectPath;
-  const dirName = worktreePath.replace(/^\.worktrees\//, "");
+/** Resolve branch to absolute filesystem path. null = main worktree. */
+export function resolveWorktreePath(projectPath: string, branch: string | null): string {
+  if (!branch) return projectPath;
+  const dirName = branch.replace(/\//g, "-");
   return path.join(WORKTREE_BASE_DIR, getProjectIdentifier(projectPath), dirName);
 }
 

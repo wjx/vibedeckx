@@ -44,10 +44,10 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     CREATE TABLE IF NOT EXISTS agent_sessions (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
-      worktree_path TEXT NOT NULL,
+      branch TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'running',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(project_id, worktree_path),
+      UNIQUE(project_id, branch),
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
@@ -105,6 +105,25 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
   if (!hasSyncUpConfigColumn) {
     db.exec("ALTER TABLE projects ADD COLUMN sync_up_config TEXT");
     db.exec("ALTER TABLE projects ADD COLUMN sync_down_config TEXT");
+  }
+
+  // Migration: rename worktree_path to branch in agent_sessions
+  const sessionTableInfo = db.prepare("PRAGMA table_info(agent_sessions)").all() as { name: string }[];
+  const hasWorktreePathColumn = sessionTableInfo.some((col) => col.name === "worktree_path");
+  if (hasWorktreePathColumn) {
+    // Sessions are ephemeral - clear stale rows and recreate table
+    db.exec("DROP TABLE agent_sessions");
+    db.exec(`
+      CREATE TABLE agent_sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        branch TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'running',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, branch),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   return db;
@@ -366,15 +385,15 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     agentSessions: {
-      create: ({ id, project_id, worktree_path }) => {
-        // Delete any existing session for this worktree (one-to-one binding)
+      create: ({ id, project_id, branch }) => {
+        // Delete any existing session for this branch (one-to-one binding)
         db.prepare(
-          `DELETE FROM agent_sessions WHERE project_id = @project_id AND worktree_path = @worktree_path`
-        ).run({ project_id, worktree_path });
+          `DELETE FROM agent_sessions WHERE project_id = @project_id AND branch = @branch`
+        ).run({ project_id, branch });
 
         db.prepare(
-          `INSERT INTO agent_sessions (id, project_id, worktree_path, status) VALUES (@id, @project_id, @worktree_path, 'running')`
-        ).run({ id, project_id, worktree_path });
+          `INSERT INTO agent_sessions (id, project_id, branch, status) VALUES (@id, @project_id, @branch, 'running')`
+        ).run({ id, project_id, branch });
 
         return db
           .prepare<{ id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE id = @id`)
@@ -393,12 +412,12 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           .all({ project_id: projectId });
       },
 
-      getByWorktree: (projectId: string, worktreePath: string) => {
+      getByBranch: (projectId: string, branch: string) => {
         return db
-          .prepare<{ project_id: string; worktree_path: string }, AgentSession>(
-            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND worktree_path = @worktree_path`
+          .prepare<{ project_id: string; branch: string }, AgentSession>(
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch`
           )
-          .get({ project_id: projectId, worktree_path: worktreePath });
+          .get({ project_id: projectId, branch });
       },
 
       updateStatus: (id: string, status: AgentSessionStatus) => {

@@ -30,7 +30,7 @@ interface MessageStore {
 interface RunningSession {
   id: string;
   projectId: string;
-  worktreePath: string;
+  branch: string | null;
   process: ChildProcess;
   store: MessageStore;
   subscribers: Set<WebSocket>;
@@ -69,11 +69,11 @@ export class AgentSessionManager {
   }
 
   /**
-   * Get or create an agent session for a worktree
+   * Get or create an agent session for a branch
    */
   getOrCreateSession(
     projectId: string,
-    worktreePath: string,
+    branch: string | null,
     projectPath: string,
     skipDb = false,
     permissionMode: "plan" | "edit" = "edit"
@@ -82,7 +82,7 @@ export class AgentSessionManager {
     for (const [id, session] of this.sessions) {
       if (
         session.projectId === projectId &&
-        session.worktreePath === worktreePath &&
+        session.branch === branch &&
         session.status === "running"
       ) {
         // If permission mode differs, switch mode on existing session
@@ -97,9 +97,9 @@ export class AgentSessionManager {
 
     // Check database for existing session (skip for remote path-based sessions)
     if (!skipDb) {
-      const existingSession = this.storage.agentSessions.getByWorktree(
+      const existingSession = this.storage.agentSessions.getByBranch(
         projectId,
-        worktreePath
+        branch ?? ""
       );
       if (existingSession && this.sessions.has(existingSession.id)) {
         console.log(`[AgentSession] Returning existing session from DB ${existingSession.id}`);
@@ -112,16 +112,16 @@ export class AgentSessionManager {
     console.log(`[AgentSession] Creating new session ${sessionId}`);
 
     // Calculate absolute worktree path
-    const absoluteWorktreePath = resolveWorktreePath(projectPath, worktreePath);
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, branch);
 
-    console.log(`[AgentSession] projectPath=${projectPath}, worktreePath=${worktreePath}, absoluteWorktreePath=${absoluteWorktreePath}`);
+    console.log(`[AgentSession] projectPath=${projectPath}, branch=${branch}, absoluteWorktreePath=${absoluteWorktreePath}`);
 
     // Create session in database (skip for remote path-based sessions)
     if (!skipDb) {
       this.storage.agentSessions.create({
         id: sessionId,
         project_id: projectId,
-        worktree_path: worktreePath,
+        branch: branch ?? "",
       });
     }
 
@@ -139,7 +139,7 @@ export class AgentSessionManager {
     const runningSession: RunningSession = {
       id: sessionId,
       projectId,
-      worktreePath,
+      branch,
       process: null as unknown as ChildProcess,
       store,
       subscribers: new Set(),
@@ -551,11 +551,11 @@ export class AgentSessionManager {
   }
 
   /**
-   * Get session by worktree
+   * Get session by branch
    */
-  getSessionByWorktree(projectId: string, worktreePath: string): RunningSession | null {
+  getSessionByBranch(projectId: string, branch: string | null): RunningSession | null {
     for (const session of this.sessions.values()) {
-      if (session.projectId === projectId && session.worktreePath === worktreePath) {
+      if (session.projectId === projectId && session.branch === branch) {
         return session;
       }
     }
@@ -640,7 +640,7 @@ export class AgentSessionManager {
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
 
     // 5. Calculate absolute worktree path and respawn
-    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.worktreePath);
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
     this.spawnClaudeCode(session, absoluteWorktreePath);
 
@@ -684,7 +684,7 @@ export class AgentSessionManager {
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
 
     // 5. Respawn Claude Code with new mode flags
-    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.worktreePath);
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
     this.spawnClaudeCode(session, absoluteWorktreePath);
 

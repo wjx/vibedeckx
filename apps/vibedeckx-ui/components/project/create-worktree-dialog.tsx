@@ -18,7 +18,7 @@ interface CreateWorktreeDialogProps {
   project: Project;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onWorktreeCreated: (worktreePath: string) => void;
+  onWorktreeCreated: (branch: string) => void;
 }
 
 export function CreateWorktreeDialog({
@@ -36,11 +36,6 @@ export function CreateWorktreeDialog({
   const [createRemote, setCreateRemote] = useState(true);
 
   const isHybrid = !!(project.path && project.remote_path);
-
-  // Generate worktree path from branch name
-  const worktreePath = branchName.trim()
-    ? `.worktrees/${branchName.trim().replace(/\//g, "-")}`
-    : "";
 
   const handleCreate = async () => {
     if (!branchName.trim()) return;
@@ -66,7 +61,7 @@ export function CreateWorktreeDialog({
         setWarning(`Worktree created locally, but ${failedTarget} creation failed: ${failedError}`);
       }
 
-      onWorktreeCreated(result.worktree.path);
+      onWorktreeCreated(result.worktree.branch!);
       if (!result.partialSuccess) {
         onOpenChange(false);
         setBranchName("");
@@ -154,17 +149,6 @@ export function CreateWorktreeDialog({
                     {project.remote_path}
                   </span>
                 </label>
-              </div>
-            </div>
-          )}
-
-          {worktreePath && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">
-                Worktree ID (auto-generated)
-              </label>
-              <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
-                {worktreePath}
               </div>
             </div>
           )}

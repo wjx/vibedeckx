@@ -19,20 +19,20 @@ function resolveProjectPath(
 const routes: FastifyPluginAsync = async (fastify) => {
   // Start agent session at a path (path-based, for remote execution)
   fastify.post<{
-    Body: { path: string; worktreePath?: string; permissionMode?: "plan" | "edit" };
+    Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit" };
   }>("/api/path/agent-sessions", async (req, reply) => {
-    const { path: projectPath, worktreePath, permissionMode } = req.body;
+    const { path: projectPath, branch, permissionMode } = req.body;
     if (!projectPath) {
       return reply.code(400).send({ error: "Path is required" });
     }
 
     try {
       const pseudoProjectId = `path:${projectPath}`;
-      console.log(`[API] POST /api/path/agent-sessions: path=${projectPath}, worktreePath=${worktreePath}, pseudoProjectId=${pseudoProjectId}`);
+      console.log(`[API] POST /api/path/agent-sessions: path=${projectPath}, branch=${branch}, pseudoProjectId=${pseudoProjectId}`);
 
       const sessionId = fastify.agentSessionManager.getOrCreateSession(
         pseudoProjectId,
-        worktreePath || ".",
+        branch ?? null,
         projectPath,
         true,
         permissionMode || "edit"
@@ -45,7 +45,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         session: {
           id: sessionId,
           projectId: pseudoProjectId,
-          worktreePath: worktreePath || ".",
+          branch: branch ?? null,
           status: session?.status || "running",
           permissionMode: session?.permissionMode || "edit",
         },
@@ -78,14 +78,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 创建或获取 Agent Session
   fastify.post<{
     Params: { projectId: string };
-    Body: { worktreePath: string; permissionMode?: "plan" | "edit" };
+    Body: { branch?: string | null; permissionMode?: "plan" | "edit" };
   }>("/api/projects/:projectId/agent-sessions", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { worktreePath, permissionMode } = req.body;
+    const { branch, permissionMode } = req.body;
 
     const useRemoteAgent = project.remote_url && project.remote_api_key && project.remote_path &&
       (!project.path || project.agent_mode === 'remote');
@@ -102,7 +102,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           project.remote_api_key!,
           "POST",
           `/api/path/agent-sessions`,
-          { path: project.remote_path, worktreePath, permissionMode }
+          { path: project.remote_path, branch, permissionMode }
         );
 
         console.log(`[API] Remote proxy result: ok=${result.ok}, status=${result.status}, ` +
@@ -137,12 +137,12 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, worktreePath=${worktreePath || "."}, path=${project.path}, permissionMode=${permissionMode || "edit"}`);
+    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, branch=${branch ?? null}, path=${project.path}, permissionMode=${permissionMode || "edit"}`);
 
     try {
       const sessionId = fastify.agentSessionManager.getOrCreateSession(
         req.params.projectId,
-        worktreePath || ".",
+        branch ?? null,
         project.path,
         false,
         permissionMode || "edit"
@@ -155,7 +155,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         session: {
           id: sessionId,
           projectId: req.params.projectId,
-          worktreePath: worktreePath || ".",
+          branch: branch ?? null,
           status: session?.status || "running",
           permissionMode: session?.permissionMode || "edit",
         },
@@ -196,7 +196,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         session: {
           id: session.id,
           projectId: session.projectId,
-          worktreePath: session.worktreePath,
+          branch: session.branch,
           status: session.status,
           permissionMode: session.permissionMode,
         },

@@ -12,7 +12,7 @@ import type { ExecutionMode } from '@/lib/api';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [selectedWorktree, setSelectedWorktree] = useState(".");
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const agentRef = useRef<AgentConversationHandle>(null);
 
   const {
@@ -25,9 +25,9 @@ export default function Home() {
     selectProject,
   } = useProjects();
 
-  // Reset worktree selection when project changes
+  // Reset branch selection when project changes
   useEffect(() => {
-    setSelectedWorktree(".");
+    setSelectedBranch(null);
   }, [currentProject?.id]);
 
   const handleSyncPrompt = useCallback((prompt: string, executionMode: ExecutionMode) => {
@@ -115,8 +115,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
             <div className="p-4 border-b flex-shrink-0">
               <ProjectCard
                 project={currentProject}
-                selectedWorktree={selectedWorktree}
-                onWorktreeChange={setSelectedWorktree}
+                selectedBranch={selectedBranch}
+                onBranchChange={setSelectedBranch}
                 onUpdateProject={updateProject}
                 onDeleteProject={deleteProject}
                 onSyncPrompt={handleSyncPrompt}
@@ -129,7 +129,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
             <AgentConversation
               ref={agentRef}
               projectId={currentProject?.id ?? null}
-              worktreePath={selectedWorktree}
+              branch={selectedBranch}
               project={currentProject}
               onAgentModeChange={handleAgentModeChange}
             />
@@ -140,7 +140,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
         <div className="w-1/2 flex flex-col overflow-hidden">
           <RightPanel
             projectId={currentProject?.id ?? null}
-            selectedWorktree={selectedWorktree}
+            selectedBranch={selectedBranch}
             onMergeRequest={handleMergeRequest}
             project={currentProject}
             onExecutorModeChange={handleExecutorModeChange}

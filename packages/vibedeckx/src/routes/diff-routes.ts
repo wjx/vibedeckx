@@ -9,15 +9,15 @@ import "../server-types.js";
 const routes: FastifyPluginAsync = async (fastify) => {
   // Get diff for a path (path-based, for remote execution)
   fastify.get<{
-    Querystring: { path: string; worktreePath?: string };
+    Querystring: { path: string; branch?: string };
   }>("/api/path/diff", async (req, reply) => {
     const projectPath = req.query.path;
     if (!projectPath) {
       return reply.code(400).send({ error: "Path is required" });
     }
 
-    const worktreePath = req.query.worktreePath;
-    const cwd = resolveWorktreePath(projectPath, worktreePath || ".");
+    const branch = req.query.branch;
+    const cwd = resolveWorktreePath(projectPath, branch ?? null);
 
     try {
       const { execSync } = await import("child_process");
@@ -47,19 +47,19 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Get git diff for uncommitted changes (project-based)
   fastify.get<{
     Params: { id: string };
-    Querystring: { worktreePath?: string };
+    Querystring: { branch?: string };
   }>("/api/projects/:id/diff", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const worktreePath = req.query.worktreePath;
+    const branch = req.query.branch;
 
     // Proxy to remote if this is a remote-only project
     if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
       const params = [`path=${encodeURIComponent(project.remote_path)}`];
-      if (worktreePath) params.push(`worktreePath=${encodeURIComponent(worktreePath)}`);
+      if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       const result = await proxyToRemote(
         project.remote_url,
         project.remote_api_key,
@@ -73,7 +73,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    const cwd = resolveWorktreePath(project.path, worktreePath || ".");
+    const cwd = resolveWorktreePath(project.path, branch ?? null);
 
     try {
       const { execSync } = await import("child_process");

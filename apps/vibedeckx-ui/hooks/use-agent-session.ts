@@ -21,7 +21,7 @@ export type AgentSessionStatus = "running" | "stopped" | "error";
 export interface AgentSession {
   id: string;
   projectId: string;
-  worktreePath: string;
+  branch: string | null;
   status: AgentSessionStatus;
   permissionMode?: "plan" | "edit";
 }
@@ -74,13 +74,13 @@ function getApiBase(): string {
 
 async function createOrGetSession(
   projectId: string,
-  worktreePath: string,
+  branch: string | null,
   permissionMode?: "plan" | "edit"
 ): Promise<{ session: AgentSession; messages: AgentMessage[] }> {
   const response = await fetch(`${getApiBase()}/api/projects/${projectId}/agent-sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ worktreePath, permissionMode }),
+    body: JSON.stringify({ branch, permissionMode }),
   });
 
   if (!response.ok) {
@@ -221,7 +221,7 @@ function deduplicatePatches(patches: Patch[]): Patch {
 
 // ============ Hook ============
 
-export function useAgentSession(projectId: string | null, worktreePath: string, agentMode?: string) {
+export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string) {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentSessionStatus>("stopped");
@@ -439,7 +439,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
 
     try {
       const { session: newSession } =
-        await createOrGetSession(projectId, worktreePath, permissionMode);
+        await createOrGetSession(projectId, branch, permissionMode);
 
       setSession(newSession);
       setStatus(newSession.status);
@@ -457,7 +457,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, worktreePath, connectWebSocket]);
+  }, [projectId, branch, connectWebSocket]);
 
   // Send user message - optionally accepts sessionId for immediate use after session creation
   const sendMessage = useCallback(
@@ -545,7 +545,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
     };
   }, []);
 
-  // Reset session when projectId or worktreePath changes
+  // Reset session when projectId or branch changes
   useEffect(() => {
     // Close existing WebSocket
     if (wsRef.current) {
@@ -577,7 +577,7 @@ export function useAgentSession(projectId: string | null, worktreePath: string, 
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
-  }, [projectId, worktreePath, agentMode]);
+  }, [projectId, branch, agentMode]);
 
   // Auto-start session after mount or worktree switch
   useEffect(() => {

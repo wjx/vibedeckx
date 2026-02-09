@@ -84,7 +84,6 @@ export interface DirectoryEntry {
 }
 
 export interface Worktree {
-  path: string;
   branch: string | null;
 }
 
@@ -92,7 +91,7 @@ export type WorktreeTarget = "local" | "remote";
 
 export interface WorktreeTargetResult {
   success: boolean;
-  worktree?: { path: string; branch: string };
+  worktree?: { branch: string };
   error?: string;
 }
 
@@ -254,7 +253,7 @@ export const api = {
   async getProjectWorktrees(id: string): Promise<Worktree[]> {
     const res = await fetch(`${getApiBase()}/api/projects/${id}/worktrees`);
     if (!res.ok) {
-      return [{ path: ".", branch: null }];
+      return [{ branch: null }];
     }
     const data = await res.json();
     return data.worktrees;
@@ -287,11 +286,11 @@ export const api = {
     };
   },
 
-  async deleteWorktree(projectId: string, worktreePath: string): Promise<WorktreeDeleteResult> {
+  async deleteWorktree(projectId: string, branch: string): Promise<WorktreeDeleteResult> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ worktreePath }),
+      body: JSON.stringify({ branch }),
     });
     // Accept 207 as partial success
     if (!res.ok && res.status !== 207) {
@@ -374,11 +373,11 @@ export const api = {
   },
 
   // Process Control API
-  async startExecutor(executorId: string, worktreePath?: string): Promise<string> {
+  async startExecutor(executorId: string, branch?: string | null): Promise<string> {
     const res = await fetch(`${getApiBase()}/api/executors/${executorId}/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ worktreePath }),
+      body: JSON.stringify({ branch }),
     });
     if (!res.ok) {
       const error = await res.json();
@@ -408,10 +407,10 @@ export const api = {
     return data.processes;
   },
 
-  async getDiff(projectId: string, worktreePath?: string): Promise<DiffResponse> {
+  async getDiff(projectId: string, branch?: string | null): Promise<DiffResponse> {
     const params = new URLSearchParams();
-    if (worktreePath) {
-      params.set('worktreePath', worktreePath);
+    if (branch) {
+      params.set('branch', branch);
     }
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/diff${query}`);
@@ -469,12 +468,12 @@ export const api = {
   async executeSyncCommand(
     projectId: string,
     syncType: 'up' | 'down',
-    worktreePath?: string
+    branch?: string | null
   ): Promise<SyncExecutionResult> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/execute-sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ syncType, worktreePath }),
+      body: JSON.stringify({ syncType, branch }),
     });
     if (!res.ok) {
       const error = await res.json();

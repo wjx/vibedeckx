@@ -28,7 +28,7 @@ import {
 
 interface ExecutorPanelProps {
   projectId: string | null;
-  selectedWorktree?: string;
+  selectedBranch?: string | null;
   project?: Project | null;
   onExecutorModeChange?: (mode: ExecutionMode) => void;
 }
@@ -97,7 +97,7 @@ const headerOnlyCollision: CollisionDetection = (args) => {
   return closest ? [{ id: closest.id, data: closest.data }] : [];
 };
 
-export function ExecutorPanel({ projectId, selectedWorktree, project, onExecutorModeChange }: ExecutorPanelProps) {
+export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorModeChange }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const {
     executors,
@@ -193,7 +193,7 @@ export function ExecutorPanel({ projectId, selectedWorktree, project, onExecutor
                   <ExecutorItem
                     key={executor.id}
                     executor={executor}
-                    onStart={() => startExecutor(executor.id, selectedWorktree)}
+                    onStart={() => startExecutor(executor.id, selectedBranch)}
                     onStop={(processId) => stopExecutor(executor.id, processId || executor.currentProcessId || undefined)}
                     onUpdate={(data) => updateExecutor(executor.id, data)}
                     onDelete={() => deleteExecutor(executor.id)}
