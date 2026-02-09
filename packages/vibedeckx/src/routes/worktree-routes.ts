@@ -11,6 +11,33 @@ import "../server-types.js";
 const routes: FastifyPluginAsync = async (fastify) => {
   // ==================== Path-based worktree API ====================
 
+  // Get branches for a path
+  fastify.get<{
+    Querystring: { path: string };
+  }>("/api/path/branches", async (req, reply) => {
+    const projectPath = req.query.path;
+    if (!projectPath) {
+      return reply.code(400).send({ error: "Path is required" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+      const output = execSync("git branch --format='%(refname:short)'", {
+        cwd: projectPath,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const branches = output
+        .split("\n")
+        .map((b) => b.trim())
+        .filter(Boolean);
+      return reply.code(200).send({ branches });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to list branches: ${errorMessage}` });
+    }
+  });
+
   // Get worktrees for a path
   fastify.get<{
     Querystring: { path: string };
@@ -38,9 +65,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
   // Create worktree at a path
   fastify.post<{
-    Body: { path: string; branchName: string };
+    Body: { path: string; branchName: string; baseBranch?: string };
   }>("/api/path/worktrees", async (req, reply) => {
-    const { path: projectPath, branchName } = req.body;
+    const { path: projectPath, branchName, baseBranch } = req.body;
     if (!projectPath || !branchName) {
       return reply.code(400).send({ error: "Path and branchName are required" });
     }
@@ -48,6 +75,11 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const trimmedBranch = branchName.trim();
     if (!/^[a-zA-Z0-9]/.test(trimmedBranch) || /[^a-zA-Z0-9/_-]/.test(trimmedBranch)) {
       return reply.code(400).send({ error: "Invalid branch name format" });
+    }
+
+    const startPoint = baseBranch?.trim() || "main";
+    if (/[^a-zA-Z0-9/_.\-]/.test(startPoint)) {
+      return reply.code(400).send({ error: "Invalid base branch name format" });
     }
 
     try {
@@ -68,7 +100,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       await mkdir(getWorktreeBaseForProject(projectPath), { recursive: true });
 
-      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
+      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" "${startPoint}"`, {
         cwd: projectPath,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -209,6 +241,67 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     return reply.code(200).send({ worktrees });
+  });
+
+  // Get branches for a project
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { target?: "local" | "remote" };
+  }>("/api/projects/:id/branches", async (req, reply) => {
+    const project = fastify.storage.projects.getById(req.params.id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const target = req.query.target || "local";
+    const hasLocal = !!project.path;
+    const hasRemote = !!(project.remote_url && project.remote_api_key && project.remote_path);
+
+    if (target === "remote") {
+      if (!hasRemote) {
+        return reply.code(400).send({ error: "Project has no remote configuration" });
+      }
+      const result = await proxyToRemote(
+        project.remote_url!,
+        project.remote_api_key!,
+        "GET",
+        `/api/path/branches?path=${encodeURIComponent(project.remote_path!)}`
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
+    // target === "local"
+    if (!hasLocal && hasRemote) {
+      // Remote-only project: proxy to remote
+      const result = await proxyToRemote(
+        project.remote_url!,
+        project.remote_api_key!,
+        "GET",
+        `/api/path/branches?path=${encodeURIComponent(project.remote_path!)}`
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
+    if (!hasLocal) {
+      return reply.code(400).send({ error: "Project has no local path" });
+    }
+
+    try {
+      const { execSync } = await import("child_process");
+      const output = execSync("git branch --format='%(refname:short)'", {
+        cwd: project.path!,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const branches = output
+        .split("\n")
+        .map((b) => b.trim())
+        .filter(Boolean);
+      return reply.code(200).send({ branches });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to list branches: ${errorMessage}` });
+    }
   });
 
   // 删除 git worktree
@@ -376,14 +469,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 创建新的 git worktree
   fastify.post<{
     Params: { id: string };
-    Body: { branchName: string; targets?: ("local" | "remote")[] };
+    Body: { branchName: string; targets?: ("local" | "remote")[]; baseBranch?: string; remoteBaseBranch?: string };
   }>("/api/projects/:id/worktrees", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { branchName } = req.body;
+    const { branchName, baseBranch, remoteBaseBranch } = req.body;
 
     if (!branchName || typeof branchName !== "string" || branchName.trim() === "") {
       return reply.code(400).send({ error: "Branch name is required" });
@@ -392,6 +485,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const trimmedBranch = branchName.trim();
     if (!/^[a-zA-Z0-9]/.test(trimmedBranch) || /[^a-zA-Z0-9/_-]/.test(trimmedBranch)) {
       return reply.code(400).send({ error: "Invalid branch name format" });
+    }
+
+    const localStartPoint = baseBranch?.trim() || "main";
+    if (/[^a-zA-Z0-9/_.\-]/.test(localStartPoint)) {
+      return reply.code(400).send({ error: "Invalid base branch name format" });
+    }
+    const remoteStartPoint = remoteBaseBranch?.trim() || localStartPoint;
+    if (/[^a-zA-Z0-9/_.\-]/.test(remoteStartPoint)) {
+      return reply.code(400).send({ error: "Invalid remote base branch name format" });
     }
 
     // Determine targets
@@ -422,7 +524,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         project.remote_api_key!,
         "POST",
         `/api/path/worktrees`,
-        { path: project.remote_path, branchName: trimmedBranch }
+        { path: project.remote_path, branchName: trimmedBranch, baseBranch: remoteStartPoint }
       );
       return reply.code(result.status || 201).send(result.data);
     }
@@ -448,7 +550,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       await mkdir(getWorktreeBaseForProject(project.path!), { recursive: true });
 
-      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" main`, {
+      execSync(`git worktree add -b "${trimmedBranch}" "${worktreeAbsolutePath}" "${localStartPoint}"`, {
         cwd: project.path!,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -496,7 +598,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         project.remote_api_key!,
         "POST",
         `/api/path/worktrees`,
-        { path: project.remote_path, branchName: trimmedBranch }
+        { path: project.remote_path, branchName: trimmedBranch, baseBranch: remoteStartPoint }
       );
       if (remoteResult.ok) {
         const remoteData = remoteResult.data as { worktree?: { branch: string } };

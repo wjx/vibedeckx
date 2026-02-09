@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, type Project, type WorktreeTarget } from "@/lib/api";
 
 interface CreateWorktreeDialogProps {
@@ -35,7 +42,38 @@ export function CreateWorktreeDialog({
   const [createLocal, setCreateLocal] = useState(true);
   const [createRemote, setCreateRemote] = useState(true);
 
+  const [localBranches, setLocalBranches] = useState<string[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
+  const [localBaseBranch, setLocalBaseBranch] = useState("main");
+  const [remoteBaseBranch, setRemoteBaseBranch] = useState("main");
+  const [branchesLoading, setBranchesLoading] = useState(false);
+
   const isHybrid = !!(project.path && project.remote_path);
+
+  useEffect(() => {
+    if (!open) return;
+
+    setBranchesLoading(true);
+
+    if (isHybrid) {
+      Promise.all([
+        api.getProjectBranches(projectId, "local"),
+        api.getProjectBranches(projectId, "remote"),
+      ]).then(([local, remote]) => {
+        setLocalBranches(local);
+        setRemoteBranches(remote);
+        setLocalBaseBranch(local.includes("main") ? "main" : local[0] || "main");
+        setRemoteBaseBranch(remote.includes("main") ? "main" : remote[0] || "main");
+        setBranchesLoading(false);
+      });
+    } else {
+      api.getProjectBranches(projectId).then((branches) => {
+        setLocalBranches(branches);
+        setLocalBaseBranch(branches.includes("main") ? "main" : branches[0] || "main");
+        setBranchesLoading(false);
+      });
+    }
+  }, [open, projectId, isHybrid]);
 
   const handleCreate = async () => {
     if (!branchName.trim()) return;
@@ -52,7 +90,13 @@ export function CreateWorktreeDialog({
         if (createRemote) targets.push("remote");
       }
 
-      const result = await api.createWorktree(projectId, branchName.trim(), targets);
+      const result = await api.createWorktree(
+        projectId,
+        branchName.trim(),
+        targets,
+        localBaseBranch,
+        isHybrid ? remoteBaseBranch : undefined
+      );
 
       if (result.partialSuccess) {
         // Find which target failed
@@ -80,9 +124,33 @@ export function CreateWorktreeDialog({
       setWarning(null);
       setCreateLocal(true);
       setCreateRemote(true);
+      setLocalBranches([]);
+      setRemoteBranches([]);
+      setLocalBaseBranch("main");
+      setRemoteBaseBranch("main");
     }
     onOpenChange(newOpen);
   };
+
+  const branchSelect = (
+    branches: string[],
+    value: string,
+    onChange: (v: string) => void,
+    disabled: boolean
+  ) => (
+    <Select value={value} onValueChange={onChange} disabled={disabled || branchesLoading}>
+      <SelectTrigger size="sm">
+        <SelectValue placeholder={branchesLoading ? "Loading..." : "Select branch"} />
+      </SelectTrigger>
+      <SelectContent>
+        {branches.map((b) => (
+          <SelectItem key={b} value={b}>
+            {b}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -90,7 +158,7 @@ export function CreateWorktreeDialog({
         <DialogHeader>
           <DialogTitle>Create New Worktree</DialogTitle>
           <DialogDescription>
-            Create a new branch based on main
+            Create a new branch based on an existing branch
           </DialogDescription>
         </DialogHeader>
 
@@ -113,7 +181,7 @@ export function CreateWorktreeDialog({
             />
           </div>
 
-          {isHybrid && (
+          {isHybrid ? (
             <div className="space-y-2">
               <label className="text-sm font-medium">Create On</label>
               <div className="space-y-2">
@@ -133,6 +201,12 @@ export function CreateWorktreeDialog({
                     {project.path}
                   </span>
                 </label>
+                {createLocal && localBranches.length > 0 && (
+                  <div className="ml-6">
+                    <label className="text-xs text-muted-foreground">Base Branch</label>
+                    {branchSelect(localBranches, localBaseBranch, setLocalBaseBranch, loading)}
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
@@ -149,8 +223,21 @@ export function CreateWorktreeDialog({
                     {project.remote_path}
                   </span>
                 </label>
+                {createRemote && remoteBranches.length > 0 && (
+                  <div className="ml-6">
+                    <label className="text-xs text-muted-foreground">Base Branch</label>
+                    {branchSelect(remoteBranches, remoteBaseBranch, setRemoteBaseBranch, loading)}
+                  </div>
+                )}
               </div>
             </div>
+          ) : (
+            localBranches.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Base Branch</label>
+                {branchSelect(localBranches, localBaseBranch, setLocalBaseBranch, loading)}
+              </div>
+            )
           )}
 
           {warning && (

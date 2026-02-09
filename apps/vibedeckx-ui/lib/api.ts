@@ -250,6 +250,20 @@ export const api = {
     return data.files;
   },
 
+  async getProjectBranches(id: string, target?: "local" | "remote"): Promise<string[]> {
+    try {
+      const params = new URLSearchParams();
+      if (target) params.set("target", target);
+      const query = params.toString() ? `?${params.toString()}` : "";
+      const res = await fetch(`${getApiBase()}/api/projects/${id}/branches${query}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.branches ?? [];
+    } catch {
+      return [];
+    }
+  },
+
   async getProjectWorktrees(id: string): Promise<Worktree[]> {
     const res = await fetch(`${getApiBase()}/api/projects/${id}/worktrees`);
     if (!res.ok) {
@@ -262,12 +276,16 @@ export const api = {
   async createWorktree(
     projectId: string,
     branchName: string,
-    targets?: WorktreeTarget[]
+    targets?: WorktreeTarget[],
+    baseBranch?: string,
+    remoteBaseBranch?: string
   ): Promise<WorktreeCreateResult> {
-    const body: { branchName: string; targets?: WorktreeTarget[] } = { branchName };
+    const body: { branchName: string; targets?: WorktreeTarget[]; baseBranch?: string; remoteBaseBranch?: string } = { branchName };
     if (targets && targets.length > 0) {
       body.targets = targets;
     }
+    if (baseBranch) body.baseBranch = baseBranch;
+    if (remoteBaseBranch) body.remoteBaseBranch = remoteBaseBranch;
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/worktrees`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
