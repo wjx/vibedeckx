@@ -68,6 +68,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
     Body: { path: string; branchName: string; baseBranch?: string };
   }>("/api/path/worktrees", async (req, reply) => {
     const { path: projectPath, branchName, baseBranch } = req.body;
+    const requestId = req.headers["x-request-id"] || "local";
+
     if (!projectPath || !branchName) {
       return reply.code(400).send({ error: "Path and branchName are required" });
     }
@@ -81,6 +83,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
     if (/[^a-zA-Z0-9/_.\-]/.test(startPoint)) {
       return reply.code(400).send({ error: "Invalid base branch name format" });
     }
+
+    console.log(`[worktree] ${requestId} Creating: branch=${trimmedBranch}, base=${startPoint}, path=${projectPath}`);
 
     try {
       const { execSync } = await import("child_process");
@@ -110,11 +114,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
       config.worktrees.push({ branch: trimmedBranch });
       await writeWorktreeConfig(projectPath, config);
 
+      console.log(`[worktree] ${requestId} Created: branch=${trimmedBranch}`);
+
       return reply.code(201).send({
         worktree: { branch: trimmedBranch },
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const stderr = (error as { stderr?: string })?.stderr || "";
+      console.error(`[worktree] ${requestId} Failed: ${errorMessage}${stderr ? `, stderr: ${stderr}` : ""}`);
       return reply.code(500).send({ error: `Failed to create worktree: ${errorMessage}` });
     }
   });
@@ -578,7 +586,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     // Multi-target: local + remote
-    const results: Record<string, { success: boolean; worktree?: { branch: string }; error?: string }> = {};
+    const results: Record<string, { success: boolean; worktree?: { branch: string }; error?: string; errorCode?: string; requestId?: string }> = {};
 
     // Local first
     let localWorktree: { branch: string } | undefined;
@@ -592,6 +600,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     // Remote second
+    console.log(`[worktree] Creating remote worktree: project=${req.params.id}, branch=${trimmedBranch}, url=${project.remote_url}`);
     try {
       const remoteResult = await proxyToRemote(
         project.remote_url!,
@@ -605,7 +614,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
         results.remote = { success: true, worktree: remoteData.worktree };
       } else {
         const remoteData = remoteResult.data as { error?: string };
-        results.remote = { success: false, error: remoteData.error || "Remote creation failed" };
+        console.error(`[worktree] Remote failed: requestId=${remoteResult.requestId}, errorCode=${remoteResult.errorCode}, status=${remoteResult.status}, duration=${remoteResult.durationMs}ms, error=${JSON.stringify(remoteResult.data)}`);
+        results.remote = {
+          success: false,
+          error: remoteData.error || "Remote creation failed",
+          errorCode: remoteResult.errorCode,
+          requestId: remoteResult.requestId,
+        };
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";

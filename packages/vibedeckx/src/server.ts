@@ -30,7 +30,7 @@ export const createServer = (opts: { storage: Storage }) => {
   server.addHook("onRequest", (req, reply, done) => {
     reply.header("access-control-allow-origin", "*");
     reply.header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
-    reply.header("access-control-allow-headers", "Content-Type, Upgrade, Connection, X-Vibedeckx-Api-Key");
+    reply.header("access-control-allow-headers", "Content-Type, Upgrade, Connection, X-Vibedeckx-Api-Key, X-Request-Id");
     done();
   });
 
@@ -45,6 +45,26 @@ export const createServer = (opts: { storage: Storage }) => {
 
     if (providedKey !== API_KEY) {
       return reply.code(401).send({ error: "Unauthorized" });
+    }
+    done();
+  });
+
+  // Request/response logging for proxied requests (those with X-Request-Id)
+  server.addHook("onRequest", (req, _reply, done) => {
+    const requestId = req.headers["x-request-id"];
+    if (requestId) {
+      (req as unknown as Record<string, unknown>).startTime = Date.now();
+      console.log(`[remote] ${requestId} ${req.method} ${req.url}`);
+    }
+    done();
+  });
+
+  server.addHook("onResponse", (req, reply, done) => {
+    const requestId = req.headers["x-request-id"];
+    if (requestId) {
+      const startTime = (req as unknown as Record<string, unknown>).startTime as number | undefined;
+      const ms = startTime ? Date.now() - startTime : 0;
+      console.log(`[remote] ${requestId} ${req.method} ${req.url} -> ${reply.statusCode} (${ms}ms)`);
     }
     done();
   });

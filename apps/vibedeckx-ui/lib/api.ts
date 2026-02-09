@@ -93,6 +93,8 @@ export interface WorktreeTargetResult {
   success: boolean;
   worktree?: { branch: string };
   error?: string;
+  errorCode?: string;
+  requestId?: string;
 }
 
 export interface WorktreeCreateResult {

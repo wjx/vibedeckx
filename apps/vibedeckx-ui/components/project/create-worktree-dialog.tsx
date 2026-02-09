@@ -101,8 +101,33 @@ export function CreateWorktreeDialog({
       if (result.partialSuccess) {
         // Find which target failed
         const failedTarget = result.results?.remote?.success === false ? "remote" : "local";
-        const failedError = result.results?.[failedTarget]?.error || "Unknown error";
-        setWarning(`Worktree created locally, but ${failedTarget} creation failed: ${failedError}`);
+        const failedResult = result.results?.[failedTarget];
+        const failedError = failedResult?.error || "Unknown error";
+        const errorCode = failedResult?.errorCode;
+        const requestId = failedResult?.requestId;
+
+        let message: string;
+        switch (errorCode) {
+          case "timeout":
+            message = "Connection to remote server timed out. The remote server may be slow or unreachable.";
+            break;
+          case "network_error":
+            message = "Cannot connect to remote server. Check that the server is running and the URL is correct.";
+            break;
+          case "auth_error":
+            message = "Authentication failed with remote server. Check the API key in project settings.";
+            break;
+          case "server_error":
+            message = `Remote server returned an error: ${failedError}`;
+            break;
+          default:
+            message = `Worktree created locally, but ${failedTarget} creation failed: ${failedError}`;
+            break;
+        }
+        if (requestId) {
+          message += ` (Request ID: ${requestId})`;
+        }
+        setWarning(message);
       }
 
       onWorktreeCreated(result.worktree.branch!);
