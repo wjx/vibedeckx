@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
+import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -20,15 +20,27 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS executor_groups (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      branch TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(project_id, branch),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS executors (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
+      group_id TEXT,
       name TEXT NOT NULL,
       command TEXT NOT NULL,
       cwd TEXT,
       pty INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (group_id) REFERENCES executor_groups(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS executor_processes (
@@ -105,6 +117,35 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
   if (!hasSyncUpConfigColumn) {
     db.exec("ALTER TABLE projects ADD COLUMN sync_up_config TEXT");
     db.exec("ALTER TABLE projects ADD COLUMN sync_down_config TEXT");
+  }
+
+  // Migration: add executor_groups table and group_id column to executors
+  const hasGroupIdColumn = tableInfo.some((col) => col.name === "group_id");
+  if (!hasGroupIdColumn) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS executor_groups (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        branch TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, branch),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec("ALTER TABLE executors ADD COLUMN group_id TEXT REFERENCES executor_groups(id) ON DELETE CASCADE");
+
+    // Create a "Default" group for each project and assign existing executors to it
+    const projects = db.prepare("SELECT DISTINCT project_id FROM executors").all() as { project_id: string }[];
+    for (const { project_id } of projects) {
+      const groupId = `default-${project_id}`;
+      db.prepare(
+        "INSERT OR IGNORE INTO executor_groups (id, project_id, name, branch) VALUES (@id, @project_id, 'Default', '')"
+      ).run({ id: groupId, project_id });
+      db.prepare(
+        "UPDATE executors SET group_id = @group_id WHERE project_id = @project_id AND group_id IS NULL"
+      ).run({ group_id: groupId, project_id });
+    }
   }
 
   // Migration: rename worktree_path to branch in agent_sessions
@@ -274,34 +315,86 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
       },
     },
 
+    executorGroups: {
+      create: ({ id, project_id, name, branch }) => {
+        db.prepare(
+          `INSERT INTO executor_groups (id, project_id, name, branch) VALUES (@id, @project_id, @name, @branch)`
+        ).run({ id, project_id, name, branch });
+
+        return db
+          .prepare<{ id: string }, ExecutorGroup>(`SELECT * FROM executor_groups WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getByProjectId: (projectId: string) => {
+        return db
+          .prepare<{ project_id: string }, ExecutorGroup>(`SELECT * FROM executor_groups WHERE project_id = @project_id ORDER BY created_at ASC`)
+          .all({ project_id: projectId });
+      },
+
+      getById: (id: string) => {
+        return db
+          .prepare<{ id: string }, ExecutorGroup>(`SELECT * FROM executor_groups WHERE id = @id`)
+          .get({ id });
+      },
+
+      getByBranch: (projectId: string, branch: string) => {
+        return db
+          .prepare<{ project_id: string; branch: string }, ExecutorGroup>(
+            `SELECT * FROM executor_groups WHERE project_id = @project_id AND branch = @branch`
+          )
+          .get({ project_id: projectId, branch });
+      },
+
+      update: (id: string, opts: { name?: string }) => {
+        if (opts.name !== undefined) {
+          db.prepare(`UPDATE executor_groups SET name = @name WHERE id = @id`).run({ id, name: opts.name });
+        }
+        return db
+          .prepare<{ id: string }, ExecutorGroup>(`SELECT * FROM executor_groups WHERE id = @id`)
+          .get({ id });
+      },
+
+      delete: (id: string) => {
+        db.prepare(`DELETE FROM executor_groups WHERE id = @id`).run({ id });
+      },
+    },
+
     executors: {
-      create: ({ id, project_id, name, command, cwd, pty }) => {
-        // Get max position for this project
-        const maxPos = db.prepare<{ project_id: string }, { max_pos: number | null }>(
-          `SELECT MAX(position) as max_pos FROM executors WHERE project_id = @project_id`
-        ).get({ project_id });
+      create: ({ id, project_id, group_id, name, command, cwd, pty }) => {
+        // Get max position for this group
+        const maxPos = db.prepare<{ group_id: string }, { max_pos: number | null }>(
+          `SELECT MAX(position) as max_pos FROM executors WHERE group_id = @group_id`
+        ).get({ group_id });
         const position = (maxPos?.max_pos ?? -1) + 1;
 
         db.prepare(
-          `INSERT INTO executors (id, project_id, name, command, cwd, pty, position) VALUES (@id, @project_id, @name, @command, @cwd, @pty, @position)`
-        ).run({ id, project_id, name, command, cwd: cwd ?? null, pty: pty !== false ? 1 : 0, position });
+          `INSERT INTO executors (id, project_id, group_id, name, command, cwd, pty, position) VALUES (@id, @project_id, @group_id, @name, @command, @cwd, @pty, @position)`
+        ).run({ id, project_id, group_id, name, command, cwd: cwd ?? null, pty: pty !== false ? 1 : 0, position });
 
         const row = db
-          .prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
+          .prepare<{ id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
           .get({ id })!;
         return { ...row, pty: row.pty === 1 };
       },
 
       getByProjectId: (projectId: string) => {
         const rows = db
-          .prepare<{ project_id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE project_id = @project_id ORDER BY position ASC`)
+          .prepare<{ project_id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE project_id = @project_id ORDER BY position ASC`)
           .all({ project_id: projectId });
+        return rows.map((row) => ({ ...row, pty: row.pty === 1 }));
+      },
+
+      getByGroupId: (groupId: string) => {
+        const rows = db
+          .prepare<{ group_id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE group_id = @group_id ORDER BY position ASC`)
+          .all({ group_id: groupId });
         return rows.map((row) => ({ ...row, pty: row.pty === 1 }));
       },
 
       getById: (id: string) => {
         const row = db
-          .prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
+          .prepare<{ id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`)
           .get({ id });
         return row ? { ...row, pty: row.pty === 1 } : undefined;
       },
@@ -328,12 +421,12 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         }
 
         if (updates.length === 0) {
-          const row = db.prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+          const row = db.prepare<{ id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
           return row ? { ...row, pty: row.pty === 1 } : undefined;
         }
 
         db.prepare(`UPDATE executors SET ${updates.join(', ')} WHERE id = @id`).run(params);
-        const row = db.prepare<{ id: string }, { id: string; project_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
+        const row = db.prepare<{ id: string }, { id: string; project_id: string; group_id: string; name: string; command: string; cwd: string | null; pty: number; position: number; created_at: string }>(`SELECT * FROM executors WHERE id = @id`).get({ id });
         return row ? { ...row, pty: row.pty === 1 } : undefined;
       },
 
@@ -341,12 +434,12 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         db.prepare(`DELETE FROM executors WHERE id = @id`).run({ id });
       },
 
-      reorder: (projectId: string, orderedIds: string[]) => {
+      reorder: (groupId: string, orderedIds: string[]) => {
         const transaction = db.transaction(() => {
           for (let i = 0; i < orderedIds.length; i++) {
             db.prepare(
-              `UPDATE executors SET position = @position WHERE id = @id AND project_id = @project_id`
-            ).run({ id: orderedIds[i], project_id: projectId, position: i });
+              `UPDATE executors SET position = @position WHERE id = @id AND group_id = @group_id`
+            ).run({ id: orderedIds[i], group_id: groupId, position: i });
           }
         });
         transaction();

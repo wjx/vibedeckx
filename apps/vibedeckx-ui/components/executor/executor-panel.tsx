@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Terminal } from "lucide-react";
+import { Plus, Terminal, FolderPlus } from "lucide-react";
 import { ExecutorItem } from "./executor-item";
 import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
+import { useExecutorGroups } from "@/hooks/use-executor-groups";
 import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
 import type { Project, ExecutionMode } from "@/lib/api";
 import {
@@ -99,9 +100,10 @@ const headerOnlyCollision: CollisionDetection = (args) => {
 
 export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorModeChange }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const { activeGroup, loading: groupLoading, createGroup } = useExecutorGroups(projectId, selectedBranch);
   const {
     executors,
-    loading,
+    loading: executorsLoading,
     createExecutor,
     updateExecutor,
     deleteExecutor,
@@ -109,7 +111,9 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
     stopExecutor,
     markProcessFinished,
     reorderExecutors,
-  } = useExecutors(projectId);
+  } = useExecutors(projectId, activeGroup?.id);
+
+  const loading = groupLoading || executorsLoading;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -151,7 +155,7 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
         <div className="flex items-center gap-2">
           <h2 className="font-semibold flex items-center gap-2">
             <Terminal className="h-5 w-5" />
-            Executors
+            {activeGroup ? activeGroup.name : "Executors"}
           </h2>
           {project && project.path && project.remote_path && onExecutorModeChange && (
             <ExecutionModeToggle
@@ -160,10 +164,12 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
             />
           )}
         </div>
-        <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add
-        </Button>
+        {activeGroup && (
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add
+          </Button>
+        )}
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">
@@ -171,6 +177,20 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
           {loading ? (
             <div className="text-center text-muted-foreground py-8">
               Loading executors...
+            </div>
+          ) : !activeGroup ? (
+            <div className="text-center text-muted-foreground py-8">
+              <p>No executor group for this branch</p>
+              <p className="text-sm mt-1 mb-4">
+                Create a group to start adding executors
+              </p>
+              <Button
+                size="sm"
+                onClick={() => createGroup(selectedBranch ? `Executors (${selectedBranch})` : "Default")}
+              >
+                <FolderPlus className="h-4 w-4 mr-1" />
+                Create Group
+              </Button>
             </div>
           ) : executors.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">

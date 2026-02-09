@@ -7,6 +7,7 @@ import type { Storage } from "./storage/types.js";
 import sharedServices from "./plugins/shared-services.js";
 import projectRoutes from "./routes/project-routes.js";
 import remoteRoutes from "./routes/remote-routes.js";
+import executorGroupRoutes from "./routes/executor-group-routes.js";
 import executorRoutes from "./routes/executor-routes.js";
 import processRoutes from "./routes/process-routes.js";
 import worktreeRoutes from "./routes/worktree-routes.js";
@@ -59,6 +60,7 @@ export const createServer = (opts: { storage: Storage }) => {
   server.register(websocketRoutes);
   server.register(projectRoutes);
   server.register(remoteRoutes);
+  server.register(executorGroupRoutes);
   server.register(executorRoutes);
   server.register(processRoutes);
   server.register(worktreeRoutes);

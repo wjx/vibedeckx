@@ -8,30 +8,30 @@ export interface ExecutorWithProcess extends Executor {
   isRunning: boolean;
 }
 
-export function useExecutors(projectId: string | null) {
+export function useExecutors(projectId: string | null, groupId: string | null | undefined) {
   const [executors, setExecutors] = useState<Executor[]>([]);
   const [runningProcesses, setRunningProcesses] = useState<Map<string, string>>(
     new Map()
   ); // executorId -> processId
   const [loading, setLoading] = useState(true);
 
-  // Fetch executors
+  // Fetch executors scoped to group
   const fetchExecutors = useCallback(async () => {
-    if (!projectId) {
+    if (!projectId || !groupId) {
       setExecutors([]);
       setLoading(false);
       return;
     }
 
     try {
-      const data = await api.getExecutors(projectId);
+      const data = await api.getExecutors(projectId, groupId);
       setExecutors(data);
     } catch (error) {
       console.error("Failed to fetch executors:", error);
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, groupId]);
 
   // Fetch running processes
   const fetchRunningProcesses = useCallback(async () => {
@@ -52,13 +52,13 @@ export function useExecutors(projectId: string | null) {
     fetchRunningProcesses();
   }, [fetchExecutors, fetchRunningProcesses]);
 
-  // Create executor
+  // Create executor in the active group
   const createExecutor = useCallback(
     async (opts: { name: string; command: string; cwd?: string; pty?: boolean }) => {
-      if (!projectId) return null;
+      if (!projectId || !groupId) return null;
 
       try {
-        const executor = await api.createExecutor(projectId, opts);
+        const executor = await api.createExecutor(projectId, { ...opts, group_id: groupId });
         setExecutors((prev) => [...prev, executor]);
         return executor;
       } catch (error) {
@@ -66,7 +66,7 @@ export function useExecutors(projectId: string | null) {
         return null;
       }
     },
-    [projectId]
+    [projectId, groupId]
   );
 
   // Update executor
@@ -144,7 +144,7 @@ export function useExecutors(projectId: string | null) {
   // Reorder executors with optimistic update
   const reorderExecutors = useCallback(
     async (orderedIds: string[]) => {
-      if (!projectId) return;
+      if (!projectId || !groupId) return;
 
       // Optimistic update: reorder local state immediately
       const previousExecutors = executors;
@@ -154,14 +154,14 @@ export function useExecutors(projectId: string | null) {
       setExecutors(reorderedExecutors);
 
       try {
-        await api.reorderExecutors(projectId, orderedIds);
+        await api.reorderExecutors(projectId, orderedIds, groupId);
       } catch (error) {
         // Revert on error
         console.error("Failed to reorder executors:", error);
         setExecutors(previousExecutors);
       }
     },
-    [projectId, executors]
+    [projectId, groupId, executors]
   );
 
   // Get executor with process info

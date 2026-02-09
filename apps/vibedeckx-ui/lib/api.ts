@@ -107,9 +107,18 @@ export interface WorktreeDeleteResult {
   partialSuccess?: boolean;
 }
 
+export interface ExecutorGroup {
+  id: string;
+  project_id: string;
+  name: string;
+  branch: string;
+  created_at: string;
+}
+
 export interface Executor {
   id: string;
   project_id: string;
+  group_id: string;
   name: string;
   command: string;
   cwd: string | null;
@@ -323,9 +332,79 @@ export const api = {
     };
   },
 
+  // Executor Group API
+  async getExecutorGroups(projectId: string): Promise<ExecutorGroup[]> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executor-groups`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.groups;
+  },
+
+  async getExecutorGroupByBranch(projectId: string, branch: string): Promise<ExecutorGroup | null> {
+    const params = new URLSearchParams({ branch });
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executor-groups/by-branch?${params}`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.group;
+  },
+
+  async createExecutorGroup(
+    projectId: string,
+    opts: { name: string; branch: string }
+  ): Promise<ExecutorGroup> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executor-groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.group;
+  },
+
+  async updateExecutorGroup(
+    id: string,
+    opts: { name?: string }
+  ): Promise<ExecutorGroup> {
+    const res = await fetch(`${getApiBase()}/api/executor-groups/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.group;
+  },
+
+  async deleteExecutorGroup(id: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/executor-groups/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
   // Executor API
-  async getExecutors(projectId: string): Promise<Executor[]> {
-    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`);
+  async getExecutors(projectId: string, groupId?: string): Promise<Executor[]> {
+    const params = new URLSearchParams();
+    if (groupId) params.set("groupId", groupId);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors${query}`);
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.error);
@@ -336,7 +415,7 @@ export const api = {
 
   async createExecutor(
     projectId: string,
-    opts: { name: string; command: string; cwd?: string; pty?: boolean }
+    opts: { name: string; command: string; cwd?: string; pty?: boolean; group_id: string }
   ): Promise<Executor> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors`, {
       method: "POST",
@@ -378,11 +457,11 @@ export const api = {
     }
   },
 
-  async reorderExecutors(projectId: string, orderedIds: string[]): Promise<void> {
+  async reorderExecutors(projectId: string, orderedIds: string[], groupId: string): Promise<void> {
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/executors/reorder`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderedIds }),
+      body: JSON.stringify({ orderedIds, groupId }),
     });
     if (!res.ok) {
       const error = await res.json();

@@ -23,9 +23,18 @@ export interface Project {
   created_at: string;
 }
 
+export interface ExecutorGroup {
+  id: string;
+  project_id: string;
+  name: string;
+  branch: string;
+  created_at: string;
+}
+
 export interface Executor {
   id: string;
   project_id: string;
+  group_id: string;
   name: string;
   command: string;
   cwd: string | null;
@@ -85,13 +94,22 @@ export interface Storage {
     }) => Project | undefined;
     delete: (id: string) => void;
   };
+  executorGroups: {
+    create: (opts: { id: string; project_id: string; name: string; branch: string }) => ExecutorGroup;
+    getByProjectId: (projectId: string) => ExecutorGroup[];
+    getById: (id: string) => ExecutorGroup | undefined;
+    getByBranch: (projectId: string, branch: string) => ExecutorGroup | undefined;
+    update: (id: string, opts: { name?: string }) => ExecutorGroup | undefined;
+    delete: (id: string) => void;
+  };
   executors: {
-    create: (opts: { id: string; project_id: string; name: string; command: string; cwd?: string; pty?: boolean }) => Executor;
+    create: (opts: { id: string; project_id: string; group_id: string; name: string; command: string; cwd?: string; pty?: boolean }) => Executor;
     getByProjectId: (projectId: string) => Executor[];
+    getByGroupId: (groupId: string) => Executor[];
     getById: (id: string) => Executor | undefined;
     update: (id: string, opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }) => Executor | undefined;
     delete: (id: string) => void;
-    reorder: (projectId: string, orderedIds: string[]) => void;
+    reorder: (groupId: string, orderedIds: string[]) => void;
   };
   executorProcesses: {
     create: (opts: { id: string; executor_id: string }) => ExecutorProcess;

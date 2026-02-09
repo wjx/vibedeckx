@@ -22,6 +22,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const tempExecutor = {
       id: randomUUID(),
       project_id: "remote",
+      group_id: "",
       name: "remote-command",
       command,
       cwd: resolvedCwd,
