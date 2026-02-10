@@ -31,11 +31,13 @@ interface ProjectCardProps {
   }) => Promise<void> | Promise<unknown>;
   onDeleteProject: (id: string) => Promise<void>;
   onSyncPrompt?: (prompt: string, executionMode: ExecutionMode) => void;
+  worktrees?: Worktree[];
+  onWorktreesRefetch?: () => void;
 }
 
-export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt }: ProjectCardProps) {
-  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [loading, setLoading] = useState(true);
+export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt, worktrees: externalWorktrees, onWorktreesRefetch }: ProjectCardProps) {
+  const [internalWorktrees, setInternalWorktrees] = useState<Worktree[]>([]);
+  const [internalLoading, setInternalLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = useState<Worktree | null>(null);
@@ -48,25 +50,27 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
   }>({ type: 'up', result: null, loading: false });
   const createdDate = new Date(project.created_at).toLocaleDateString();
 
+  const useExternal = externalWorktrees !== undefined;
+  const worktrees = useExternal ? externalWorktrees : internalWorktrees;
+  const loading = useExternal ? false : internalLoading;
+
   const fetchWorktrees = useCallback(() => {
+    if (useExternal) return;
     api.getProjectWorktrees(project.id)
       .then((wts) => {
-        setWorktrees(wts);
-        // If current selection not in list, reset to first
-        if (wts.length > 0 && !wts.some(w => w.branch === selectedBranch)) {
-          onBranchChange(wts[0].branch);
-        }
+        setInternalWorktrees(wts);
       })
-      .catch(() => setWorktrees([{ branch: null }]))
-      .finally(() => setLoading(false));
-  }, [project.id, selectedBranch, onBranchChange]);
+      .catch(() => setInternalWorktrees([{ branch: null }]))
+      .finally(() => setInternalLoading(false));
+  }, [project.id, useExternal]);
 
   useEffect(() => {
-    fetchWorktrees();
-  }, [fetchWorktrees]);
+    if (!useExternal) fetchWorktrees();
+  }, [fetchWorktrees, useExternal]);
 
   const handleWorktreeCreated = (branch: string) => {
-    fetchWorktrees();
+    if (onWorktreesRefetch) onWorktreesRefetch();
+    else fetchWorktrees();
     onBranchChange(branch);
   };
 
@@ -79,7 +83,8 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
 
   const handleWorktreeDeleted = () => {
     onBranchChange(null);
-    fetchWorktrees();
+    if (onWorktreesRefetch) onWorktreesRefetch();
+    else fetchWorktrees();
   };
 
   const handleSyncButton = async (syncType: 'up' | 'down') => {

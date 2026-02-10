@@ -3,9 +3,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { ProjectSelector } from '@/components/project/project-selector';
 import { ProjectCard } from '@/components/project/project-card';
 import { useProjects } from '@/hooks/use-projects';
+import { useWorktrees } from '@/hooks/use-worktrees';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
+import { CreateWorktreeDialog } from '@/components/project/create-worktree-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { AppSidebar, type ActiveView } from '@/components/layout';
@@ -14,6 +16,7 @@ import type { ExecutionMode } from '@/lib/api';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createWorktreeDialogOpen, setCreateWorktreeDialogOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('tasks');
   const agentRef = useRef<AgentConversationHandle>(null);
@@ -28,10 +31,25 @@ export default function Home() {
     selectProject,
   } = useProjects();
 
+  const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
+
   // Reset branch selection when project changes
   useEffect(() => {
     setSelectedBranch(null);
   }, [currentProject?.id]);
+
+  // Auto-select first worktree if current selection is not in the list
+  useEffect(() => {
+    if (worktreesLoading || worktrees.length === 0) return;
+    if (!worktrees.some(w => w.branch === selectedBranch)) {
+      setSelectedBranch(worktrees[0].branch);
+    }
+  }, [worktrees, worktreesLoading, selectedBranch]);
+
+  const handleWorktreeCreated = useCallback((branch: string) => {
+    refetchWorktrees();
+    setSelectedBranch(branch);
+  }, [refetchWorktrees]);
 
   const handleSyncPrompt = useCallback((prompt: string, executionMode: ExecutionMode) => {
     if (currentProject && executionMode !== currentProject.agent_mode) {
@@ -111,7 +129,15 @@ Please proceed step by step and let me know if there are any issues or conflicts
 
         <div className="flex-1 flex overflow-hidden">
           {/* Sidebar Navigation */}
-          <AppSidebar activeView={activeView} onViewChange={setActiveView} />
+          <AppSidebar
+            activeView={activeView}
+            onViewChange={setActiveView}
+            worktrees={worktrees}
+            selectedBranch={selectedBranch}
+            onBranchChange={setSelectedBranch}
+            currentProject={currentProject}
+            onCreateWorktreeOpen={() => setCreateWorktreeDialogOpen(true)}
+          />
 
           {/* Main Content */}
           {activeView === 'workspace' ? (
@@ -127,6 +153,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
                       onUpdateProject={updateProject}
                       onDeleteProject={deleteProject}
                       onSyncPrompt={handleSyncPrompt}
+                      worktrees={worktrees}
+                      onWorktreesRefetch={refetchWorktrees}
                     />
                   </div>
                 )}
@@ -159,6 +187,17 @@ Please proceed step by step and let me know if there are any issues or conflicts
             </div>
           )}
         </div>
+
+        {/* Sidebar's Create Worktree Dialog */}
+        {currentProject && (
+          <CreateWorktreeDialog
+            projectId={currentProject.id}
+            project={currentProject}
+            open={createWorktreeDialogOpen}
+            onOpenChange={setCreateWorktreeDialogOpen}
+            onWorktreeCreated={handleWorktreeCreated}
+          />
+        )}
       </div>
   );
 }
