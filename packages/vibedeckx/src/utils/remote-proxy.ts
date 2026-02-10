@@ -14,21 +14,28 @@ export interface ProxyOptions {
   timeoutMs?: number;
 }
 
-export async function proxyToRemote(
-  remoteUrl: string,
+const TRANSIENT_STATUS_CODES = new Set([502, 503, 504]);
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 500;
+
+function isTransientError(result: ProxyResult): boolean {
+  return (
+    result.errorCode === "network_error" ||
+    result.errorCode === "non_json_response" ||
+    TRANSIENT_STATUS_CODES.has(result.status)
+  );
+}
+
+async function proxyOnce(
+  baseUrl: string,
   apiKey: string,
   method: string,
   apiPath: string,
-  body?: unknown,
-  options?: ProxyOptions
+  body: unknown | undefined,
+  requestId: string,
+  timeoutMs: number,
 ): Promise<ProxyResult> {
-  const requestId = options?.requestId ?? randomUUID();
-  const timeoutMs = options?.timeoutMs ?? 30_000;
-  const baseUrl = remoteUrl.replace(/\/+$/, "");
   const start = Date.now();
-
-  console.log(`[proxyToRemote] ${requestId} ${method} ${baseUrl}${apiPath}`);
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -86,4 +93,30 @@ export async function proxyToRemote(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function proxyToRemote(
+  remoteUrl: string,
+  apiKey: string,
+  method: string,
+  apiPath: string,
+  body?: unknown,
+  options?: ProxyOptions
+): Promise<ProxyResult> {
+  const requestId = options?.requestId ?? randomUUID();
+  const timeoutMs = options?.timeoutMs ?? 30_000;
+  const baseUrl = remoteUrl.replace(/\/+$/, "");
+
+  console.log(`[proxyToRemote] ${requestId} ${method} ${baseUrl}${apiPath}`);
+
+  let result = await proxyOnce(baseUrl, apiKey, method, apiPath, body, requestId, timeoutMs);
+
+  for (let attempt = 1; attempt <= MAX_RETRIES && isTransientError(result); attempt++) {
+    const delay = RETRY_BASE_DELAY_MS * attempt;
+    console.log(`[proxyToRemote] ${requestId} retrying (${attempt}/${MAX_RETRIES}) after ${delay}ms...`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    result = await proxyOnce(baseUrl, apiKey, method, apiPath, body, requestId, timeoutMs);
+  }
+
+  return result;
 }

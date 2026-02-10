@@ -156,64 +156,62 @@ Please proceed step by step and let me know if there are any issues or conflicts
             onCreateWorktreeOpen={() => setCreateWorktreeDialogOpen(true)}
           />
 
-          {/* Main Content */}
-          {activeView === 'workspace' ? (
-            <>
-              {/* Left Panel: Project Card + Agent Conversation */}
-              <div className="w-1/2 flex flex-col border-r overflow-hidden">
-                {currentProject && (
-                  <div className="p-4 border-b flex-shrink-0">
-                    <ProjectCard
-                      project={currentProject}
-                      selectedBranch={selectedBranch}
-                      onBranchChange={setSelectedBranch}
-                      onUpdateProject={updateProject}
-                      onDeleteProject={deleteProject}
-                      onSyncPrompt={handleSyncPrompt}
-                      worktrees={worktrees}
-                      onWorktreesRefetch={refetchWorktrees}
-                      assignedTask={assignedTask}
-                      onStartTask={handleStartTask}
-                      onResetTask={handleResetTask}
-                    />
-                  </div>
-                )}
-                <div className="flex-1 overflow-hidden">
-                  <AgentConversation
-                    ref={agentRef}
-                    projectId={currentProject?.id ?? null}
-                    branch={selectedBranch}
+          {/* Workspace View — kept mounted, hidden via CSS to preserve WebSocket */}
+          <div className={activeView !== 'workspace' ? 'hidden' : 'contents'}>
+            {/* Left Panel: Project Card + Agent Conversation */}
+            <div className="w-1/2 flex flex-col border-r overflow-hidden">
+              {currentProject && (
+                <div className="p-4 border-b flex-shrink-0">
+                  <ProjectCard
                     project={currentProject}
-                    onAgentModeChange={handleAgentModeChange}
+                    selectedBranch={selectedBranch}
+                    onBranchChange={setSelectedBranch}
+                    onUpdateProject={updateProject}
+                    onDeleteProject={deleteProject}
+                    onSyncPrompt={handleSyncPrompt}
+                    worktrees={worktrees}
+                    onWorktreesRefetch={refetchWorktrees}
+                    assignedTask={assignedTask}
+                    onStartTask={handleStartTask}
+                    onResetTask={handleResetTask}
                   />
                 </div>
-              </div>
-
-              {/* Right Panel: Executors + Diff */}
-              <div className="w-1/2 flex flex-col overflow-hidden">
-                <RightPanel
+              )}
+              <div className="flex-1 overflow-hidden">
+                <AgentConversation
+                  ref={agentRef}
                   projectId={currentProject?.id ?? null}
-                  selectedBranch={selectedBranch}
-                  onMergeRequest={handleMergeRequest}
+                  branch={selectedBranch}
                   project={currentProject}
-                  onExecutorModeChange={handleExecutorModeChange}
+                  onAgentModeChange={handleAgentModeChange}
                 />
               </div>
-            </>
-          ) : (
-            /* Tasks View — full width */
-            <div className="flex-1 overflow-hidden">
-              <TasksView
+            </div>
+
+            {/* Right Panel: Executors + Diff */}
+            <div className="w-1/2 flex flex-col overflow-hidden">
+              <RightPanel
                 projectId={currentProject?.id ?? null}
-                tasks={tasks}
-                loading={tasksLoading}
-                worktrees={worktrees}
-                onCreateTask={createTask}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
+                selectedBranch={selectedBranch}
+                onMergeRequest={handleMergeRequest}
+                project={currentProject}
+                onExecutorModeChange={handleExecutorModeChange}
               />
             </div>
-          )}
+          </div>
+
+          {/* Tasks View — kept mounted, hidden via CSS */}
+          <div className={activeView !== 'tasks' ? 'hidden' : 'flex-1 overflow-hidden'}>
+            <TasksView
+              projectId={currentProject?.id ?? null}
+              tasks={tasks}
+              loading={tasksLoading}
+              worktrees={worktrees}
+              onCreateTask={createTask}
+              onUpdateTask={updateTask}
+              onDeleteTask={deleteTask}
+            />
+          </div>
         </div>
 
         {/* Sidebar's Create Worktree Dialog */}
