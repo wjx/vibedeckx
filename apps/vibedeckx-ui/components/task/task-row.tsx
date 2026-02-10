@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { Task, TaskStatus, TaskPriority } from "@/lib/api";
+import type { Task, TaskStatus, TaskPriority, Worktree } from "@/lib/api";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,19 +10,23 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Trash2 } from "lucide-react";
+import { Trash2, GitBranch } from "lucide-react";
 import { statusConfig, priorityConfig, statusOptions, priorityOptions } from "./task-utils";
 
 interface TaskRowProps {
   task: Task;
-  onUpdate: (id: string, opts: { title?: string; status?: TaskStatus; priority?: TaskPriority }) => void;
+  onUpdate: (id: string, opts: { title?: string; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null }) => void;
   onDelete: (id: string) => void;
   onClick?: (task: Task) => void;
+  worktrees: Worktree[];
+  assignedBranches: Set<string | null>;
+  onAssign: (taskId: string, branch: string | null) => void;
 }
 
-export function TaskRow({ task, onUpdate, onDelete, onClick }: TaskRowProps) {
+export function TaskRow({ task, onUpdate, onDelete, onClick, worktrees, assignedBranches, onAssign }: TaskRowProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +132,50 @@ export function TaskRow({ task, onUpdate, onDelete, onClick }: TaskRowProps) {
                 {priorityConfig[p].label}
               </DropdownMenuItem>
             ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="focus:outline-none">
+              <Badge variant="outline" className={`cursor-pointer text-xs ${task.assigned_branch !== null ? "bg-blue-500/10 text-blue-600 border-blue-500/30" : "text-muted-foreground"}`}>
+                <GitBranch className="h-3 w-3 mr-1" />
+                {task.assigned_branch !== null
+                  ? (task.assigned_branch === "" ? "main" : task.assigned_branch)
+                  : "Unassigned"}
+              </Badge>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {task.assigned_branch !== null && (
+              <>
+                <DropdownMenuItem onClick={() => onAssign(task.id, null)}>
+                  Unassign
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            {worktrees
+              .filter((wt) => {
+                // Map worktree branch to assigned_branch value: null -> "", string -> string
+                const branchKey = wt.branch === null ? "" : wt.branch;
+                // Skip if this is already the assigned branch
+                if (task.assigned_branch === branchKey) return false;
+                // Skip if another task already has this branch assigned
+                if (assignedBranches.has(branchKey)) return false;
+                return true;
+              })
+              .map((wt) => {
+                const branchKey = wt.branch === null ? "" : wt.branch;
+                const displayName = wt.branch ?? "main";
+                return (
+                  <DropdownMenuItem key={branchKey} onClick={() => onAssign(task.id, branchKey)}>
+                    <GitBranch className="h-3 w-3 mr-2" />
+                    {displayName}
+                  </DropdownMenuItem>
+                );
+              })}
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>

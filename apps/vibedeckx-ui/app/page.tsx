@@ -1,9 +1,10 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ProjectSelector } from '@/components/project/project-selector';
 import { ProjectCard } from '@/components/project/project-card';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorktrees } from '@/hooks/use-worktrees';
+import { useTasks } from '@/hooks/use-tasks';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
@@ -12,7 +13,7 @@ import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
-import type { ExecutionMode } from '@/lib/api';
+import type { ExecutionMode, Task } from '@/lib/api';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -32,6 +33,22 @@ export default function Home() {
   } = useProjects();
 
   const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
+  const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask } = useTasks(currentProject?.id ?? null);
+
+  // Compute assigned task for the currently selected branch
+  const assignedTask = useMemo(() => {
+    // Map selectedBranch (null = main) to assigned_branch value ("" = main)
+    const branchKey = selectedBranch === null ? "" : selectedBranch;
+    return tasks.find((t) => t.assigned_branch === branchKey) ?? null;
+  }, [tasks, selectedBranch]);
+
+  const handleStartTask = useCallback((task: Task) => {
+    agentRef.current?.submitMessage(task.description ?? task.title);
+  }, []);
+
+  const handleResetTask = useCallback((taskId: string) => {
+    updateTask(taskId, { assigned_branch: null });
+  }, [updateTask]);
 
   // Reset branch selection when project changes
   useEffect(() => {
@@ -155,6 +172,9 @@ Please proceed step by step and let me know if there are any issues or conflicts
                       onSyncPrompt={handleSyncPrompt}
                       worktrees={worktrees}
                       onWorktreesRefetch={refetchWorktrees}
+                      assignedTask={assignedTask}
+                      onStartTask={handleStartTask}
+                      onResetTask={handleResetTask}
                     />
                   </div>
                 )}
@@ -183,7 +203,15 @@ Please proceed step by step and let me know if there are any issues or conflicts
           ) : (
             /* Tasks View — full width */
             <div className="flex-1 overflow-hidden">
-              <TasksView projectId={currentProject?.id ?? null} />
+              <TasksView
+                projectId={currentProject?.id ?? null}
+                tasks={tasks}
+                loading={tasksLoading}
+                worktrees={worktrees}
+                onCreateTask={createTask}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+              />
             </div>
           )}
         </div>

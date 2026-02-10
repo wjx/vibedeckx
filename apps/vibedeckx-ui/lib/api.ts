@@ -162,6 +162,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  assigned_branch: string | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -626,7 +627,7 @@ export const api = {
 
   async updateTask(
     id: string,
-    opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }
+    opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null; position?: number }
   ): Promise<Task> {
     const res = await fetch(`${getApiBase()}/api/tasks/${id}`, {
       method: "PUT",

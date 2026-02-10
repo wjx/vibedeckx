@@ -9,8 +9,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown } from "lucide-react";
-import { api, type Project, type Worktree, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw } from "lucide-react";
+import { api, type Project, type Worktree, type Task, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
 import { EditProjectDialog } from "./edit-project-dialog";
@@ -33,9 +33,12 @@ interface ProjectCardProps {
   onSyncPrompt?: (prompt: string, executionMode: ExecutionMode) => void;
   worktrees?: Worktree[];
   onWorktreesRefetch?: () => void;
+  assignedTask?: Task | null;
+  onStartTask?: (task: Task) => void;
+  onResetTask?: (taskId: string) => void;
 }
 
-export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt, worktrees: externalWorktrees, onWorktreesRefetch }: ProjectCardProps) {
+export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt, worktrees: externalWorktrees, onWorktreesRefetch, assignedTask, onStartTask, onResetTask }: ProjectCardProps) {
   const [internalWorktrees, setInternalWorktrees] = useState<Worktree[]>([]);
   const [internalLoading, setInternalLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -262,6 +265,32 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
             onWorktreeDeleted={handleWorktreeDeleted}
           />
         </div>
+        {assignedTask && (
+          <div className="border-t pt-2 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground text-xs font-medium">Assigned Task:</span>
+              <span className="text-sm truncate flex-1">{assignedTask.title}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => onStartTask?.(assignedTask)}
+              >
+                <Play className="h-3.5 w-3.5 mr-1" />
+                Start
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onResetTask?.(assignedTask.id)}
+              >
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                Reset
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
       <EditProjectDialog
         project={project}

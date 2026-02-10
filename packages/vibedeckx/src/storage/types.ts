@@ -64,6 +64,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  assigned_branch: string | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -141,10 +142,10 @@ export interface Storage {
     delete: (id: string) => void;
   };
   tasks: {
-    create: (opts: { id: string; project_id: string; title: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority }) => Task;
+    create: (opts: { id: string; project_id: string; title: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null }) => Task;
     getByProjectId: (projectId: string) => Task[];
     getById: (id: string) => Task | undefined;
-    update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }) => Task | undefined;
+    update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null; position?: number }) => Task | undefined;
     delete: (id: string) => void;
     reorder: (projectId: string, orderedIds: string[]) => void;
   };

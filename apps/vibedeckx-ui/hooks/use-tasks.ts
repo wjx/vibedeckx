@@ -45,7 +45,7 @@ export function useTasks(projectId: string | null) {
   );
 
   const updateTask = useCallback(
-    async (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority }) => {
+    async (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null }) => {
       // Optimistic update
       const previousTasks = tasks;
       setTasks((prev) =>

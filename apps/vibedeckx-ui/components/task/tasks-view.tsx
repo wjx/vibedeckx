@@ -1,19 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { useTasks } from "@/hooks/use-tasks";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { TaskTable } from "./task-table";
 import { TaskForm } from "./task-form";
+import type { Task, TaskStatus, TaskPriority, Worktree } from "@/lib/api";
 
 interface TasksViewProps {
   projectId: string | null;
+  tasks: Task[];
+  loading: boolean;
+  worktrees: Worktree[];
+  onCreateTask: (opts: { title?: string; description: string; status?: TaskStatus; priority?: TaskPriority }) => Promise<Task | null>;
+  onUpdateTask: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null }) => Promise<Task | null>;
+  onDeleteTask: (id: string) => Promise<void>;
 }
 
-export function TasksView({ projectId }: TasksViewProps) {
-  const { tasks, loading, createTask, updateTask, deleteTask } = useTasks(projectId);
+export function TasksView({ projectId, tasks, loading, worktrees, onCreateTask, onUpdateTask, onDeleteTask }: TasksViewProps) {
   const [formOpen, setFormOpen] = useState(false);
+
+  const handleAssign = (taskId: string, branch: string | null) => {
+    onUpdateTask(taskId, { assigned_branch: branch });
+  };
 
   if (!projectId) {
     return (
@@ -39,14 +48,20 @@ export function TasksView({ projectId }: TasksViewProps) {
             Loading tasks...
           </div>
         ) : (
-          <TaskTable tasks={tasks} onUpdate={updateTask} onDelete={deleteTask} />
+          <TaskTable
+            tasks={tasks}
+            onUpdate={onUpdateTask}
+            onDelete={onDeleteTask}
+            worktrees={worktrees}
+            onAssign={handleAssign}
+          />
         )}
       </div>
 
       <TaskForm
         open={formOpen}
         onOpenChange={setFormOpen}
-        onSubmit={createTask}
+        onSubmit={onCreateTask}
       />
     </div>
   );

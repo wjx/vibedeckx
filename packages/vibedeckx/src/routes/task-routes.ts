@@ -23,14 +23,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Create task
   fastify.post<{
     Params: { projectId: string };
-    Body: { title?: string; description: string; status?: string; priority?: string };
+    Body: { title?: string; description: string; status?: string; priority?: string; assigned_branch?: string | null };
   }>("/api/projects/:projectId/tasks", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { title: providedTitle, description, status, priority } = req.body;
+    const { title: providedTitle, description, status, priority, assigned_branch } = req.body;
     if (!description) {
       return reply.code(400).send({ error: "description is required" });
     }
@@ -57,6 +57,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       description,
       status: status as 'todo' | 'in_progress' | 'done' | 'cancelled' | undefined,
       priority: priority as 'low' | 'medium' | 'high' | 'urgent' | undefined,
+      assigned_branch,
     });
 
     return reply.code(201).send({ task });
@@ -65,7 +66,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Update task
   fastify.put<{
     Params: { id: string };
-    Body: { title?: string; description?: string | null; status?: string; priority?: string; position?: number };
+    Body: { title?: string; description?: string | null; status?: string; priority?: string; assigned_branch?: string | null; position?: number };
   }>("/api/tasks/:id", async (req, reply) => {
     const existing = fastify.storage.tasks.getById(req.params.id);
     if (!existing) {
@@ -77,6 +78,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       description: req.body.description,
       status: req.body.status as 'todo' | 'in_progress' | 'done' | 'cancelled' | undefined,
       priority: req.body.priority as 'low' | 'medium' | 'high' | 'urgent' | undefined,
+      assigned_branch: req.body.assigned_branch,
       position: req.body.position,
     });
     return reply.code(200).send({ task });

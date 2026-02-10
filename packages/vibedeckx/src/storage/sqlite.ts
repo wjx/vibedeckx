@@ -161,6 +161,13 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     }
   }
 
+  // Migration: add assigned_branch column to tasks table
+  const taskTableInfo = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
+  const hasAssignedBranchColumn = taskTableInfo.some((col) => col.name === "assigned_branch");
+  if (!hasAssignedBranchColumn) {
+    db.exec("ALTER TABLE tasks ADD COLUMN assigned_branch TEXT DEFAULT NULL");
+  }
+
   // Migration: rename worktree_path to branch in agent_sessions
   const sessionTableInfo = db.prepare("PRAGMA table_info(agent_sessions)").all() as { name: string }[];
   const hasWorktreePathColumn = sessionTableInfo.some((col) => col.name === "worktree_path");
@@ -538,15 +545,15 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     tasks: {
-      create: ({ id, project_id, title, description, status, priority }) => {
+      create: ({ id, project_id, title, description, status, priority, assigned_branch }) => {
         const maxPos = db.prepare<{ project_id: string }, { max_pos: number | null }>(
           `SELECT MAX(position) as max_pos FROM tasks WHERE project_id = @project_id`
         ).get({ project_id });
         const position = (maxPos?.max_pos ?? -1) + 1;
 
         db.prepare(
-          `INSERT INTO tasks (id, project_id, title, description, status, priority, position)
-           VALUES (@id, @project_id, @title, @description, @status, @priority, @position)`
+          `INSERT INTO tasks (id, project_id, title, description, status, priority, assigned_branch, position)
+           VALUES (@id, @project_id, @title, @description, @status, @priority, @assigned_branch, @position)`
         ).run({
           id,
           project_id,
@@ -554,6 +561,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           description: description ?? null,
           status: status ?? 'todo',
           priority: priority ?? 'medium',
+          assigned_branch: assigned_branch ?? null,
           position,
         });
 
@@ -574,7 +582,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           .get({ id });
       },
 
-      update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; position?: number }) => {
+      update: (id: string, opts: { title?: string; description?: string | null; status?: TaskStatus; priority?: TaskPriority; assigned_branch?: string | null; position?: number }) => {
         const updates: string[] = [];
         const params: Record<string, unknown> = { id };
 
@@ -593,6 +601,10 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         if (opts.priority !== undefined) {
           updates.push('priority = @priority');
           params.priority = opts.priority;
+        }
+        if (opts.assigned_branch !== undefined) {
+          updates.push('assigned_branch = @assigned_branch');
+          params.assigned_branch = opts.assigned_branch;
         }
         if (opts.position !== undefined) {
           updates.push('position = @position');
