@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, Workflow, FilePenLine } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
@@ -17,6 +17,7 @@ import {
 import { ReadToolUseUI, ReadToolResultUI } from "./file-tools";
 import { BashToolUseUI, BashToolResultUI } from "./bash-tools";
 import { GrepToolUseUI, GrepToolResultUI } from "./grep-tools";
+import { GlobToolUseUI, GlobToolResultUI } from "./glob-tools";
 import { SubagentToolUseUI, SubagentToolResultUI } from "./subagent-tools";
 import { EditToolUseUI, EditToolResultUI } from "./edit-tools";
 
@@ -194,6 +195,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "Glob") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-500/10 flex items-center justify-center">
+          <FolderSearch className="w-4 h-4 text-teal-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-teal-500 mb-1">Glob</p>
+          <GlobToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   if (tool === "Task") {
     return (
       <div className="flex gap-3 py-3">
@@ -289,6 +304,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <GrepToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "Glob") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <GlobToolResultUI output={output} />
         </div>
       </div>
     );
