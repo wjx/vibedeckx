@@ -70,7 +70,18 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(200).send({ sessions: [] });
       }
 
-      const sessions = fastify.storage.agentSessions.getByProjectId(req.params.projectId);
+      const dbSessions = fastify.storage.agentSessions.getByProjectId(req.params.projectId);
+      const sessions = dbSessions.map(s => {
+        const inMemory = fastify.agentSessionManager.getSession(s.id);
+        if (inMemory) {
+          return { ...s, status: inMemory.status };
+        }
+        // Stale DB record — if it claims "running" but no in-memory session exists, it's orphaned
+        if (s.status === "running") {
+          return { ...s, status: "stopped" };
+        }
+        return s;
+      });
       return reply.code(200).send({ sessions });
     }
   );

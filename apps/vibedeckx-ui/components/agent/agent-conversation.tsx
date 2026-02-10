@@ -38,6 +38,7 @@ interface AgentConversationProps {
   project?: Project | null;
   onAgentModeChange?: (mode: ExecutionMode) => void;
   onTaskCompleted?: () => void;
+  onSessionStarted?: () => void;
 }
 
 export interface AgentConversationHandle {
@@ -45,7 +46,7 @@ export interface AgentConversationHandle {
 }
 
 export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
-  function AgentConversation({ projectId, branch, project, onAgentModeChange, onTaskCompleted }, ref) {
+  function AgentConversation({ projectId, branch, project, onAgentModeChange, onTaskCompleted, onSessionStarted }, ref) {
   const [input, setInput] = useState("");
   const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
 
@@ -60,7 +61,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     restartSession,
     switchMode,
     acceptPlan,
-  } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted });
+  } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted, onSessionStarted });
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);

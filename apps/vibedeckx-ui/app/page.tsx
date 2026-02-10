@@ -68,6 +68,11 @@ export default function Home() {
     refetchSessionStatuses();
   }, [refetchTasks, refetchSessionStatuses]);
 
+  // Handle session started: immediately refetch so workspace status shows "working"
+  const handleSessionStarted = useCallback(() => {
+    refetchSessionStatuses();
+  }, [refetchSessionStatuses]);
+
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {
     // Map selectedBranch (null = main) to assigned_branch value ("" = main)
@@ -219,6 +224,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                   project={currentProject}
                   onAgentModeChange={handleAgentModeChange}
                   onTaskCompleted={handleTaskCompleted}
+                  onSessionStarted={handleSessionStarted}
                 />
               </div>
             </div>

@@ -223,6 +223,7 @@ function deduplicatePatches(patches: Patch[]): Patch {
 
 interface UseAgentSessionOptions {
   onTaskCompleted?: () => void;
+  onSessionStarted?: () => void;
 }
 
 export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string, options?: UseAgentSessionOptions) {
@@ -461,6 +462,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
       // Connect WebSocket - it will receive history via patches
       connectWebSocket(newSession.id);
+
+      // Notify caller that session has started (e.g. to refetch workspace statuses)
+      options?.onSessionStarted?.();
 
       // Return session for immediate use (avoids React state timing issues)
       return newSession;
