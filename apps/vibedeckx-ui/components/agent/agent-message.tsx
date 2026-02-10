@@ -61,7 +61,9 @@ function UserMessage({ content }: { content: string }) {
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-foreground mb-1">You</p>
-        <div className="text-sm text-foreground whitespace-pre-wrap break-words overflow-wrap-anywhere">{content}</div>
+        <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
+          <MessageResponse>{content}</MessageResponse>
+        </div>
       </div>
     </div>
   );
