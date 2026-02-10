@@ -34,15 +34,15 @@ export function ExecutorForm({
 
   const isEdit = !!executor;
 
-  // Reset form when executor changes
+  // Sync form values only when dialog opens
   useEffect(() => {
-    if (executor) {
+    if (open && executor) {
       setName(executor.name);
       setCommand(executor.command);
       setCwd(executor.cwd ?? "");
       setPty(executor.pty);
     }
-  }, [executor]);
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
