@@ -202,4 +202,3 @@ vibedeckx --version              Show version
 
 - **Global config**: `~/.vibedeckx/`
 - **Database**: `~/.vibedeckx/data.sqlite`
-- **Project config**: `<project-path>/.vibedeckx/config.json`

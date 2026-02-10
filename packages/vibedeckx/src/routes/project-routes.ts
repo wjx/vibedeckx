@@ -3,7 +3,7 @@ import fp from "fastify-plugin";
 import path from "path";
 import { randomUUID } from "crypto";
 import { exec } from "child_process";
-import { mkdir, writeFile, readdir } from "fs/promises";
+import { readdir } from "fs/promises";
 import type { Project, SyncButtonConfig } from "../storage/types.js";
 import { selectFolder } from "../dialog.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
@@ -94,16 +94,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (existing) {
         return reply.code(409).send({ error: "Project with this path already exists" });
       }
-
-      const vibedeckxDir = path.join(projectPath, ".vibedeckx");
-      await mkdir(vibedeckxDir, { recursive: true });
-
-      const configPath = path.join(vibedeckxDir, "config.json");
-      const config = {
-        name,
-        created_at: new Date().toISOString(),
-      };
-      await writeFile(configPath, JSON.stringify(config, null, 2));
     }
 
     const id = randomUUID();
@@ -161,15 +151,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (existing && existing.id !== req.params.id) {
         return reply.code(409).send({ error: "Another project already uses this path" });
       }
-
-      const vibedeckxDir = path.join(newPath, ".vibedeckx");
-      await mkdir(vibedeckxDir, { recursive: true });
-      const configPath = path.join(vibedeckxDir, "config.json");
-      const config = {
-        name: name ?? project.name,
-        created_at: new Date().toISOString(),
-      };
-      await writeFile(configPath, JSON.stringify(config, null, 2));
     }
 
     const updateOpts: {

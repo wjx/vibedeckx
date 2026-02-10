@@ -1,11 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import path from "path";
 import { mkdir } from "fs/promises";
-import { existsSync } from "fs";
-import { readWorktreeConfig, writeWorktreeConfig } from "../utils/worktree-config.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
-import { resolveWorktreePath, getWorktreeBaseForProject } from "../utils/worktree-paths.js";
+import { resolveWorktreePath, getWorktreeBaseForProject, getWorktreeBranches, parseGitWorktreeList } from "../utils/worktree-paths.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -47,20 +44,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Path is required" });
     }
 
-    const config = await readWorktreeConfig(projectPath);
-    const validWorktrees = config.worktrees.filter((wt) => {
-      const absolutePath = resolveWorktreePath(projectPath, wt.branch);
-      return existsSync(absolutePath);
-    });
-
-    const worktrees: Array<{ branch: string | null }> = [
-      { branch: null },
-    ];
-    for (const wt of validWorktrees) {
-      worktrees.push({ branch: wt.branch });
+    try {
+      const worktrees = getWorktreeBranches(projectPath);
+      return reply.code(200).send({ worktrees });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to list worktrees: ${errorMessage}` });
     }
-
-    return reply.code(200).send({ worktrees });
   });
 
   // Create worktree at a path
@@ -110,10 +100,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
-      const config = await readWorktreeConfig(projectPath);
-      config.worktrees.push({ branch: trimmedBranch });
-      await writeWorktreeConfig(projectPath, config);
-
       console.log(`[worktree] ${requestId} Created: branch=${trimmedBranch}`);
 
       return reply.code(201).send({
@@ -157,24 +143,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       let branchToDelete: string | null = null;
       try {
-        const worktreeListOutput = execSync("git worktree list --porcelain", {
-          cwd: projectPath,
-          encoding: "utf-8",
-        });
-        const blocks = worktreeListOutput.trim().split("\n\n");
-        for (const block of blocks) {
-          const lines = block.split("\n");
-          let currentPath = "";
-          let currentBranch: string | null = null;
-          for (const line of lines) {
-            if (line.startsWith("worktree ")) currentPath = line.slice(9);
-            else if (line.startsWith("branch refs/heads/")) currentBranch = line.slice(18);
-          }
-          if (currentPath === worktreeAbsPath) {
-            branchToDelete = currentBranch;
-            break;
-          }
-        }
+        const entries = parseGitWorktreeList(projectPath);
+        const match = entries.find((e) => e.path === worktreeAbsPath);
+        if (match) branchToDelete = match.branch;
       } catch {
         // Continue without branch deletion
       }
@@ -196,10 +167,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
           // Branch deletion failed, not critical
         }
       }
-
-      const config = await readWorktreeConfig(projectPath);
-      config.worktrees = config.worktrees.filter((wt) => wt.branch !== branch);
-      await writeWorktreeConfig(projectPath, config);
 
       return reply.code(200).send({ success: true });
     } catch (error) {
@@ -232,23 +199,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    const projectPath = project.path;
-    const config = await readWorktreeConfig(projectPath);
-
-    const validWorktrees = config.worktrees.filter((wt) => {
-      const absolutePath = resolveWorktreePath(projectPath, wt.branch);
-      return existsSync(absolutePath);
-    });
-
-    const worktrees: Array<{ branch: string | null }> = [
-      { branch: null },
-    ];
-
-    for (const wt of validWorktrees) {
-      worktrees.push({ branch: wt.branch });
+    try {
+      const worktrees = getWorktreeBranches(project.path);
+      return reply.code(200).send({ worktrees });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return reply.code(500).send({ error: `Failed to list worktrees: ${errorMessage}` });
     }
-
-    return reply.code(200).send({ worktrees });
   });
 
   // Get branches for a project
@@ -369,30 +326,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       let branchToDelete: string | null = null;
       try {
-        const worktreeListOutput = execSync("git worktree list --porcelain", {
-          cwd: project.path!,
-          encoding: "utf-8",
-        });
-
-        const blocks = worktreeListOutput.trim().split("\n\n");
-        for (const block of blocks) {
-          const lines = block.split("\n");
-          let currentWorktreePath = "";
-          let currentBranch: string | null = null;
-
-          for (const line of lines) {
-            if (line.startsWith("worktree ")) {
-              currentWorktreePath = line.slice(9);
-            } else if (line.startsWith("branch refs/heads/")) {
-              currentBranch = line.slice(18);
-            }
-          }
-
-          if (currentWorktreePath === worktreeAbsPath) {
-            branchToDelete = currentBranch;
-            break;
-          }
-        }
+        const entries = parseGitWorktreeList(project.path!);
+        const match = entries.find((e) => e.path === worktreeAbsPath);
+        if (match) branchToDelete = match.branch;
       } catch {
         // Failed to get branch info, continue without deleting branch
       }
@@ -414,10 +350,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
           // Branch deletion failed, not critical
         }
       }
-
-      const config = await readWorktreeConfig(project.path!);
-      config.worktrees = config.worktrees.filter((wt) => wt.branch !== branch);
-      await writeWorktreeConfig(project.path!, config);
     };
 
     // Local-only project
@@ -563,10 +495,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
-
-      const config = await readWorktreeConfig(project.path!);
-      config.worktrees.push({ branch: trimmedBranch });
-      await writeWorktreeConfig(project.path!, config);
 
       return { branch: trimmedBranch };
     };

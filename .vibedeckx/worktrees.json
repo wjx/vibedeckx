@@ -1,0 +1,8 @@
+{
+  "worktrees": [
+    {
+      "path": ".worktrees/dev1",
+      "branch": "dev1"
+    }
+  ]
+}
