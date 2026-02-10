@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
@@ -16,6 +16,7 @@ import {
 } from "./task-tools";
 import { ReadToolUseUI, ReadToolResultUI } from "./file-tools";
 import { BashToolUseUI, BashToolResultUI } from "./bash-tools";
+import { GrepToolUseUI, GrepToolResultUI } from "./grep-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -161,6 +162,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "Grep") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center">
+          <Search className="w-4 h-4 text-orange-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-orange-500 mb-1">Search</p>
+          <GrepToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
@@ -222,6 +237,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <BashToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "Grep") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <GrepToolResultUI output={output} />
         </div>
       </div>
     );
