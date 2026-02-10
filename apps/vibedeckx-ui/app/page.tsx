@@ -5,6 +5,7 @@ import { ProjectCard } from '@/components/project/project-card';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorktrees } from '@/hooks/use-worktrees';
 import { useTasks } from '@/hooks/use-tasks';
+import { useSessionStatuses } from '@/hooks/use-session-statuses';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
@@ -14,6 +15,8 @@ import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import type { ExecutionMode, Task } from '@/lib/api';
+
+export type WorkspaceStatus = 'idle' | 'assigned' | 'working' | 'completed';
 
 export default function Home() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -33,7 +36,37 @@ export default function Home() {
   } = useProjects();
 
   const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
-  const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask } = useTasks(currentProject?.id ?? null);
+  const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
+  const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
+
+  // Compute workspace statuses for all worktrees
+  const workspaceStatuses = useMemo(() => {
+    const map = new Map<string, WorkspaceStatus>();
+    if (!worktrees) return map;
+
+    for (const wt of worktrees) {
+      const branchKey = wt.branch === null ? "" : wt.branch;
+      const sessionStatus = sessionStatuses.get(branchKey);
+      const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
+
+      if (sessionStatus === "running") {
+        map.set(branchKey, "working");
+      } else if (assignedTaskForBranch && assignedTaskForBranch.status === "done") {
+        map.set(branchKey, "completed");
+      } else if (assignedTaskForBranch) {
+        map.set(branchKey, "assigned");
+      } else {
+        map.set(branchKey, "idle");
+      }
+    }
+    return map;
+  }, [worktrees, sessionStatuses, tasks]);
+
+  // Handle task completion: refetch tasks and session statuses
+  const handleTaskCompleted = useCallback(() => {
+    refetchTasks();
+    refetchSessionStatuses();
+  }, [refetchTasks, refetchSessionStatuses]);
 
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {
@@ -154,6 +187,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
             onBranchChange={setSelectedBranch}
             currentProject={currentProject}
             onCreateWorktreeOpen={() => setCreateWorktreeDialogOpen(true)}
+            workspaceStatuses={workspaceStatuses}
           />
 
           {/* Workspace View — kept mounted, hidden via CSS to preserve WebSocket */}
@@ -184,6 +218,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                   branch={selectedBranch}
                   project={currentProject}
                   onAgentModeChange={handleAgentModeChange}
+                  onTaskCompleted={handleTaskCompleted}
                 />
               </div>
             </div>

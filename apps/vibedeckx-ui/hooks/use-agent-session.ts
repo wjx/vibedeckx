@@ -221,7 +221,11 @@ function deduplicatePatches(patches: Patch[]): Patch {
 
 // ============ Hook ============
 
-export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string) {
+interface UseAgentSessionOptions {
+  onTaskCompleted?: () => void;
+}
+
+export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string, options?: UseAgentSessionOptions) {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentSessionStatus>("stopped");
@@ -345,6 +349,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           toast.success("Task completed", {
             description: parts.length > 0 ? parts.join(" · ") : undefined,
           });
+          options?.onTaskCompleted?.();
           return;
         }
 

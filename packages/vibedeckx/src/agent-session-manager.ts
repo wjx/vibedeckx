@@ -339,6 +339,14 @@ export class AgentSessionManager {
             cost_usd: resultMsg.cost_usd,
           },
         });
+
+        // Auto-update task status to "done" for the branch's assigned task
+        const tasks = this.storage.tasks.getByProjectId(session.projectId);
+        const branchKey = session.branch ?? "";
+        const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
+        if (assignedTask && assignedTask.status !== "done") {
+          this.storage.tasks.update(assignedTask.id, { status: "done" });
+        }
       }
       return;
     }

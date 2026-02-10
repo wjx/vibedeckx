@@ -3,6 +3,7 @@
 import { Columns3, ListTodo, GitBranch, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Worktree, Project } from "@/lib/api";
+import type { WorkspaceStatus } from "@/app/page";
 
 export type ActiveView = "workspace" | "tasks";
 
@@ -14,6 +15,21 @@ interface AppSidebarProps {
   onBranchChange?: (branch: string | null) => void;
   currentProject?: Project | null;
   onCreateWorktreeOpen?: () => void;
+  workspaceStatuses?: Map<string, WorkspaceStatus>;
+}
+
+function StatusDot({ status }: { status?: WorkspaceStatus }) {
+  if (!status || status === "idle") {
+    return <span className="h-2 w-2 rounded-full bg-muted-foreground/30 shrink-0" />;
+  }
+  if (status === "assigned") {
+    return <span className="h-2 w-2 rounded-full bg-yellow-500 shrink-0" />;
+  }
+  if (status === "working") {
+    return <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shrink-0" />;
+  }
+  // completed
+  return <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />;
 }
 
 export function AppSidebar({
@@ -24,6 +40,7 @@ export function AppSidebar({
   onBranchChange,
   currentProject,
   onCreateWorktreeOpen,
+  workspaceStatuses,
 }: AppSidebarProps) {
   return (
     <nav className="w-40 border-r bg-muted/40 flex flex-col gap-1 p-2">
@@ -81,6 +98,7 @@ export function AppSidebar({
               )}
               title={wt.branch ?? "main"}
             >
+              <StatusDot status={workspaceStatuses?.get(wt.branch === null ? "" : wt.branch)} />
               <GitBranch className="h-3 w-3 shrink-0" />
               <span className="truncate">{wt.branch ?? "main"}</span>
             </button>
