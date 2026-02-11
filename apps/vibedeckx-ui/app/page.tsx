@@ -38,16 +38,31 @@ export default function Home() {
 
   const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
-  const { statuses: sessionStatuses, refetch: refetchSessionStatuses, updateStatus: updateSessionStatus } = useSessionStatuses(currentProject?.id ?? null);
+  const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
+
+  // Real-time status for the currently selected branch (from WebSocket, not polling).
+  // Kept as separate state so the 5-second polling can't overwrite it.
+  const [realtimeStatus, setRealtimeStatus] = useState<AgentSessionStatus | null>(null);
+
+  // Reset real-time status when the selected branch changes so we don't
+  // carry stale status from the previous branch.
+  useEffect(() => {
+    setRealtimeStatus(null);
+  }, [selectedBranch]);
 
   // Compute workspace statuses for all worktrees
   const workspaceStatuses = useMemo(() => {
     const map = new Map<string, WorkspaceStatus>();
     if (!worktrees) return map;
 
+    const selectedKey = selectedBranch === null ? "" : selectedBranch;
+
     for (const wt of worktrees) {
       const branchKey = wt.branch === null ? "" : wt.branch;
-      const sessionStatus = sessionStatuses.get(branchKey);
+      // For the selected branch, prefer real-time WebSocket status over polling
+      const sessionStatus = (branchKey === selectedKey && realtimeStatus !== null)
+        ? realtimeStatus
+        : sessionStatuses.get(branchKey);
       const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
 
       if (sessionStatus === "running") {
@@ -61,7 +76,7 @@ export default function Home() {
       }
     }
     return map;
-  }, [worktrees, sessionStatuses, tasks]);
+  }, [worktrees, sessionStatuses, tasks, selectedBranch, realtimeStatus]);
 
   // Handle task completion: refetch tasks and session statuses
   const handleTaskCompleted = useCallback(() => {
@@ -76,9 +91,8 @@ export default function Home() {
 
   // Forward real-time status from AgentConversation to sidebar (bypasses polling)
   const handleStatusChange = useCallback((newStatus: AgentSessionStatus) => {
-    const branchKey = selectedBranch === null ? "" : selectedBranch;
-    updateSessionStatus(branchKey, newStatus);
-  }, [selectedBranch, updateSessionStatus]);
+    setRealtimeStatus(newStatus);
+  }, []);
 
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {
