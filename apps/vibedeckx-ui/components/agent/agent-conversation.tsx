@@ -87,6 +87,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const handleAcceptPlan = async (planContent: string) => {
     await acceptPlan(planContent);
     setPermissionMode("edit");
+    onStatusChange?.();  // Agent will now implement the plan → signal "working"
   };
 
   useImperativeHandle(ref, () => ({

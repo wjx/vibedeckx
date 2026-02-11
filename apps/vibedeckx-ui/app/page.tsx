@@ -39,14 +39,9 @@ export default function Home() {
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
   const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
 
-  // Real-time workspace status for the selected branch, set directly from events.
-  // Polling can't overwrite this — it's a separate state variable.
-  const [realtimeWorkspaceStatus, setRealtimeWorkspaceStatus] = useState<WorkspaceStatus | null>(null);
-
-  // Reset when the selected branch changes.
-  useEffect(() => {
-    setRealtimeWorkspaceStatus(null);
-  }, [selectedBranch]);
+  // Per-branch real-time workspace statuses, set directly from events.
+  // Persists across branch switches so switching away doesn't lose status.
+  const [realtimeWorkspaceStatuses, setRealtimeWorkspaceStatuses] = useState<Map<string, WorkspaceStatus>>(new Map());
 
   // Compute workspace statuses for all worktrees
   const workspaceStatuses = useMemo(() => {
@@ -58,15 +53,17 @@ export default function Home() {
     for (const wt of worktrees) {
       const branchKey = wt.branch === null ? "" : wt.branch;
 
-      // For the selected branch, use real-time event-driven status when available
-      if (branchKey === selectedKey && realtimeWorkspaceStatus !== null) {
-        map.set(branchKey, realtimeWorkspaceStatus);
+      // 1. Event-driven status (user has interacted with this branch)
+      const realtimeStatus = realtimeWorkspaceStatuses.get(branchKey);
+      if (realtimeStatus !== undefined) {
+        map.set(branchKey, realtimeStatus);
         continue;
       }
 
-      // For other branches (or selected branch before interaction), derive from polling + tasks
+      // 2. Fallback: polling + task data
+      //    Ignore polling for selected branch (auto-start creates idle "running" sessions)
       const sessionStatus = branchKey === selectedKey
-        ? undefined  // Ignore polling for selected branch (auto-start creates idle sessions)
+        ? undefined
         : sessionStatuses.get(branchKey);
       const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
 
@@ -81,19 +78,29 @@ export default function Home() {
       }
     }
     return map;
-  }, [worktrees, sessionStatuses, tasks, selectedBranch, realtimeWorkspaceStatus]);
+  }, [worktrees, sessionStatuses, tasks, selectedBranch, realtimeWorkspaceStatuses]);
 
   // Agent started working → blue
   const handleStatusChange = useCallback(() => {
-    setRealtimeWorkspaceStatus("working");
-  }, []);
+    const branchKey = selectedBranch === null ? "" : selectedBranch;
+    setRealtimeWorkspaceStatuses(prev => {
+      const next = new Map(prev);
+      next.set(branchKey, "working");
+      return next;
+    });
+  }, [selectedBranch]);
 
   // Task completed → green (+ sync DB data in background)
   const handleTaskCompleted = useCallback(() => {
-    setRealtimeWorkspaceStatus("completed");
+    const branchKey = selectedBranch === null ? "" : selectedBranch;
+    setRealtimeWorkspaceStatuses(prev => {
+      const next = new Map(prev);
+      next.set(branchKey, "completed");
+      return next;
+    });
     refetchTasks();
     refetchSessionStatuses();
-  }, [refetchTasks, refetchSessionStatuses]);
+  }, [selectedBranch, refetchTasks, refetchSessionStatuses]);
 
   const handleSessionStarted = useCallback(() => {
     refetchSessionStatuses();
