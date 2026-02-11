@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, forwardRef, useImperativeHandle, createContext, useContext } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
-import type { AgentMessage } from "@/hooks/use-agent-session";
+import type { AgentMessage, AgentSessionStatus } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ interface AgentConversationProps {
   onAgentModeChange?: (mode: ExecutionMode) => void;
   onTaskCompleted?: () => void;
   onSessionStarted?: () => void;
+  onStatusChange?: (status: AgentSessionStatus) => void;
 }
 
 export interface AgentConversationHandle {
@@ -46,7 +47,7 @@ export interface AgentConversationHandle {
 }
 
 export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
-  function AgentConversation({ projectId, branch, project, onAgentModeChange, onTaskCompleted, onSessionStarted }, ref) {
+  function AgentConversation({ projectId, branch, project, onAgentModeChange, onTaskCompleted, onSessionStarted, onStatusChange }, ref) {
   const [input, setInput] = useState("");
   const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
 
@@ -63,6 +64,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     switchMode,
     acceptPlan,
   } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted, onSessionStarted });
+
+  // Forward real-time status changes to parent (bypasses polling delay)
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);

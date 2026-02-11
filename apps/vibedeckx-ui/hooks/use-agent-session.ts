@@ -605,6 +605,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     setIsConnected(false);
     setIsInitialized(false);
     setError(null);
+    setIsLoading(false);
     containerRef.current = { entries: [], status: "stopped" };
     finishedRef.current = false;
     reconnectAttemptRef.current = 0;

@@ -59,5 +59,13 @@ export function useSessionStatuses(projectId: string | null) {
     };
   }, [fetchStatuses]);
 
-  return { statuses, refetch: fetchStatuses };
+  const updateStatus = useCallback((branch: string, newStatus: AgentSessionStatus) => {
+    setStatuses(prev => {
+      const next = new Map(prev);
+      next.set(branch, newStatus);
+      return next;
+    });
+  }, []);
+
+  return { statuses, refetch: fetchStatuses, updateStatus };
 }

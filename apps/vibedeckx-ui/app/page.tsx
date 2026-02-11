@@ -15,6 +15,7 @@ import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import type { ExecutionMode, Task } from '@/lib/api';
+import type { AgentSessionStatus } from '@/hooks/use-agent-session';
 
 export type WorkspaceStatus = 'idle' | 'assigned' | 'working' | 'completed';
 
@@ -37,7 +38,7 @@ export default function Home() {
 
   const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
-  const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
+  const { statuses: sessionStatuses, refetch: refetchSessionStatuses, updateStatus: updateSessionStatus } = useSessionStatuses(currentProject?.id ?? null);
 
   // Compute workspace statuses for all worktrees
   const workspaceStatuses = useMemo(() => {
@@ -72,6 +73,12 @@ export default function Home() {
   const handleSessionStarted = useCallback(() => {
     refetchSessionStatuses();
   }, [refetchSessionStatuses]);
+
+  // Forward real-time status from AgentConversation to sidebar (bypasses polling)
+  const handleStatusChange = useCallback((newStatus: AgentSessionStatus) => {
+    const branchKey = selectedBranch === null ? "" : selectedBranch;
+    updateSessionStatus(branchKey, newStatus);
+  }, [selectedBranch, updateSessionStatus]);
 
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {
@@ -225,6 +232,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                   onAgentModeChange={handleAgentModeChange}
                   onTaskCompleted={handleTaskCompleted}
                   onSessionStarted={handleSessionStarted}
+                  onStatusChange={handleStatusChange}
                 />
               </div>
             </div>
