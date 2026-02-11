@@ -67,10 +67,10 @@ export default function Home() {
         : sessionStatuses.get(branchKey);
       const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
 
-      if (sessionStatus === "running") {
-        map.set(branchKey, "working");
-      } else if (assignedTaskForBranch && assignedTaskForBranch.status === "done") {
+      if (assignedTaskForBranch && assignedTaskForBranch.status === "done") {
         map.set(branchKey, "completed");
+      } else if (sessionStatus === "running") {
+        map.set(branchKey, "working");
       } else if (assignedTaskForBranch) {
         map.set(branchKey, "assigned");
       } else {
