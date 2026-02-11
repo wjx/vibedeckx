@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, forwardRef, useImperativeHandle, createContext, useContext } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
-import type { AgentMessage, AgentSessionStatus } from "@/hooks/use-agent-session";
+import type { AgentMessage } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ interface AgentConversationProps {
   onAgentModeChange?: (mode: ExecutionMode) => void;
   onTaskCompleted?: () => void;
   onSessionStarted?: () => void;
-  onStatusChange?: (status: AgentSessionStatus) => void;
+  onStatusChange?: () => void;
 }
 
 export interface AgentConversationHandle {
@@ -65,12 +65,15 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     acceptPlan,
   } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted, onSessionStarted });
 
-  // Forward real-time status changes to parent (bypasses polling delay).
-  // Only propagate after user has interacted (messages exist) so that
-  // auto-started idle sessions don't make the sidebar show "working".
+  // Notify parent when agent starts working (status "running" + user has sent messages).
+  // Skips auto-started idle sessions that have no messages yet.
+  const prevWorkingRef = useRef(false);
   useEffect(() => {
-    if (messages.length === 0) return;
-    onStatusChange?.(status);
+    const isWorking = status === "running" && messages.length > 0;
+    if (isWorking && !prevWorkingRef.current) {
+      onStatusChange?.();
+    }
+    prevWorkingRef.current = isWorking;
   }, [status, messages.length, onStatusChange]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {

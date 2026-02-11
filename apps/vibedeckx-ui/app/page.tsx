@@ -15,7 +15,6 @@ import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import type { ExecutionMode, Task } from '@/lib/api';
-import type { AgentSessionStatus } from '@/hooks/use-agent-session';
 
 export type WorkspaceStatus = 'idle' | 'assigned' | 'working' | 'completed';
 
@@ -40,14 +39,13 @@ export default function Home() {
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
   const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
 
-  // Real-time status for the currently selected branch (from WebSocket, not polling).
-  // Kept as separate state so the 5-second polling can't overwrite it.
-  const [realtimeStatus, setRealtimeStatus] = useState<AgentSessionStatus | null>(null);
+  // Real-time workspace status for the selected branch, set directly from events.
+  // Polling can't overwrite this — it's a separate state variable.
+  const [realtimeWorkspaceStatus, setRealtimeWorkspaceStatus] = useState<WorkspaceStatus | null>(null);
 
-  // Reset real-time status when the selected branch changes so we don't
-  // carry stale status from the previous branch.
+  // Reset when the selected branch changes.
   useEffect(() => {
-    setRealtimeStatus(null);
+    setRealtimeWorkspaceStatus(null);
   }, [selectedBranch]);
 
   // Compute workspace statuses for all worktrees
@@ -59,11 +57,16 @@ export default function Home() {
 
     for (const wt of worktrees) {
       const branchKey = wt.branch === null ? "" : wt.branch;
-      // For the selected branch, use ONLY real-time WebSocket status (ignore polling).
-      // This prevents auto-started idle sessions from showing "working" via stale polls.
-      // For other branches, fall back to polling data.
+
+      // For the selected branch, use real-time event-driven status when available
+      if (branchKey === selectedKey && realtimeWorkspaceStatus !== null) {
+        map.set(branchKey, realtimeWorkspaceStatus);
+        continue;
+      }
+
+      // For other branches (or selected branch before interaction), derive from polling + tasks
       const sessionStatus = branchKey === selectedKey
-        ? (realtimeStatus ?? undefined)
+        ? undefined  // Ignore polling for selected branch (auto-start creates idle sessions)
         : sessionStatuses.get(branchKey);
       const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
 
@@ -78,23 +81,23 @@ export default function Home() {
       }
     }
     return map;
-  }, [worktrees, sessionStatuses, tasks, selectedBranch, realtimeStatus]);
+  }, [worktrees, sessionStatuses, tasks, selectedBranch, realtimeWorkspaceStatus]);
 
-  // Handle task completion: refetch tasks and session statuses
+  // Agent started working → blue
+  const handleStatusChange = useCallback(() => {
+    setRealtimeWorkspaceStatus("working");
+  }, []);
+
+  // Task completed → green (+ sync DB data in background)
   const handleTaskCompleted = useCallback(() => {
+    setRealtimeWorkspaceStatus("completed");
     refetchTasks();
     refetchSessionStatuses();
   }, [refetchTasks, refetchSessionStatuses]);
 
-  // Handle session started: immediately refetch so workspace status shows "working"
   const handleSessionStarted = useCallback(() => {
     refetchSessionStatuses();
   }, [refetchSessionStatuses]);
-
-  // Forward real-time status from AgentConversation to sidebar (bypasses polling)
-  const handleStatusChange = useCallback((newStatus: AgentSessionStatus) => {
-    setRealtimeStatus(newStatus);
-  }, []);
 
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {
