@@ -53,6 +53,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const {
     session,
     messages,
+    status,
     isConnected,
     isLoading,
     error,
@@ -78,7 +79,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
 
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
-      if (!session) {
+      if (!session || status !== "running") {
         const newSession = await startSession(permissionMode);
         if (newSession) {
           sendMessage(content, newSession.id);
@@ -87,7 +88,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         sendMessage(content);
       }
     }
-  }), [session, startSession, sendMessage, permissionMode]);
+  }), [session, status, startSession, sendMessage, permissionMode]);
 
   const handleSubmit = async () => {
     if (!input.trim()) return;
@@ -95,7 +96,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     const content = input.trim();
     setInput("");
 
-    if (!session) {
+    if (!session || status !== "running") {
       // Start session with first message, passing current permission mode
       const newSession = await startSession(permissionMode);
       if (newSession) {

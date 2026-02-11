@@ -37,7 +37,9 @@ export function useSessionStatuses(projectId: string | null) {
       const data = await res.json() as { sessions: SessionRecord[] };
       const map = new Map<string, AgentSessionStatus>();
       for (const s of data.sessions) {
-        map.set(s.branch, s.status);
+        if (!map.has(s.branch) || s.status === "running") {
+          map.set(s.branch, s.status);
+        }
       }
       setStatuses(map);
     } catch {

@@ -102,7 +102,15 @@ export class AgentSessionManager {
         branch ?? ""
       );
       if (existingSession && this.sessions.has(existingSession.id)) {
-        console.log(`[AgentSession] Returning existing session from DB ${existingSession.id}`);
+        const inMemory = this.sessions.get(existingSession.id)!;
+        if (inMemory.status !== "running") {
+          // Dead session — restart it so callers always get a running session
+          console.log(`[AgentSession] Session ${existingSession.id} is ${inMemory.status}, restarting`);
+          this.restartSession(existingSession.id, projectPath);
+        } else if (inMemory.permissionMode !== permissionMode) {
+          console.log(`[AgentSession] Session ${existingSession.id} mode ${inMemory.permissionMode} → ${permissionMode}`);
+          this.switchMode(existingSession.id, projectPath, permissionMode);
+        }
         return existingSession.id;
       }
     }
