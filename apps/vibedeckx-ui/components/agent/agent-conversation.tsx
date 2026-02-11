@@ -65,10 +65,13 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     acceptPlan,
   } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted, onSessionStarted });
 
-  // Forward real-time status changes to parent (bypasses polling delay)
+  // Forward real-time status changes to parent (bypasses polling delay).
+  // Only propagate after user has interacted (messages exist) so that
+  // auto-started idle sessions don't make the sidebar show "working".
   useEffect(() => {
+    if (messages.length === 0) return;
     onStatusChange?.(status);
-  }, [status, onStatusChange]);
+  }, [status, messages.length, onStatusChange]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);

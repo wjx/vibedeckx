@@ -59,9 +59,11 @@ export default function Home() {
 
     for (const wt of worktrees) {
       const branchKey = wt.branch === null ? "" : wt.branch;
-      // For the selected branch, prefer real-time WebSocket status over polling
-      const sessionStatus = (branchKey === selectedKey && realtimeStatus !== null)
-        ? realtimeStatus
+      // For the selected branch, use ONLY real-time WebSocket status (ignore polling).
+      // This prevents auto-started idle sessions from showing "working" via stale polls.
+      // For other branches, fall back to polling data.
+      const sessionStatus = branchKey === selectedKey
+        ? (realtimeStatus ?? undefined)
         : sessionStatuses.get(branchKey);
       const assignedTaskForBranch = tasks.find(t => t.assigned_branch === branchKey);
 
