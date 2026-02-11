@@ -246,6 +246,14 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const shortLivedConnectionsRef = useRef(0);
   const isReplayingRef = useRef(false); // True during history replay (before Ready signal)
   const sessionGenerationRef = useRef(0); // Incremented on branch/project change to discard stale API responses
+  const onTaskCompletedRef = useRef(options?.onTaskCompleted);
+  const onSessionStartedRef = useRef(options?.onSessionStarted);
+
+  // Keep callback refs in sync with latest options (avoids stale closures in WebSocket handler)
+  useEffect(() => {
+    onTaskCompletedRef.current = options?.onTaskCompleted;
+    onSessionStartedRef.current = options?.onSessionStarted;
+  });
 
   // WebSocket reconnection constants
   const MIN_STABLE_CONNECTION_MS = 5000;  // Connection must be stable for 5s before resetting backoff
@@ -350,7 +358,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           toast.success("Task completed", {
             description: parts.length > 0 ? parts.join(" · ") : undefined,
           });
-          options?.onTaskCompleted?.();
+          onTaskCompletedRef.current?.();
           return;
         }
 
@@ -464,7 +472,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       connectWebSocket(newSession.id);
 
       // Notify caller that session has started (e.g. to refetch workspace statuses)
-      options?.onSessionStarted?.();
+      onSessionStartedRef.current?.();
 
       // Return session for immediate use (avoids React state timing issues)
       return newSession;
