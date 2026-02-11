@@ -118,8 +118,15 @@ export default function Home() {
   }, []);
 
   const handleResetTask = useCallback((taskId: string) => {
+    // Clear realtime status so the branch falls back to polling/task-derived (idle)
+    const branchKey = selectedBranch === null ? "" : selectedBranch;
+    setRealtimeWorkspaceStatuses(prev => {
+      const next = new Map(prev);
+      next.delete(branchKey);
+      return next;
+    });
     updateTask(taskId, { assigned_branch: null });
-  }, [updateTask]);
+  }, [selectedBranch, updateTask]);
 
   // Reset branch selection when project changes
   useEffect(() => {
