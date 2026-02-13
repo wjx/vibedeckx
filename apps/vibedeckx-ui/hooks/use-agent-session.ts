@@ -98,7 +98,19 @@ async function sendMessageToSession(sessionId: string, content: string): Promise
   });
 
   if (!response.ok) {
-    throw new Error("Failed to send message");
+    let detail = "";
+    try {
+      const body = await response.json();
+      if (body.errorCode) {
+        const parts = [`${body.errorCode}`];
+        if (body.attempts) parts.push(`${body.attempts} attempts`);
+        if (body.totalDurationMs) parts.push(`${(body.totalDurationMs / 1000).toFixed(1)}s`);
+        detail = ` (${parts.join(", ")})`;
+      }
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(`Failed to send message${detail}`);
   }
 }
 
@@ -502,8 +514,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         // Send via REST API (more reliable than WebSocket for important actions)
         await sendMessageToSession(targetSessionId, content.trim());
       } catch (e) {
-        console.error("[AgentSession] Failed to send message:", e);
-        setError("Failed to send message");
+        const errorMsg = e instanceof Error ? e.message : "Failed to send message";
+        console.error("[AgentSession] Failed to send message:", errorMsg);
+        setError(errorMsg);
+        toast.error("Failed to send message", { description: errorMsg });
       }
     },
     [session?.id]

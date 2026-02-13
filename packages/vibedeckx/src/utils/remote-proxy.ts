@@ -7,6 +7,10 @@ export interface ProxyResult {
   errorCode?: "timeout" | "network_error" | "auth_error" | "server_error" | "non_json_response";
   requestId?: string;
   durationMs?: number;
+  /** Total number of attempts made (1 = no retries) */
+  attempts?: number;
+  /** Total wall-clock time including all retries */
+  totalDurationMs?: number;
 }
 
 export interface ProxyOptions {
@@ -15,8 +19,9 @@ export interface ProxyOptions {
 }
 
 const TRANSIENT_STATUS_CODES = new Set([502, 503, 504]);
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 5;
 const RETRY_BASE_DELAY_MS = 500;
+const RETRY_MAX_DELAY_MS = 8000;
 
 function isTransientError(result: ProxyResult): boolean {
   return (
@@ -107,15 +112,33 @@ export async function proxyToRemote(
   const timeoutMs = options?.timeoutMs ?? 30_000;
   const baseUrl = remoteUrl.replace(/\/+$/, "");
 
+  const totalStart = Date.now();
   console.log(`[proxyToRemote] ${requestId} ${method} ${baseUrl}${apiPath}`);
 
   let result = await proxyOnce(baseUrl, apiKey, method, apiPath, body, requestId, timeoutMs);
+  let attempts = 1;
 
   for (let attempt = 1; attempt <= MAX_RETRIES && isTransientError(result); attempt++) {
-    const delay = RETRY_BASE_DELAY_MS * attempt;
-    console.log(`[proxyToRemote] ${requestId} retrying (${attempt}/${MAX_RETRIES}) after ${delay}ms...`);
+    const delay = Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1), RETRY_MAX_DELAY_MS);
+    console.log(
+      `[proxyToRemote] ${requestId} retrying (${attempt}/${MAX_RETRIES}) after ${delay}ms...` +
+      ` (last error: ${result.errorCode}, status: ${result.status})`
+    );
     await new Promise((resolve) => setTimeout(resolve, delay));
     result = await proxyOnce(baseUrl, apiKey, method, apiPath, body, requestId, timeoutMs);
+    attempts++;
+  }
+
+  const totalDurationMs = Date.now() - totalStart;
+  result.attempts = attempts;
+  result.totalDurationMs = totalDurationMs;
+
+  if (!result.ok) {
+    console.error(
+      `[proxyToRemote] ${requestId} EXHAUSTED after ${attempts} attempt(s) in ${totalDurationMs}ms.` +
+      ` Final error: ${result.errorCode}, status: ${result.status},` +
+      ` data: ${JSON.stringify(result.data).substring(0, 300)}`
+    );
   }
 
   return result;

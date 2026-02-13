@@ -239,6 +239,16 @@ const routes: FastifyPluginAsync = async (fastify) => {
         `/api/agent-sessions/${remoteInfo.remoteSessionId}/message`,
         { content }
       );
+      if (!result.ok) {
+        const status = result.status || 502;
+        return reply.code(status).send({
+          error: `Remote proxy failed: ${result.errorCode || "unknown"}`,
+          errorCode: result.errorCode,
+          attempts: result.attempts,
+          totalDurationMs: result.totalDurationMs,
+          detail: result.data,
+        });
+      }
       return reply.code(result.status || 200).send(result.data);
     }
 
