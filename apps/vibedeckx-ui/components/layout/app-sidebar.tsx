@@ -46,7 +46,10 @@ export function AppSidebar({
     <nav className="w-40 border-r bg-muted/40 flex flex-col gap-1 p-2">
       {/* Tasks */}
       <button
-        onClick={() => onViewChange("tasks")}
+        onClick={() => {
+          onBranchChange?.(null);
+          onViewChange("tasks");
+        }}
         className={cn(
           "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
           "hover:bg-accent hover:text-accent-foreground",
