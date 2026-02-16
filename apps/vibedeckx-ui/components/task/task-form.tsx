@@ -57,7 +57,7 @@ export function TaskForm({ open, onOpenChange, onSubmit }: TaskFormProps) {
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto min-h-0">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto min-h-0 px-0.5">
           <div className="space-y-2">
             <Textarea
               placeholder="Describe the task..."
