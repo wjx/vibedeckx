@@ -53,16 +53,17 @@ export function TaskForm({ open, onOpenChange, onSubmit }: TaskFormProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Create Task</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto min-h-0">
           <div className="space-y-2">
             <Textarea
               placeholder="Describe the task..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              className="max-h-[40vh]"
               rows={3}
               autoFocus
             />
