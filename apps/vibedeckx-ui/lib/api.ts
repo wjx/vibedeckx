@@ -530,13 +530,16 @@ export const api = {
     return data.processes;
   },
 
-  async getDiff(projectId: string, branch?: string | null, sinceCommit?: string | null): Promise<DiffResponse> {
+  async getDiff(projectId: string, branch?: string | null, sinceCommit?: string | null, target?: 'local' | 'remote'): Promise<DiffResponse> {
     const params = new URLSearchParams();
     if (branch) {
       params.set('branch', branch);
     }
     if (sinceCommit) {
       params.set('since', sinceCommit);
+    }
+    if (target) {
+      params.set('target', target);
     }
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/diff${query}`);
@@ -547,13 +550,16 @@ export const api = {
     return res.json();
   },
 
-  async getCommits(projectId: string, branch?: string | null, limit?: number): Promise<CommitEntry[]> {
+  async getCommits(projectId: string, branch?: string | null, limit?: number, target?: 'local' | 'remote'): Promise<CommitEntry[]> {
     const params = new URLSearchParams();
     if (branch) {
       params.set('branch', branch);
     }
     if (limit) {
       params.set('limit', String(limit));
+    }
+    if (target) {
+      params.set('target', target);
     }
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/commits${query}`);

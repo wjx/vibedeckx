@@ -108,7 +108,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Get git diff for uncommitted changes (project-based)
   fastify.get<{
     Params: { id: string };
-    Querystring: { branch?: string; since?: string };
+    Querystring: { branch?: string; since?: string; target?: 'local' | 'remote' };
   }>("/api/projects/:id/diff", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
@@ -117,13 +117,19 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     const branch = req.query.branch;
     const since = req.query.since;
+    const target = req.query.target;
 
     if (since && !/^[0-9a-f]+$/i.test(since)) {
       return reply.code(400).send({ error: "Invalid commit hash" });
     }
 
-    // Proxy to remote if this is a remote-only project
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    const useRemote = target === 'remote'
+      || (!target && !project.path && project.remote_url && project.remote_api_key && project.remote_path);
+
+    if (useRemote) {
+      if (!project.remote_url || !project.remote_api_key || !project.remote_path) {
+        return reply.code(400).send({ error: "Project has no remote configuration" });
+      }
       const params = [`path=${encodeURIComponent(project.remote_path)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       if (since) params.push(`since=${encodeURIComponent(since)}`);
@@ -170,7 +176,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Get commits for a project (project-based)
   fastify.get<{
     Params: { id: string };
-    Querystring: { branch?: string; limit?: string };
+    Querystring: { branch?: string; limit?: string; target?: 'local' | 'remote' };
   }>("/api/projects/:id/commits", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
@@ -179,9 +185,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     const branch = req.query.branch;
     const limit = parseInt(req.query.limit || "20", 10);
+    const target = req.query.target;
 
-    // Proxy to remote if this is a remote-only project
-    if (!project.path && project.remote_url && project.remote_api_key && project.remote_path) {
+    const useRemote = target === 'remote'
+      || (!target && !project.path && project.remote_url && project.remote_api_key && project.remote_path);
+
+    if (useRemote) {
+      if (!project.remote_url || !project.remote_api_key || !project.remote_path) {
+        return reply.code(400).send({ error: "Project has no remote configuration" });
+      }
       const params = [`path=${encodeURIComponent(project.remote_path)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       params.push(`limit=${limit}`);

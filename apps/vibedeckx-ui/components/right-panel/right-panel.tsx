@@ -64,6 +64,7 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
             projectId={projectId}
             selectedBranch={selectedBranch}
             onMergeRequest={onMergeRequest}
+            project={project}
           />
         )}
       </div>

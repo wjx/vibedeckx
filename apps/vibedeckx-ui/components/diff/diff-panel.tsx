@@ -6,19 +6,25 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { RefreshCw, GitBranch, GitMerge } from 'lucide-react';
 import { FileDiff } from './file-diff';
 import { CommitSelector } from './commit-selector';
+import { ExecutionModeToggle } from '@/components/ui/execution-mode-toggle';
 import { useDiff } from '@/hooks/use-diff';
 import { useCommits } from '@/hooks/use-commits';
+import type { Project } from '@/lib/api';
 
 interface DiffPanelProps {
   projectId: string | null;
   selectedBranch?: string | null;
   onMergeRequest?: () => void;
+  project?: Project | null;
 }
 
-export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPanelProps) {
+export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }: DiffPanelProps) {
   const [sinceCommit, setSinceCommit] = useState<string | null>(null);
-  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit);
-  const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch);
+  const [diffTarget, setDiffTarget] = useState<'local' | 'remote'>('local');
+  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit, diffTarget);
+  const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch, undefined, diffTarget);
+
+  const isHybrid = !!(project?.path && project?.remote_path);
 
   useEffect(() => {
     refresh();
@@ -32,6 +38,11 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPan
   useEffect(() => {
     setSinceCommit(null);
   }, [selectedBranch]);
+
+  // Reset diffTarget when project changes
+  useEffect(() => {
+    setDiffTarget('local');
+  }, [projectId]);
 
   if (!projectId) {
     return (
@@ -62,6 +73,13 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPan
           )}
         </div>
         <div className="flex items-center gap-2">
+          {isHybrid && (
+            <ExecutionModeToggle
+              mode={diffTarget}
+              onModeChange={setDiffTarget}
+              disabled={loading}
+            />
+          )}
           <CommitSelector
             commits={commits}
             selectedCommit={sinceCommit}

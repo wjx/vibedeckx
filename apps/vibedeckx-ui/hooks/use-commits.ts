@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { api, type CommitEntry } from '@/lib/api';
 
-export function useCommits(projectId: string | null, branch?: string | null, limit?: number) {
+export function useCommits(projectId: string | null, branch?: string | null, limit?: number, target?: 'local' | 'remote') {
   const [commits, setCommits] = useState<CommitEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -15,14 +15,14 @@ export function useCommits(projectId: string | null, branch?: string | null, lim
 
     setLoading(true);
     try {
-      const result = await api.getCommits(projectId, branch, limit);
+      const result = await api.getCommits(projectId, branch, limit, target);
       setCommits(result);
     } catch {
       setCommits([]);
     } finally {
       setLoading(false);
     }
-  }, [projectId, branch, limit]);
+  }, [projectId, branch, limit, target]);
 
   return {
     commits,
