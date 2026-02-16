@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RefreshCw, GitBranch, GitMerge } from 'lucide-react';
 import { FileDiff } from './file-diff';
+import { CommitSelector } from './commit-selector';
 import { useDiff } from '@/hooks/use-diff';
+import { useCommits } from '@/hooks/use-commits';
 
 interface DiffPanelProps {
   projectId: string | null;
@@ -14,11 +16,22 @@ interface DiffPanelProps {
 }
 
 export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPanelProps) {
-  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch);
+  const [sinceCommit, setSinceCommit] = useState<string | null>(null);
+  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit);
+  const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    refetchCommits();
+  }, [refetchCommits]);
+
+  // Reset sinceCommit when branch changes
+  useEffect(() => {
+    setSinceCommit(null);
+  }, [selectedBranch]);
 
   if (!projectId) {
     return (
@@ -32,12 +45,16 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPan
   }
 
   const fileCount = diff?.files.length ?? 0;
+  const selectedCommitEntry = sinceCommit ? commits.find(c => c.hash === sinceCommit) : null;
+  const title = selectedCommitEntry
+    ? `Changes since ${selectedCommitEntry.shortHash}`
+    : 'Uncommitted Changes';
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between p-4 border-b h-14">
         <div className="flex items-center gap-4">
-          <h2 className="font-semibold">Uncommitted Changes</h2>
+          <h2 className="font-semibold">{title}</h2>
           {fileCount > 0 && (
             <span className="text-sm text-muted-foreground">
               {fileCount} file{fileCount !== 1 ? 's' : ''} changed
@@ -45,6 +62,13 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPan
           )}
         </div>
         <div className="flex items-center gap-2">
+          <CommitSelector
+            commits={commits}
+            selectedCommit={sinceCommit}
+            onSelectCommit={setSinceCommit}
+            loading={commitsLoading}
+            disabled={loading}
+          />
           <Button size="sm" variant="outline" onClick={onMergeRequest} disabled={loading || fileCount === 0}>
             <GitMerge className="h-4 w-4 mr-1" />
             Merge
@@ -68,9 +92,9 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest }: DiffPan
             </div>
           ) : fileCount === 0 ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>No uncommitted changes</p>
+              <p>{sinceCommit ? 'No changes since this commit' : 'No uncommitted changes'}</p>
               <p className="text-sm mt-1">
-                All changes have been committed
+                {sinceCommit ? 'Try selecting an earlier commit' : 'All changes have been committed'}
               </p>
             </div>
           ) : (

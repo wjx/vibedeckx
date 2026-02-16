@@ -194,6 +194,14 @@ export interface DiffResponse {
   files: FileDiff[];
 }
 
+export interface CommitEntry {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
 export const api = {
   async getProjects(): Promise<Project[]> {
     const res = await fetch(`${getApiBase()}/api/projects`);
@@ -522,10 +530,13 @@ export const api = {
     return data.processes;
   },
 
-  async getDiff(projectId: string, branch?: string | null): Promise<DiffResponse> {
+  async getDiff(projectId: string, branch?: string | null, sinceCommit?: string | null): Promise<DiffResponse> {
     const params = new URLSearchParams();
     if (branch) {
       params.set('branch', branch);
+    }
+    if (sinceCommit) {
+      params.set('since', sinceCommit);
     }
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await fetch(`${getApiBase()}/api/projects/${projectId}/diff${query}`);
@@ -534,6 +545,23 @@ export const api = {
       throw new Error(error.error);
     }
     return res.json();
+  },
+
+  async getCommits(projectId: string, branch?: string | null, limit?: number): Promise<CommitEntry[]> {
+    const params = new URLSearchParams();
+    if (branch) {
+      params.set('branch', branch);
+    }
+    if (limit) {
+      params.set('limit', String(limit));
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/commits${query}`);
+    if (!res.ok) {
+      return [];
+    }
+    const data = await res.json();
+    return data.commits;
   },
 
   // Remote Project API
