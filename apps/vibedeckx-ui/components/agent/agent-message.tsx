@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
@@ -21,6 +21,7 @@ import { GlobToolUseUI, GlobToolResultUI } from "./glob-tools";
 import { SubagentToolUseUI, SubagentToolResultUI } from "./subagent-tools";
 import { EditToolUseUI, EditToolResultUI } from "./edit-tools";
 import { WebFetchToolUseUI, WebFetchToolResultUI } from "./web-fetch-tools";
+import { SkillToolUseUI, SkillToolResultUI } from "./skill-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -238,6 +239,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "Skill") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-pink-500/10 flex items-center justify-center">
+          <Sparkles className="w-4 h-4 text-pink-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-pink-500 mb-1">Skill</p>
+          <SkillToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
@@ -349,6 +364,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <WebFetchToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "Skill") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <SkillToolResultUI output={output} />
         </div>
       </div>
     );
