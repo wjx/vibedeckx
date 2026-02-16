@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles } from "lucide-react";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles, FilePlus2 } from "lucide-react";
 import type { AgentMessage } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { AskUserQuestion } from "./ask-user-question";
@@ -14,7 +14,7 @@ import {
   TaskGetUI,
   TaskListResultUI,
 } from "./task-tools";
-import { ReadToolUseUI, ReadToolResultUI } from "./file-tools";
+import { ReadToolUseUI, ReadToolResultUI, WriteToolUseUI, WriteToolResultUI } from "./file-tools";
 import { BashToolUseUI, BashToolResultUI } from "./bash-tools";
 import { GrepToolUseUI, GrepToolResultUI } from "./grep-tools";
 import { GlobToolUseUI, GlobToolResultUI } from "./glob-tools";
@@ -169,6 +169,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "Write") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center">
+          <FilePlus2 className="w-4 h-4 text-sky-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-sky-500 mb-1">Write File</p>
+          <WriteToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   if (tool === "Bash") {
     return (
       <div className="flex gap-3 py-3">
@@ -314,6 +328,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <EditToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "Write") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <WriteToolResultUI output={output} />
         </div>
       </div>
     );
