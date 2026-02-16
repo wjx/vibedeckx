@@ -75,6 +75,7 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
               disabled={loading}
             />
           )}
+          <span className="text-sm text-muted-foreground whitespace-nowrap">Changes since:</span>
           <CommitSelector
             commits={commits}
             selectedCommit={sinceCommit}
