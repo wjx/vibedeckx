@@ -56,16 +56,11 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
   }
 
   const fileCount = diff?.files.length ?? 0;
-  const selectedCommitEntry = sinceCommit ? commits.find(c => c.hash === sinceCommit) : null;
-  const title = selectedCommitEntry
-    ? `Changes since ${selectedCommitEntry.shortHash}`
-    : 'Uncommitted Changes';
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between p-4 border-b h-14">
         <div className="flex items-center gap-4">
-          <h2 className="font-semibold">{title}</h2>
           {fileCount > 0 && (
             <span className="text-sm text-muted-foreground">
               {fileCount} file{fileCount !== 1 ? 's' : ''} changed
@@ -110,10 +105,10 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
             </div>
           ) : fileCount === 0 ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>{sinceCommit ? 'No changes since this commit' : 'No uncommitted changes'}</p>
-              <p className="text-sm mt-1">
-                {sinceCommit ? 'Try selecting an earlier commit' : 'All changes have been committed'}
-              </p>
+              <p>{sinceCommit ? 'No changes since this commit' : 'No changes'}</p>
+              {sinceCommit && (
+                <p className="text-sm mt-1">Try selecting an earlier commit</p>
+              )}
             </div>
           ) : (
             diff?.files.map((file, index) => (
