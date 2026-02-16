@@ -1,9 +1,15 @@
+'use client';
+
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { DiffLine } from './diff-line';
 import type { FileDiff as FileDiffType } from '@/lib/api';
 
 interface FileDiffProps {
   file: FileDiffType;
+  defaultOpen?: boolean;
 }
 
 const statusColors = {
@@ -20,11 +26,18 @@ const statusLabels = {
   renamed: 'Renamed',
 };
 
-export function FileDiff({ file }: FileDiffProps) {
+export function FileDiff({ file, defaultOpen = true }: FileDiffProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b">
-        <span className="font-mono text-sm flex-1 min-w-0 truncate">
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border rounded-lg overflow-hidden">
+      <CollapsibleTrigger className="flex items-center gap-2 px-4 py-2 bg-muted border-b w-full cursor-pointer hover:bg-muted/80 transition-colors">
+        {isOpen ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <span className="font-mono text-sm flex-1 min-w-0 truncate text-left">
           {file.oldPath && file.status === 'renamed' ? (
             <>
               <span className="text-muted-foreground">{file.oldPath}</span>
@@ -38,8 +51,8 @@ export function FileDiff({ file }: FileDiffProps) {
         <Badge variant="secondary" className={statusColors[file.status]}>
           {statusLabels[file.status]}
         </Badge>
-      </div>
-      <div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <div>
           {file.hunks.map((hunk, hunkIndex) => (
             <div key={hunkIndex}>
@@ -52,7 +65,7 @@ export function FileDiff({ file }: FileDiffProps) {
             </div>
           ))}
         </div>
-      </div>
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

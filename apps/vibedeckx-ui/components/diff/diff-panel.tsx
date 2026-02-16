@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { RefreshCw, GitBranch, GitMerge } from 'lucide-react';
+import { RefreshCw, GitBranch, GitMerge, ChevronsUpDown } from 'lucide-react';
 import { FileDiff } from './file-diff';
 import { CommitSelector } from './commit-selector';
 import { ExecutionModeToggle } from '@/components/ui/execution-mode-toggle';
@@ -21,6 +21,8 @@ interface DiffPanelProps {
 export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }: DiffPanelProps) {
   const [sinceCommit, setSinceCommit] = useState<string | null>(null);
   const [diffTarget, setDiffTarget] = useState<'local' | 'remote'>('local');
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [expandKey, setExpandKey] = useState(0);
   const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit, diffTarget);
   const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch, undefined, diffTarget);
 
@@ -62,9 +64,23 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
       <div className="flex items-center justify-between p-4 border-b h-14">
         <div className="flex items-center gap-4">
           {fileCount > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {fileCount} file{fileCount !== 1 ? 's' : ''} changed
-            </span>
+            <>
+              <span className="text-sm text-muted-foreground">
+                {fileCount} file{fileCount !== 1 ? 's' : ''} changed
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setAllExpanded(prev => !prev);
+                  setExpandKey(prev => prev + 1);
+                }}
+                title={allExpanded ? 'Collapse all' : 'Expand all'}
+              >
+                <ChevronsUpDown className="h-4 w-4 mr-1" />
+                {allExpanded ? 'Collapse all' : 'Expand all'}
+              </Button>
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -113,7 +129,7 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
             </div>
           ) : (
             diff?.files.map((file, index) => (
-              <FileDiff key={index} file={file} />
+              <FileDiff key={`${index}-${expandKey}`} file={file} defaultOpen={allExpanded} />
             ))
           )}
         </div>
