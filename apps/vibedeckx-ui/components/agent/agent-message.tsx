@@ -23,6 +23,7 @@ import { EditToolUseUI, EditToolResultUI } from "./edit-tools";
 import { WebFetchToolUseUI, WebFetchToolResultUI } from "./web-fetch-tools";
 import { WebSearchToolUseUI, WebSearchToolResultUI } from "./web-search-tools";
 import { SkillToolUseUI, SkillToolResultUI } from "./skill-tools";
+import { TaskOutputToolUseUI, TaskOutputToolResultUI } from "./task-output-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -240,6 +241,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "TaskOutput") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
+          <Workflow className="w-4 h-4 text-purple-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-purple-500 mb-1">Task Output</p>
+          <TaskOutputToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   if (tool === "WebFetch") {
     return (
       <div className="flex gap-3 py-3">
@@ -393,6 +408,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <SubagentToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "TaskOutput") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <TaskOutputToolResultUI output={output} />
         </div>
       </div>
     );
