@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAgentConversation } from "./agent-conversation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageResponse } from "@/components/ai-elements/message";
-import { CheckCircle2, Play, MessageSquare } from "lucide-react";
+import { CheckCircle2, Play, MessageSquare, Loader2 } from "lucide-react";
 
 interface ExitPlanModeUIProps {
   input: unknown;
@@ -49,8 +49,18 @@ function tryParse(str: string): unknown {
 export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
   const { messages, acceptPlan, permissionMode } = useAgentConversation();
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   const planContent = extractPlanContent(input, messages);
+
+  const handleAccept = useCallback(async () => {
+    setIsAccepting(true);
+    try {
+      await acceptPlan(planContent);
+    } finally {
+      setIsAccepting(false);
+    }
+  }, [acceptPlan, planContent]);
 
   // Determine if already responded: next message is a user message
   const nextMsg = messages[messageIndex + 1];
@@ -108,12 +118,17 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
 
       {/* Accept button only - feedback goes through the normal conversation input */}
       <Button
-        onClick={() => acceptPlan(planContent)}
+        onClick={handleAccept}
+        disabled={isAccepting}
         className="bg-green-600 hover:bg-green-700 text-white"
         size="sm"
       >
-        <Play className="h-3.5 w-3.5 mr-1.5" />
-        Accept Plan & Start Editing
+        {isAccepting ? (
+          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+        ) : (
+          <Play className="h-3.5 w-3.5 mr-1.5" />
+        )}
+        {isAccepting ? "Accepting Plan..." : "Accept Plan & Start Editing"}
       </Button>
     </div>
   );
