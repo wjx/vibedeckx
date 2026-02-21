@@ -93,6 +93,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
       if (!session || status !== "running") {
+        onStatusChange?.();  // Immediate visual feedback before async session start
         const newSession = await startSession(permissionMode);
         if (newSession) {
           sendMessage(content, newSession.id);
@@ -111,6 +112,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
 
     if (!session || status !== "running") {
       // Start session with first message, passing current permission mode
+      onStatusChange?.();  // Immediate visual feedback before async session start
       const newSession = await startSession(permissionMode);
       if (newSession) {
         // Use returned session ID directly to avoid React state timing issues
