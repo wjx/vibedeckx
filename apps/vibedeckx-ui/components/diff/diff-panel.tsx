@@ -20,13 +20,16 @@ interface DiffPanelProps {
 
 export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }: DiffPanelProps) {
   const [sinceCommit, setSinceCommit] = useState<string | null>(null);
-  const [diffTarget, setDiffTarget] = useState<'local' | 'remote'>('local');
+  const defaultTarget = project?.path ? 'local' : 'remote';
+  const [diffTarget, setDiffTarget] = useState<'local' | 'remote'>(defaultTarget);
   const [allExpanded, setAllExpanded] = useState(true);
   const [expandKey, setExpandKey] = useState(0);
   const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit, diffTarget);
   const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch, undefined, diffTarget);
 
-  const isHybrid = !!(project?.path && project?.remote_path);
+  const hasLocal = !!project?.path;
+  const hasRemote = !!(project?.remote_url && project?.remote_path);
+  const isHybrid = hasLocal && hasRemote;
 
   useEffect(() => {
     refresh();
@@ -43,8 +46,8 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
 
   // Reset diffTarget when project changes
   useEffect(() => {
-    setDiffTarget('local');
-  }, [projectId]);
+    setDiffTarget(defaultTarget);
+  }, [projectId, defaultTarget]);
 
   if (!projectId) {
     return (
