@@ -14,11 +14,20 @@ export type InputMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
+export interface TerminalInfo {
+  id: string;
+  projectId: string;
+  name: string;
+  cwd: string;
+}
+
 type LogSubscriber = (msg: LogMessage) => void;
 
 interface RunningProcess {
   process: ChildProcess | IPty;
   isPty: boolean;
+  isTerminal: boolean;
+  name: string;
   logs: LogMessage[];
   subscribers: Set<LogSubscriber>;
   executorId: string;
@@ -28,11 +37,13 @@ interface RunningProcess {
 }
 
 const LOG_RETENTION_MS = 5 * 60 * 1000; // 5 minutes
+const TERMINAL_MAX_LOG_ENTRIES = 5000;
 
 export class ProcessManager {
   private processes: Map<string, RunningProcess> = new Map();
   private storage: Storage;
   private eventBus: EventBus | null = null;
+  private terminalCounter = 0;
 
   constructor(storage: Storage) {
     this.storage = storage;
@@ -83,6 +94,71 @@ export class ProcessManager {
   }
 
   /**
+   * Start an interactive terminal session (persistent shell, no command)
+   * Returns the process ID and name
+   */
+  startTerminal(projectId: string, cwd: string): { id: string; name: string } {
+    const processId = crypto.randomUUID();
+    this.terminalCounter++;
+    const name = `Terminal ${this.terminalCounter}`;
+
+    let shell: string;
+    if (process.platform === "win32") {
+      shell = "powershell.exe";
+    } else {
+      shell = process.env.SHELL || "/bin/zsh";
+      if (shell === "bash" || shell === "zsh" || shell === "sh") {
+        shell = `/bin/${shell}`;
+      }
+    }
+
+    console.log(`[ProcessManager] Starting terminal ${processId} (${name}) in ${cwd}`);
+
+    const ptyProcess = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd,
+      env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>,
+    });
+
+    const runningProcess: RunningProcess = {
+      process: ptyProcess,
+      isPty: true,
+      isTerminal: true,
+      name,
+      logs: [],
+      subscribers: new Set(),
+      executorId: "",
+      projectId,
+      projectPath: cwd,
+      skipDb: true,
+    };
+
+    this.processes.set(processId, runningProcess);
+
+    ptyProcess.onData((data: string) => {
+      const msg: LogMessage = { type: "pty", data };
+      runningProcess.logs.push(msg);
+      if (runningProcess.logs.length > TERMINAL_MAX_LOG_ENTRIES) {
+        runningProcess.logs = runningProcess.logs.slice(-TERMINAL_MAX_LOG_ENTRIES);
+      }
+      this.broadcast(processId, msg);
+    });
+
+    ptyProcess.onExit(({ exitCode }) => {
+      const code = exitCode ?? 0;
+      console.log(`[ProcessManager] Terminal ${processId} exited with code ${code}`);
+      const msg: LogMessage = { type: "finished", exitCode: code };
+      runningProcess.logs.push(msg);
+      this.broadcast(processId, msg);
+      this.processes.delete(processId);
+    });
+
+    return { id: processId, name };
+  }
+
+  /**
    * Start a process using node-pty (for interactive commands)
    */
   private startPtyProcess(processId: string, executor: Executor, cwd: string, skipDb = false): void {
@@ -112,6 +188,8 @@ export class ProcessManager {
     const runningProcess: RunningProcess = {
       process: ptyProcess,
       isPty: true,
+      isTerminal: false,
+      name: "",
       logs: [],
       subscribers: new Set(),
       executorId: executor.id,
@@ -127,30 +205,44 @@ export class ProcessManager {
     ptyProcess.onData((data: string) => {
       const msg: LogMessage = { type: "pty", data };
       runningProcess.logs.push(msg);
+      // Ring buffer for terminals: cap at TERMINAL_MAX_LOG_ENTRIES
+      if (runningProcess.isTerminal && runningProcess.logs.length > TERMINAL_MAX_LOG_ENTRIES) {
+        runningProcess.logs = runningProcess.logs.slice(-TERMINAL_MAX_LOG_ENTRIES);
+      }
       this.broadcast(processId, msg);
     });
 
     // Handle PTY exit
     ptyProcess.onExit(({ exitCode }) => {
       const code = exitCode ?? 0;
-      const status: ExecutorProcessStatus = code === 0 ? "completed" : "failed";
 
       console.log(`[ProcessManager] PTY process ${processId} exited with code ${code}`);
 
-      if (!skipDb) {
-        this.storage.executorProcesses.updateStatus(processId, status, code);
-      }
-
-      const msg: LogMessage = { type: "finished", exitCode: code };
-      runningProcess.logs.push(msg);
-      this.broadcast(processId, msg);
-      this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: code });
-
-      // Schedule cleanup after retention period
-      setTimeout(() => {
-        console.log(`[ProcessManager] Cleaning up process ${processId}`);
+      if (runningProcess.isTerminal) {
+        // Terminal processes: clean up immediately, no DB update, no event
+        const msg: LogMessage = { type: "finished", exitCode: code };
+        runningProcess.logs.push(msg);
+        this.broadcast(processId, msg);
         this.processes.delete(processId);
-      }, LOG_RETENTION_MS);
+      } else {
+        // Executor processes: existing behavior
+        const status: ExecutorProcessStatus = code === 0 ? "completed" : "failed";
+
+        if (!skipDb) {
+          this.storage.executorProcesses.updateStatus(processId, status, code);
+        }
+
+        const msg: LogMessage = { type: "finished", exitCode: code };
+        runningProcess.logs.push(msg);
+        this.broadcast(processId, msg);
+        this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: code });
+
+        // Schedule cleanup after retention period
+        setTimeout(() => {
+          console.log(`[ProcessManager] Cleaning up process ${processId}`);
+          this.processes.delete(processId);
+        }, LOG_RETENTION_MS);
+      }
     });
   }
 
@@ -167,6 +259,8 @@ export class ProcessManager {
     const runningProcess: RunningProcess = {
       process: childProcess,
       isPty: false,
+      isTerminal: false,
+      name: "",
       logs: [],
       subscribers: new Set(),
       executorId: executor.id,
@@ -350,6 +444,22 @@ export class ProcessManager {
         }
       })
       .map(([id]) => id);
+  }
+
+  /**
+   * Get all running terminal sessions for a project
+   */
+  getTerminals(projectId: string): TerminalInfo[] {
+    const terminals: TerminalInfo[] = [];
+    for (const [id, proc] of this.processes) {
+      if (proc.isTerminal && proc.projectId === projectId) {
+        const lastLog = proc.logs[proc.logs.length - 1];
+        if (lastLog?.type !== "finished") {
+          terminals.push({ id, projectId: proc.projectId, name: proc.name, cwd: proc.projectPath });
+        }
+      }
+    }
+    return terminals;
   }
 
   /**
