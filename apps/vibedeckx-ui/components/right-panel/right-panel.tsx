@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal, GitBranch } from 'lucide-react';
+import { Terminal, GitBranch, SquareTerminal } from 'lucide-react';
 import { ExecutorPanel } from '@/components/executor';
 import { DiffPanel } from '@/components/diff';
+import { TerminalPanel } from '@/components/terminal';
 import type { Project, ExecutionMode } from '@/lib/api';
 
 interface RightPanelProps {
@@ -15,7 +16,7 @@ interface RightPanelProps {
   onExecutorModeChange?: (mode: ExecutionMode) => void;
 }
 
-type TabType = 'executors' | 'diff';
+type TabType = 'executors' | 'diff' | 'terminal';
 
 export function RightPanel({ projectId, selectedBranch, onMergeRequest, project, onExecutorModeChange }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('executors');
@@ -48,6 +49,18 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
           <GitBranch className="h-4 w-4" />
           Diff
         </button>
+        <button
+          onClick={() => setActiveTab('terminal')}
+          className={cn(
+            'flex items-center gap-2 px-4 border-b-2 transition-colors',
+            activeTab === 'terminal'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <SquareTerminal className="h-4 w-4" />
+          Terminal
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -59,12 +72,17 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
             project={project}
             onExecutorModeChange={onExecutorModeChange}
           />
-        ) : (
+        ) : activeTab === 'diff' ? (
           <DiffPanel
             projectId={projectId}
             selectedBranch={selectedBranch}
             onMergeRequest={onMergeRequest}
             project={project}
+          />
+        ) : (
+          <TerminalPanel
+            projectId={projectId}
+            selectedBranch={selectedBranch}
           />
         )}
       </div>
