@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw } from "lucide-react";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw, Copy, Check } from "lucide-react";
 import { api, type Project, type Worktree, type Task, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
@@ -51,7 +51,14 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
     result: SyncExecutionResult | null;
     loading: boolean;
   }>({ type: 'up', result: null, loading: false });
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const createdDate = new Date(project.created_at).toLocaleDateString();
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPath(text);
+    setTimeout(() => setCopiedPath(null), 2000);
+  };
 
   const useExternal = externalWorktrees !== undefined;
   const worktrees = useExternal ? externalWorktrees : internalWorktrees;
@@ -187,15 +194,37 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
       </CardHeader>
       <CardContent className="space-y-3">
         {project.path && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <FolderOpen className="h-4 w-4" />
-            <span className="truncate">{project.path}</span>
+          <div className="group/path flex items-center gap-2 text-sm text-muted-foreground">
+            <FolderOpen className="h-4 w-4 shrink-0" />
+            <span className="truncate flex-1" title={project.path}>{project.path}</span>
+            <button
+              onClick={() => copyToClipboard(project.path!)}
+              className="shrink-0 p-0.5 rounded hover:bg-muted opacity-0 group-hover/path:opacity-100 transition-opacity"
+              title="Copy local path"
+            >
+              {copiedPath === project.path ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
           </div>
         )}
         {project.remote_path && project.remote_url && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Globe className="h-4 w-4" />
-            <span className="truncate">{project.remote_url}:{project.remote_path}</span>
+          <div className="group/remote flex items-center gap-2 text-sm text-muted-foreground">
+            <Globe className="h-4 w-4 shrink-0" />
+            <span className="truncate flex-1" title={`${project.remote_url}:${project.remote_path}`}>{project.remote_url}:{project.remote_path}</span>
+            <button
+              onClick={() => copyToClipboard(project.remote_path!)}
+              className="shrink-0 p-0.5 rounded hover:bg-muted opacity-0 group-hover/remote:opacity-100 transition-opacity"
+              title="Copy remote path"
+            >
+              {copiedPath === project.remote_path ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
           </div>
         )}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
