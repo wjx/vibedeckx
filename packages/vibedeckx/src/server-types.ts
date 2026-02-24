@@ -1,6 +1,7 @@
 import type { Storage } from "./storage/types.js";
 import type { ProcessManager } from "./process-manager.js";
 import type { AgentSessionManager } from "./agent-session-manager.js";
+import type { EventBus } from "./event-bus.js";
 
 export interface RemoteExecutorInfo {
   remoteUrl: string;
@@ -21,5 +22,6 @@ declare module "fastify" {
     agentSessionManager: AgentSessionManager;
     remoteExecutorMap: Map<string, RemoteExecutorInfo>;
     remoteSessionMap: Map<string, RemoteSessionInfo>;
+    eventBus: EventBus;
   }
 }
