@@ -12,6 +12,7 @@ interface BrowseEntry {
   name: string;
   type: "file" | "directory";
   size?: number;
+  mtime?: string;
 }
 
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
@@ -44,11 +45,16 @@ async function browseDirectory(dirPath: string): Promise<{ path: string; items: 
     if (entry.name === "node_modules") continue;
 
     if (entry.isDirectory()) {
-      items.push({ name: entry.name, type: "directory" });
+      try {
+        const stat = await fs.stat(path.join(dirPath, entry.name));
+        items.push({ name: entry.name, type: "directory", mtime: stat.mtime.toISOString() });
+      } catch {
+        items.push({ name: entry.name, type: "directory" });
+      }
     } else if (entry.isFile()) {
       try {
         const stat = await fs.stat(path.join(dirPath, entry.name));
-        items.push({ name: entry.name, type: "file", size: stat.size });
+        items.push({ name: entry.name, type: "file", size: stat.size, mtime: stat.mtime.toISOString() });
       } catch {
         items.push({ name: entry.name, type: "file" });
       }

@@ -206,6 +206,7 @@ export interface BrowseEntry {
   name: string;
   type: "file" | "directory";
   size?: number;
+  mtime?: string;
 }
 
 export interface BrowseResponse {
