@@ -80,7 +80,7 @@ export function AppSidebar({
           className={cn(
             "flex-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
             "hover:bg-accent hover:text-accent-foreground",
-            activeView === "workspace" && "bg-primary/15 text-primary ring-1 ring-primary/20"
+            activeView === "workspace" && !worktrees?.length && "bg-primary/15 text-primary ring-1 ring-primary/20"
           )}
         >
           <Columns3 className="h-4 w-4 shrink-0" />
