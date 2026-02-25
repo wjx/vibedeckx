@@ -207,11 +207,23 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         <ConversationContent className="gap-1 p-4">
           {!session && messages.length === 0 ? (
             <div className="text-center py-12">
-              <Bot className="h-16 w-16 mx-auto mb-4 text-violet-500/30" />
-              <h3 className="text-lg font-semibold mb-2">Start a conversation</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Ask Claude to help you with coding tasks in this worktree
-              </p>
+              {isLoading ? (
+                <>
+                  <Loader className="h-8 w-8 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Connecting to agent...</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Setting up the session for this worktree
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Bot className="h-16 w-16 mx-auto mb-4 text-violet-500/30" />
+                  <h3 className="text-lg font-semibold mb-2">Start a conversation</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Ask Claude to help you with coding tasks in this worktree
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode }}>

@@ -468,7 +468,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     setIsInitialized(false);
 
     try {
-      const { session: newSession } =
+      const { session: newSession, messages: initialMessages } =
         await createOrGetSession(projectId, branch, permissionMode);
 
       // If branch/project changed while the API call was in flight, discard the result
@@ -479,6 +479,12 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
       setSession(newSession);
       setStatus(newSession.status);
+
+      // Pre-populate messages from REST response for immediate display
+      // (WebSocket replay will update containerRef in the background and flush on Ready)
+      if (initialMessages && initialMessages.length > 0) {
+        setMessages(initialMessages);
+      }
 
       // Connect WebSocket - it will receive history via patches
       connectWebSocket(newSession.id);
