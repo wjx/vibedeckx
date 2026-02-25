@@ -148,6 +148,15 @@ async function acceptPlanApi(sessionId: string, planContent: string): Promise<vo
   }
 }
 
+// ============ Session Cache ============
+// Module-level cache: avoids 14s remote proxy call when switching back to a previously visited workspace.
+// Key: "projectId:branch", Value: session object from last successful REST response.
+const sessionCache = new Map<string, AgentSession>();
+
+function getCacheKey(projectId: string, branch: string | null): string {
+  return `${projectId}:${branch ?? ""}`;
+}
+
 // ============ Patch Application ============
 
 /**
@@ -379,9 +388,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           console.error("[AgentSession] Server error:", msg.error);
           setError(msg.error);
 
-          // If session not found, prevent reconnection attempts
+          // If session not found, invalidate cache and prevent reconnection attempts
           if (msg.error === "Session not found") {
-            console.log("[AgentSession] Session invalid, will create new session");
+            console.log("[AgentSession] Session invalid, invalidating cache, will create new session");
+            if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
             finishedRef.current = true;
           }
           return;
@@ -414,6 +424,8 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         // If we've had multiple short-lived connections, the session is likely invalid
         if (shortLivedConnectionsRef.current >= MAX_SHORT_LIVED_CONNECTIONS) {
           console.log("[AgentSession] Multiple short-lived connections detected, session likely invalid - will recreate");
+          // Invalidate cache so auto-start does a full REST call
+          if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
           // Clear current session to trigger new session creation
           setSession(null);
           setError(null);
@@ -463,9 +475,23 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     // Capture generation at call time to detect stale responses
     const generation = sessionGenerationRef.current;
 
-    setIsLoading(true);
     setError(null);
     setIsInitialized(false);
+
+    // Try cached session first — skip the slow REST call if we already know the session ID
+    const cacheKey = getCacheKey(projectId, branch);
+    const cached = sessionCache.get(cacheKey);
+    if (cached) {
+      console.log(`[AgentSession] Cache hit for ${cacheKey}, reconnecting WebSocket directly`);
+      setSession(cached);
+      setStatus(cached.status);
+      connectWebSocket(cached.id);
+      onSessionStartedRef.current?.();
+      return cached;
+    }
+
+    // Cache miss — need the slow REST call
+    setIsLoading(true);
 
     try {
       const { session: newSession, messages: initialMessages } =
@@ -476,6 +502,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         console.log("[AgentSession] Discarding stale session response (generation mismatch)");
         return null;
       }
+
+      // Cache the session for future workspace switches
+      sessionCache.set(cacheKey, newSession);
 
       setSession(newSession);
       setStatus(newSession.status);
@@ -532,6 +561,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   // Restart session - clears conversation and respawns Claude Code process
   const restartSession = useCallback(async () => {
     if (!session?.id) return;
+
+    // Invalidate cache — session will get new state after restart
+    if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
 
     setIsLoading(true);
     setError(null);
