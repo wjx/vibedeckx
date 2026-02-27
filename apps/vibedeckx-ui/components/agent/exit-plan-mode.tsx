@@ -57,7 +57,9 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
     setIsAccepting(true);
     try {
       await acceptPlan(planContent);
-    } finally {
+      // Keep isAccepting=true — the WebSocket will deliver the user message
+      // which makes isResponded=true, switching to "Plan Accepted" badge
+    } catch {
       setIsAccepting(false);
     }
   }, [acceptPlan, planContent]);
