@@ -17,6 +17,7 @@ import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import { FilesView } from '@/components/files';
 import type { ExecutionMode, Task } from '@/lib/api';
+import { useGlobalEvents } from '@/hooks/use-global-events';
 import { useUrlState } from '@/hooks/use-url-state';
 import { buildUrl } from '@/lib/url-state';
 
@@ -122,6 +123,35 @@ export default function Home() {
   const handleSessionStarted = useCallback(() => {
     refetchSessionStatuses();
   }, [refetchSessionStatuses]);
+
+  // Global SSE events — updates sidebar status for non-selected workspaces
+  const handleGlobalSessionStatus = useCallback((branch: string | null, status: "running" | "stopped" | "error") => {
+    const branchKey = branch === null ? "" : branch;
+    if (status === "running") {
+      setRealtimeWorkspaceStatuses(prev => {
+        const next = new Map(prev);
+        next.set(branchKey, "working");
+        return next;
+      });
+    } else {
+      // "stopped" or "error" — delete realtime entry so polling/task fallback takes over
+      setRealtimeWorkspaceStatuses(prev => {
+        const next = new Map(prev);
+        next.delete(branchKey);
+        return next;
+      });
+    }
+    refetchSessionStatuses();
+  }, [refetchSessionStatuses]);
+
+  const handleGlobalTaskChanged = useCallback(() => {
+    refetchTasks();
+  }, [refetchTasks]);
+
+  useGlobalEvents(currentProject?.id ?? null, {
+    onSessionStatus: handleGlobalSessionStatus,
+    onTaskChanged: handleGlobalTaskChanged,
+  });
 
   // Compute assigned task for the currently selected branch
   const assignedTask = useMemo(() => {

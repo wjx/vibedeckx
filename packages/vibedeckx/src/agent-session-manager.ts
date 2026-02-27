@@ -365,6 +365,11 @@ export class AgentSessionManager {
         const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
         if (assignedTask && assignedTask.status !== "done") {
           this.storage.tasks.update(assignedTask.id, { status: "done" });
+          this.eventBus?.emit({
+            type: "task:updated",
+            projectId: session.projectId,
+            task: { ...assignedTask, status: "done" } as Record<string, unknown>,
+          });
         }
       }
       return;
