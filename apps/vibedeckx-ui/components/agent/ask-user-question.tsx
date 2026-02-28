@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, HelpCircle } from "lucide-react";
+import { CheckCircle2, HelpCircle, Loader2 } from "lucide-react";
 
 interface QuestionOption {
   label: string;
@@ -109,12 +109,13 @@ function InteractiveView({
   sendMessage,
 }: {
   questions: Question[];
-  sendMessage: (content: string, sessionId?: string) => void;
+  sendMessage: (content: string, sessionId?: string) => Promise<void>;
 }) {
   // Track selection state per question
   const [selections, setSelections] = useState<Map<number, Set<string>>>(new Map());
   const [otherTexts, setOtherTexts] = useState<Map<number, string>>(new Map());
   const [usingOther, setUsingOther] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
 
   function toggleOption(qIndex: number, label: string, multiSelect: boolean) {
     setSelections((prev) => {
@@ -154,7 +155,7 @@ function InteractiveView({
     }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const answers: string[] = [];
     for (let qi = 0; qi < questions.length; qi++) {
       if (usingOther.has(qi)) {
@@ -168,7 +169,12 @@ function InteractiveView({
       }
     }
     if (answers.length > 0) {
-      sendMessage(answers.join("\n"));
+      setSubmitting(true);
+      try {
+        await sendMessage(answers.join("\n"));
+      } finally {
+        setSubmitting(false);
+      }
     }
   }
 
@@ -231,8 +237,14 @@ function InteractiveView({
           </div>
         );
       })}
-      <Button onClick={handleSubmit} disabled={!hasAnswer} size="sm">
-        Submit
+      <Button
+        onClick={handleSubmit}
+        disabled={!hasAnswer || submitting}
+        size="sm"
+        className="active:scale-95 transition-transform"
+      >
+        {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {submitting ? "Submitting..." : "Submit"}
       </Button>
     </div>
   );

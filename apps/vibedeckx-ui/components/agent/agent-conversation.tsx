@@ -18,7 +18,7 @@ import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
 import type { Project, ExecutionMode } from "@/lib/api";
 
 interface AgentConversationContextValue {
-  sendMessage: (content: string, sessionId?: string) => void;
+  sendMessage: (content: string, sessionId?: string) => Promise<void>;
   messages: AgentMessage[];
   acceptPlan: (planContent: string) => Promise<void>;
   permissionMode: "plan" | "edit";
