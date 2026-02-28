@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useTransition } from 'react';
 import { ProjectSelector } from '@/components/project/project-selector';
 import { ProjectCard } from '@/components/project/project-card';
 import { useProjects } from '@/hooks/use-projects';
@@ -42,6 +42,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState<ActiveView>(urlTab);
   const agentRef = useRef<AgentConversationHandle>(null);
   const prevProjectId = useRef<string | undefined>(undefined);
+  const [startingTask, startTaskTransition] = useTransition();
 
   const {
     projects,
@@ -161,7 +162,9 @@ export default function Home() {
   }, [tasks, selectedBranch]);
 
   const handleStartTask = useCallback((task: Task) => {
-    agentRef.current?.submitMessage(task.description ?? task.title);
+    startTaskTransition(async () => {
+      await agentRef.current?.submitMessage(task.description ?? task.title);
+    });
   }, []);
 
   const handleResetTask = useCallback((taskId: string) => {
@@ -320,6 +323,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                     assignedTask={assignedTask}
                     onStartTask={handleStartTask}
                     onResetTask={handleResetTask}
+                    startingTask={startingTask}
                   />
                 </div>
               )}

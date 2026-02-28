@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw, Copy, Check } from "lucide-react";
+import { FolderOpen, Calendar, GitBranch, Plus, ChevronDown, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw, Copy, Check, Loader2 } from "lucide-react";
 import { api, type Project, type Worktree, type Task, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
 import { CreateWorktreeDialog } from "./create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./delete-worktree-dialog";
@@ -36,9 +36,10 @@ interface ProjectCardProps {
   assignedTask?: Task | null;
   onStartTask?: (task: Task) => void;
   onResetTask?: (taskId: string) => void;
+  startingTask?: boolean;
 }
 
-export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt, worktrees: externalWorktrees, onWorktreesRefetch, assignedTask, onStartTask, onResetTask }: ProjectCardProps) {
+export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateProject, onDeleteProject, onSyncPrompt, worktrees: externalWorktrees, onWorktreesRefetch, assignedTask, onStartTask, onResetTask, startingTask }: ProjectCardProps) {
   const [internalWorktrees, setInternalWorktrees] = useState<Worktree[]>([]);
   const [internalLoading, setInternalLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -303,11 +304,16 @@ export function ProjectCard({ project, selectedBranch, onBranchChange, onUpdateP
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                className="flex-1"
+                className="flex-1 active:scale-95 transition-transform"
                 onClick={() => onStartTask?.(assignedTask)}
+                disabled={startingTask}
               >
-                <Play className="h-3.5 w-3.5 mr-1" />
-                Start
+                {startingTask ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5 mr-1" />
+                )}
+                {startingTask ? "Starting..." : "Start"}
               </Button>
               <Button
                 size="sm"
