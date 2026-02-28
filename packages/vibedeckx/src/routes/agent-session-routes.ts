@@ -392,6 +392,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `/api/agent-sessions/${remoteInfo.remoteSessionId}/accept-plan`,
           { planContent }
         );
+        fastify.remotePatchCache.delete(req.params.sessionId);
         return reply.code(result.status || 200).send(result.data);
       }
 
