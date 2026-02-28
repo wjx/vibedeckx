@@ -141,9 +141,23 @@ export default function Home() {
         next.delete(branchKey);
         return next;
       });
+      // Refetch tasks so fallback logic can detect task.status === "done" → "completed"
+      refetchTasks();
     }
     refetchSessionStatuses();
-  }, [refetchSessionStatuses]);
+  }, [refetchSessionStatuses, refetchTasks]);
+
+  const handleGlobalSessionFinished = useCallback((branch: string | null) => {
+    const branchKey = branch === null ? "" : branch;
+    // Clear realtime entry and refetch so fallback picks up task completion
+    setRealtimeWorkspaceStatuses(prev => {
+      const next = new Map(prev);
+      next.delete(branchKey);
+      return next;
+    });
+    refetchTasks();
+    refetchSessionStatuses();
+  }, [refetchTasks, refetchSessionStatuses]);
 
   const handleGlobalTaskChanged = useCallback(() => {
     refetchTasks();
@@ -151,6 +165,7 @@ export default function Home() {
 
   useGlobalEvents(currentProject?.id ?? null, {
     onSessionStatus: handleGlobalSessionStatus,
+    onSessionFinished: handleGlobalSessionFinished,
     onTaskChanged: handleGlobalTaskChanged,
   });
 
