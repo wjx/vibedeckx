@@ -64,15 +64,28 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
     }
   }, [acceptPlan, planContent]);
 
-  // Determine if already responded: next message is a user message
-  const nextMsg = messages[messageIndex + 1];
-  const isResponded = nextMsg?.type === "user";
-  const respondedText = isResponded ? nextMsg.content : "";
+  // permissionMode flips to "edit" immediately after REST success,
+  // before any WebSocket message arrives — use as primary indicator
+  const isPlanAccepted = permissionMode === "edit";
 
-  // Check if plan was accepted (mode switched to edit after this message)
-  const isPlanAccepted = isResponded && permissionMode === "edit";
+  // Forward-scan for user response (handles interleaved error messages from dying process)
+  let isResponded = false;
+  let respondedText = "";
+  for (let i = messageIndex + 1; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.type === "user") {
+      isResponded = true;
+      respondedText = msg.content ?? "";
+      break;
+    }
+  }
 
-  if (isResponded) {
+  // Plan accepted via button → treat as responded immediately
+  if (isPlanAccepted && !isResponded) {
+    isResponded = true;
+  }
+
+  if (isPlanAccepted || isResponded) {
     return (
       <div className="space-y-2 mt-2">
         {isPlanAccepted ? (
