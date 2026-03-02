@@ -227,7 +227,7 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
-  if (tool === "Task") {
+  if (tool === "Task" || tool === "Agent") {
     return (
       <div className="flex gap-3 py-3">
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
@@ -403,7 +403,7 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
     );
   }
 
-  if (tool === "Task") {
+  if (tool === "Task" || tool === "Agent") {
     return (
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
