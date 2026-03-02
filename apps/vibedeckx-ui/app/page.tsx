@@ -13,6 +13,7 @@ import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { CreateWorktreeDialog } from '@/components/project/create-worktree-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
+import { MainConversation } from '@/components/conversation';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import { FilesView } from '@/components/files';
@@ -269,7 +270,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
 
           {/* Workspace View — kept mounted, hidden via CSS to preserve WebSocket */}
           <div className={activeView !== 'workspace' ? 'hidden' : 'contents'}>
-            {/* Left Panel: Project Card + Agent Conversation */}
+            {/* Left Panel: Project Card + Main Chat */}
             <div className="w-1/2 flex flex-col border-r overflow-hidden">
               {currentProject && (
                 <div className="p-4 border-b flex-shrink-0">
@@ -290,6 +291,22 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 </div>
               )}
               <div className="flex-1 overflow-hidden">
+                <MainConversation projectId={currentProject?.id ?? null} />
+              </div>
+            </div>
+
+            {/* Right Panel: Executors/Diff (top) + Agent Conversation (bottom) */}
+            <div className="w-1/2 flex flex-col overflow-hidden">
+              <div className="flex-[3] min-h-0 overflow-hidden">
+                <RightPanel
+                  projectId={currentProject?.id ?? null}
+                  selectedBranch={selectedBranch}
+                  onMergeRequest={handleMergeRequest}
+                  project={currentProject}
+                  onExecutorModeChange={handleExecutorModeChange}
+                />
+              </div>
+              <div className="flex-[2] min-h-0 overflow-hidden border-t">
                 <AgentConversation
                   ref={agentRef}
                   projectId={currentProject?.id ?? null}
@@ -301,17 +318,6 @@ Please proceed step by step and let me know if there are any issues or conflicts
                   onStatusChange={handleStatusChange}
                 />
               </div>
-            </div>
-
-            {/* Right Panel: Executors + Diff */}
-            <div className="w-1/2 flex flex-col overflow-hidden">
-              <RightPanel
-                projectId={currentProject?.id ?? null}
-                selectedBranch={selectedBranch}
-                onMergeRequest={handleMergeRequest}
-                project={currentProject}
-                onExecutorModeChange={handleExecutorModeChange}
-              />
             </div>
           </div>
 
