@@ -4,7 +4,13 @@ import WebSocket from "ws";
 import type { LogMessage, InputMessage } from "../process-manager.js";
 import type { AgentWsInput } from "../agent-types.js";
 import type { RemoteSessionInfo } from "../server-types.js";
+import type { RemotePatchCache } from "../remote-patch-cache.js";
 import "../server-types.js";
+
+// ---- Remote reconnection constants ----
+const REMOTE_RECONNECT_MAX_ATTEMPTS = 10;
+const REMOTE_RECONNECT_BASE_DELAY_MS = 1000;
+const REMOTE_RECONNECT_MAX_DELAY_MS = 30000;
 
 /** Build a WebSocket URL for a remote agent session. */
 function buildRemoteWsUrl(remoteInfo: RemoteSessionInfo): string {
@@ -21,6 +27,196 @@ function tryParseWsMessage(raw: string): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Create a persistent WebSocket to the remote server and wire up message
+ * handling (sync or live mode), reconnection on close, and status broadcasts.
+ *
+ * Called both on first frontend connection and on automatic reconnection.
+ */
+function connectPersistentRemoteWs(
+  sessionId: string,
+  remoteInfo: RemoteSessionInfo,
+  cache: RemotePatchCache,
+  wsOptions: Record<string, unknown>,
+): void {
+  const remoteWsUrl = buildRemoteWsUrl(remoteInfo);
+  const hasCachedData = cache.hasData(sessionId);
+  console.log(`[AgentWS] Opening persistent remote WS for ${sessionId} (cached=${hasCachedData})`);
+
+  const remoteWs = new WebSocket(remoteWsUrl, undefined, wsOptions);
+  cache.setRemoteWs(sessionId, remoteWs);
+  cache.setReconnecting(sessionId, false);
+  cache.clearReconnectTimer(sessionId);
+
+  /** Live-mode message handler — shared by both first-connect and post-sync paths. */
+  const handleLiveMessage = (data: import("ws").RawData) => {
+    const raw = data.toString();
+    const parsed = tryParseWsMessage(raw);
+    if (!parsed) return;
+
+    if ("JsonPatch" in parsed) {
+      cache.appendMessage(sessionId, raw, true);
+      cache.broadcast(sessionId, raw);
+    } else if ("finished" in parsed) {
+      cache.setFinished(sessionId);
+      cache.broadcast(sessionId, raw);
+    } else if ("taskCompleted" in parsed) {
+      cache.appendMessage(sessionId, raw, false);
+      cache.broadcast(sessionId, raw);
+    } else if ("error" in parsed) {
+      cache.appendMessage(sessionId, raw, false);
+      cache.broadcast(sessionId, raw);
+      // If session not found on remote, stop reconnecting
+      if (parsed.error === "Session not found") {
+        cache.setFinished(sessionId);
+      }
+    } else if ("Ready" in parsed) {
+      cache.broadcast(sessionId, raw);
+    }
+  };
+
+  remoteWs.on("open", () => {
+    console.log(`[AgentWS] Persistent remote WS connected for ${sessionId} (sync=${hasCachedData})`);
+    cache.resetReconnectAttempt(sessionId);
+    cache.broadcast(sessionId, JSON.stringify({ remoteStatus: "connected" }));
+  });
+
+  if (!hasCachedData) {
+    // First connection ever — stream directly in live mode
+    remoteWs.on("message", handleLiveMessage);
+  } else {
+    // Has cached data but persistent WS died — need sync first
+    const replayBuffer: string[] = [];
+    let syncing = true;
+
+    remoteWs.on("message", (data) => {
+      const raw = data.toString();
+      const parsed = tryParseWsMessage(raw);
+      if (!parsed) return;
+
+      if (!syncing) {
+        handleLiveMessage(data);
+        return;
+      }
+
+      if ("Ready" in parsed) {
+        // Remote finished replay — reconcile
+        syncing = false;
+        const currentEntry = cache.get(sessionId)!;
+        const cachedMsgCount = currentEntry.messages.length;
+
+        if (replayBuffer.length > cachedMsgCount) {
+          // Remote has newer data — send delta + update cache
+          const delta = replayBuffer.slice(cachedMsgCount);
+          console.log(`[AgentWS] Sync delta: ${delta.length} new msgs for ${sessionId}`);
+          for (const msg of delta) {
+            const p = tryParseWsMessage(msg);
+            cache.appendMessage(sessionId, msg, !!(p && "JsonPatch" in p));
+            cache.broadcast(sessionId, msg);
+          }
+        } else if (replayBuffer.length < cachedMsgCount) {
+          // Cache is stale (session was restarted remotely) — full replace
+          console.log(`[AgentWS] Sync stale cache for ${sessionId}: remote=${replayBuffer.length}, cached=${cachedMsgCount}`);
+          let newPatchCount = 0;
+          for (const msg of replayBuffer) {
+            const p = tryParseWsMessage(msg);
+            if (p && "JsonPatch" in p) newPatchCount++;
+          }
+          cache.replaceAll(sessionId, [...replayBuffer], newPatchCount);
+          // Tell frontends to clear and re-render
+          const clearPatch = {
+            JsonPatch: [{
+              op: "replace",
+              path: "/entries",
+              value: { type: "ENTRY", content: { type: "system", content: "__CLEAR_ALL__", timestamp: Date.now() } },
+            }],
+          };
+          cache.broadcast(sessionId, JSON.stringify(clearPatch));
+          for (const msg of replayBuffer) {
+            cache.broadcast(sessionId, msg);
+          }
+          cache.broadcast(sessionId, JSON.stringify({ Ready: true }));
+        }
+        // else equal — cache is current, nothing to send
+
+        // Switch to live-mode handler
+        remoteWs.removeAllListeners("message");
+        remoteWs.on("message", handleLiveMessage);
+        return;
+      }
+
+      // Buffer history messages during sync
+      if ("JsonPatch" in parsed || "taskCompleted" in parsed || "error" in parsed) {
+        replayBuffer.push(raw);
+      }
+      if ("finished" in parsed) {
+        cache.setFinished(sessionId);
+      }
+    });
+  }
+
+  // ---- Lifecycle handlers ----
+
+  remoteWs.on("error", (error) => {
+    console.error(`[AgentWS] Persistent remote WS error for ${sessionId}:`, error);
+    // "close" event fires next and handles reconnection
+  });
+
+  remoteWs.on("close", () => {
+    console.log(`[AgentWS] Persistent remote WS closed for ${sessionId}`);
+    cache.setRemoteWs(sessionId, null);
+
+    // Don't reconnect if session is finished or cache entry was deleted
+    const entry = cache.get(sessionId);
+    if (!entry || entry.finished) return;
+
+    scheduleRemoteReconnect(sessionId, remoteInfo, cache, wsOptions);
+  });
+}
+
+/**
+ * Schedule a reconnection attempt with exponential backoff.
+ * Broadcasts `remoteStatus` updates to all subscribed frontends.
+ */
+function scheduleRemoteReconnect(
+  sessionId: string,
+  remoteInfo: RemoteSessionInfo,
+  cache: RemotePatchCache,
+  wsOptions: Record<string, unknown>,
+): void {
+  const entry = cache.get(sessionId);
+  if (!entry || entry.finished) return;
+
+  const attempt = cache.getReconnectAttempt(sessionId);
+  if (attempt >= REMOTE_RECONNECT_MAX_ATTEMPTS) {
+    console.log(`[AgentWS] Max reconnect attempts (${REMOTE_RECONNECT_MAX_ATTEMPTS}) reached for ${sessionId}`);
+    cache.setReconnecting(sessionId, false);
+    cache.broadcast(sessionId, JSON.stringify({ remoteStatus: "disconnected" }));
+    return;
+  }
+
+  cache.setReconnecting(sessionId, true);
+
+  const delay = Math.min(REMOTE_RECONNECT_MAX_DELAY_MS, REMOTE_RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt));
+  const jitter = delay * Math.random() * 0.25;
+  const totalDelay = delay + jitter;
+
+  console.log(`[AgentWS] Scheduling remote reconnect for ${sessionId} in ${Math.round(totalDelay)}ms (attempt ${attempt + 1}/${REMOTE_RECONNECT_MAX_ATTEMPTS})`);
+  cache.broadcast(sessionId, JSON.stringify({ remoteStatus: "reconnecting", attempt: attempt + 1 }));
+
+  cache.incrementReconnectAttempt(sessionId);
+  const timer = setTimeout(() => {
+    // Guard: entry might have been deleted while waiting
+    if (!cache.get(sessionId) || cache.get(sessionId)!.finished) {
+      cache.setReconnecting(sessionId, false);
+      return;
+    }
+    connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions);
+  }, totalDelay);
+
+  cache.setReconnectTimer(sessionId, timer);
 }
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -198,154 +394,27 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
           // --- Phase 2: Ensure persistent remote WS ---
           cache.addSubscriber(sessionId, socket);
-
-          // Shared sync state — accessible from both remote WS and frontend socket handlers.
-          // `syncing` is true while the remote replays its history; user messages are buffered.
-          const syncState = { syncing: false, pendingUserMessages: [] as string[] };
+          const wsOptions = fastify.proxyManager.getWsOptions() as Record<string, unknown>;
 
           const existingRemoteWs = cache.getRemoteWs(sessionId);
-          if (!existingRemoteWs) {
+          if (!existingRemoteWs && !cache.isReconnecting(sessionId)) {
             // Need to open a new persistent remote WS
-            const remoteWsUrl = buildRemoteWsUrl(remoteInfo);
-            const hasCachedData = cacheEntry.messages.length > 0;
-            console.log(`[AgentWS] Opening persistent remote WS for ${sessionId} (cached=${hasCachedData})`);
-            const remoteWs = new WebSocket(remoteWsUrl, undefined, fastify.proxyManager.getWsOptions());
-            cache.setRemoteWs(sessionId, remoteWs);
+            connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions);
+          }
 
-            /** Live-mode message handler — shared by both first-connect and post-sync paths. */
-            const handleLiveMessage = (data: import("ws").RawData) => {
-              const raw = data.toString();
-              const parsed = tryParseWsMessage(raw);
-              if (!parsed) return;
-
-              if ("JsonPatch" in parsed) {
-                cache.appendMessage(sessionId, raw, true);
-                cache.broadcast(sessionId, raw);
-              } else if ("finished" in parsed) {
-                cache.setFinished(sessionId);
-                cache.broadcast(sessionId, raw);
-              } else if ("taskCompleted" in parsed || "error" in parsed) {
-                cache.appendMessage(sessionId, raw, false);
-                cache.broadcast(sessionId, raw);
-              } else if ("Ready" in parsed) {
-                cache.broadcast(sessionId, raw);
-              }
-            };
-
-            remoteWs.on("open", () => {
-              console.log(`[AgentWS] Persistent remote WS connected for ${sessionId} (sync=${hasCachedData})`);
-            });
-
-            if (!hasCachedData) {
-              // First connection ever — stream directly in live mode
-              remoteWs.on("message", handleLiveMessage);
-            } else {
-              // Has cached data but persistent WS died — need sync first
-              syncState.syncing = true;
-              const replayBuffer: string[] = [];
-
-              remoteWs.on("message", (data) => {
-                const raw = data.toString();
-                const parsed = tryParseWsMessage(raw);
-                if (!parsed) return;
-
-                if (!syncState.syncing) {
-                  // Already switched to live — shouldn't happen, but handle gracefully
-                  handleLiveMessage(data);
-                  return;
-                }
-
-                if ("Ready" in parsed) {
-                  // Remote finished replay — reconcile
-                  syncState.syncing = false;
-                  const currentEntry = cache.get(sessionId)!;
-                  const cachedMsgCount = currentEntry.messages.length;
-
-                  if (replayBuffer.length > cachedMsgCount) {
-                    // Remote has newer data — send delta + update cache
-                    const delta = replayBuffer.slice(cachedMsgCount);
-                    console.log(`[AgentWS] Sync delta: ${delta.length} new msgs for ${sessionId}`);
-                    for (const msg of delta) {
-                      const p = tryParseWsMessage(msg);
-                      cache.appendMessage(sessionId, msg, !!(p && "JsonPatch" in p));
-                      cache.broadcast(sessionId, msg);
-                    }
-                  } else if (replayBuffer.length < cachedMsgCount) {
-                    // Cache is stale (session was restarted remotely) — full replace
-                    console.log(`[AgentWS] Sync stale cache for ${sessionId}: remote=${replayBuffer.length}, cached=${cachedMsgCount}`);
-                    let newPatchCount = 0;
-                    for (const msg of replayBuffer) {
-                      const p = tryParseWsMessage(msg);
-                      if (p && "JsonPatch" in p) newPatchCount++;
-                    }
-                    cache.replaceAll(sessionId, [...replayBuffer], newPatchCount);
-                    // Tell frontends to clear and re-render
-                    const clearPatch = {
-                      JsonPatch: [{
-                        op: "replace",
-                        path: "/entries",
-                        value: { type: "ENTRY", content: { type: "system", content: "__CLEAR_ALL__", timestamp: Date.now() } },
-                      }],
-                    };
-                    cache.broadcast(sessionId, JSON.stringify(clearPatch));
-                    for (const msg of replayBuffer) {
-                      cache.broadcast(sessionId, msg);
-                    }
-                    cache.broadcast(sessionId, JSON.stringify({ Ready: true }));
-                  }
-                  // else equal — cache is current, nothing to send
-
-                  // Flush user messages buffered during sync
-                  for (const userMsg of syncState.pendingUserMessages) {
-                    try {
-                      if (remoteWs.readyState === WebSocket.OPEN) {
-                        remoteWs.send(userMsg);
-                      }
-                    } catch { break; }
-                  }
-                  syncState.pendingUserMessages.length = 0;
-
-                  // Switch to live-mode handler
-                  remoteWs.removeAllListeners("message");
-                  remoteWs.on("message", handleLiveMessage);
-                  return;
-                }
-
-                // Buffer history messages during sync (bug 4 fix: don't buffer "finished")
-                if ("JsonPatch" in parsed || "taskCompleted" in parsed || "error" in parsed) {
-                  replayBuffer.push(raw);
-                }
-                if ("finished" in parsed) {
-                  cache.setFinished(sessionId);
-                }
-              });
-            }
-
-            // Persistent remote WS lifecycle handlers (set once)
-            remoteWs.on("close", () => {
-              console.log(`[AgentWS] Persistent remote WS closed for ${sessionId}`);
-              cache.setRemoteWs(sessionId, null);
-            });
-
-            remoteWs.on("error", (error) => {
-              console.error(`[AgentWS] Persistent remote WS error for ${sessionId}:`, error);
-              try {
-                cache.broadcast(sessionId, JSON.stringify({ error: "Remote connection error" }));
-              } catch { /* noop */ }
-              cache.setRemoteWs(sessionId, null);
-            });
+          // Send current remote connection status to the newly connected frontend
+          if (cache.getRemoteWs(sessionId)) {
+            try { socket.send(JSON.stringify({ remoteStatus: "connected" })); } catch { /* noop */ }
+          } else if (cache.isReconnecting(sessionId)) {
+            const attempt = cache.getReconnectAttempt(sessionId);
+            try { socket.send(JSON.stringify({ remoteStatus: "reconnecting", attempt })); } catch { /* noop */ }
           }
 
           // --- Phase 3: Set up frontend socket handlers ---
           socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
-            const userMsg = data.toString();
-            if (syncState.syncing) {
-              syncState.pendingUserMessages.push(userMsg);
-              return;
-            }
             try {
               const rws = cache.getRemoteWs(sessionId);
-              if (rws) rws.send(userMsg);
+              if (rws) rws.send(data.toString());
             } catch (error) {
               console.error("[AgentWS] Failed to forward message to remote:", error);
             }

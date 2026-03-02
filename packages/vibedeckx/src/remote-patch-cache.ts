@@ -23,6 +23,12 @@ export interface CacheEntry {
   remoteWs: WebSocket | null;
   /** Set of frontend WebSocket connections subscribed to this session */
   subscribers: Set<WebSocket>;
+  /** Whether a reconnection attempt is in progress / scheduled */
+  reconnecting: boolean;
+  /** Timer handle for the next reconnection attempt (null if none scheduled) */
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  /** Current reconnection attempt count (reset on successful stable connection) */
+  reconnectAttempt: number;
 }
 
 export class RemotePatchCache {
@@ -37,6 +43,9 @@ export class RemotePatchCache {
         finished: false,
         remoteWs: null,
         subscribers: new Set(),
+        reconnecting: false,
+        reconnectTimer: null,
+        reconnectAttempt: 0,
       };
       this.cache.set(sessionId, entry);
     }
@@ -68,15 +77,21 @@ export class RemotePatchCache {
   /** Full cache replacement (used when cache is detected as stale). */
   replaceAll(sessionId: string, messages: string[], patchCount: number): void {
     const existing = this.cache.get(sessionId);
-    // Preserve persistent WS and subscribers across cache replacement
+    // Preserve persistent WS, subscribers, and reconnection state across cache replacement
     const remoteWs = existing?.remoteWs ?? null;
     const subscribers = existing?.subscribers ?? new Set<WebSocket>();
+    const reconnecting = existing?.reconnecting ?? false;
+    const reconnectTimer = existing?.reconnectTimer ?? null;
+    const reconnectAttempt = existing?.reconnectAttempt ?? 0;
     this.cache.set(sessionId, {
       messages,
       patchCount,
       finished: false,
       remoteWs,
       subscribers,
+      reconnecting,
+      reconnectTimer,
+      reconnectAttempt,
     });
   }
 
@@ -119,6 +134,49 @@ export class RemotePatchCache {
     }
   }
 
+  // ---- Reconnection state management ----
+
+  setReconnecting(sessionId: string, value: boolean): void {
+    const entry = this.getOrCreate(sessionId);
+    entry.reconnecting = value;
+  }
+
+  isReconnecting(sessionId: string): boolean {
+    const entry = this.cache.get(sessionId);
+    return !!entry?.reconnecting;
+  }
+
+  setReconnectTimer(sessionId: string, timer: ReturnType<typeof setTimeout>): void {
+    const entry = this.getOrCreate(sessionId);
+    // Clear any existing timer first
+    if (entry.reconnectTimer) {
+      clearTimeout(entry.reconnectTimer);
+    }
+    entry.reconnectTimer = timer;
+  }
+
+  clearReconnectTimer(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (entry?.reconnectTimer) {
+      clearTimeout(entry.reconnectTimer);
+      entry.reconnectTimer = null;
+    }
+  }
+
+  getReconnectAttempt(sessionId: string): number {
+    return this.cache.get(sessionId)?.reconnectAttempt ?? 0;
+  }
+
+  incrementReconnectAttempt(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (entry) entry.reconnectAttempt++;
+  }
+
+  resetReconnectAttempt(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (entry) entry.reconnectAttempt = 0;
+  }
+
   /** Broadcast a raw message to all subscribers, auto-removing dead ones. */
   broadcast(sessionId: string, raw: string): void {
     const entry = this.cache.get(sessionId);
@@ -135,6 +193,10 @@ export class RemotePatchCache {
   delete(sessionId: string): void {
     const entry = this.cache.get(sessionId);
     if (entry) {
+      // Clear reconnect timer first to prevent respawning
+      if (entry.reconnectTimer) {
+        clearTimeout(entry.reconnectTimer);
+      }
       // Close persistent remote WS if open
       if (entry.remoteWs) {
         try {

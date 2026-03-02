@@ -58,6 +58,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     isConnected,
     isLoading,
     error,
+    remoteStatus,
     startSession,
     sendMessage,
     restartSession,
@@ -153,25 +154,39 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               onModeChange={onAgentModeChange}
             />
           )}
-          {session && (
-            <span
-              className={`flex items-center gap-1 text-xs ${
-                isConnected ? "text-green-500" : "text-muted-foreground"
-              }`}
-            >
-              {isConnected ? (
-                <>
-                  <Wifi className="h-3 w-3" />
-                  Connected
-                </>
-              ) : (
-                <>
-                  <WifiOff className="h-3 w-3" />
-                  Disconnected
-                </>
-              )}
-            </span>
-          )}
+          {session && (() => {
+            // For remote sessions, combine frontend WS status with remote WS status
+            const isRemote = session.id.startsWith("remote-");
+            let statusColor = "text-muted-foreground";
+            let statusIcon = <WifiOff className="h-3 w-3" />;
+            let statusText = "Disconnected";
+
+            if (!isConnected) {
+              // Frontend WS is down — always show disconnected
+            } else if (!isRemote || remoteStatus === "connected" || remoteStatus === null) {
+              // Local session connected, or remote session fully connected
+              statusColor = "text-green-500";
+              statusIcon = <Wifi className="h-3 w-3" />;
+              statusText = "Connected";
+            } else if (remoteStatus === "reconnecting") {
+              // Remote link is reconnecting
+              statusColor = "text-amber-500";
+              statusIcon = <Wifi className="h-3 w-3 animate-pulse" />;
+              statusText = "Reconnecting...";
+            } else if (remoteStatus === "disconnected") {
+              // Remote link gave up
+              statusColor = "text-red-500";
+              statusIcon = <WifiOff className="h-3 w-3" />;
+              statusText = "Remote disconnected";
+            }
+
+            return (
+              <span className={`flex items-center gap-1 text-xs ${statusColor}`}>
+                {statusIcon}
+                {statusText}
+              </span>
+            );
+          })()}
         </div>
         {session && (
           <div className="flex items-center gap-1">

@@ -44,13 +44,16 @@ type PatchValue =
   | { type: "READY"; content: true }
   | { type: "FINISHED"; content: true };
 
+export type RemoteConnectionStatus = "connected" | "reconnecting" | "disconnected";
+
 // WebSocket message types
 type AgentWsMessage =
   | { JsonPatch: Patch }
   | { Ready: true }
   | { finished: true }
   | { error: string }
-  | { taskCompleted: { duration_ms?: number; cost_usd?: number } };
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number } }
+  | { remoteStatus: RemoteConnectionStatus; attempt?: number };
 
 // Container for patch target
 interface PatchContainer {
@@ -255,6 +258,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [remoteStatus, setRemoteStatus] = useState<RemoteConnectionStatus | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -380,6 +384,12 @@ export function useAgentSession(projectId: string | null, branch: string | null,
             description: parts.length > 0 ? parts.join(" · ") : undefined,
           });
           onTaskCompletedRef.current?.();
+          return;
+        }
+
+        // Handle remote connection status (for remote sessions)
+        if ("remoteStatus" in msg) {
+          setRemoteStatus(msg.remoteStatus);
           return;
         }
 
@@ -658,6 +668,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     setIsInitialized(false);
     setError(null);
     setIsLoading(false);
+    setRemoteStatus(null);
     containerRef.current = { entries: [], status: "stopped" };
     finishedRef.current = false;
     reconnectAttemptRef.current = 0;
@@ -691,6 +702,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     isInitialized,
     isLoading,
     error,
+    remoteStatus,
     startSession,
     sendMessage,
     restartSession,
