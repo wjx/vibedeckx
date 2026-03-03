@@ -1053,6 +1053,18 @@ export class AgentSessionManager {
   }
 
   /**
+   * Kill all active session processes and clear state for graceful shutdown
+   */
+  shutdown(): void {
+    for (const [id, session] of this.sessions) {
+      try {
+        session.process?.kill("SIGTERM");
+      } catch { /* ignore - process may already be dead */ }
+    }
+    this.sessions.clear();
+  }
+
+  /**
    * Broadcast a JSON patch to all subscribers
    */
   private broadcastPatch(sessionId: string, patch: Patch): void {

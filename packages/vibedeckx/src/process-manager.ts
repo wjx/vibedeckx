@@ -456,6 +456,22 @@ export class ProcessManager {
   }
 
   /**
+   * Kill all running processes and clear state for graceful shutdown
+   */
+  shutdown(): void {
+    for (const [id, proc] of this.processes) {
+      try {
+        if (proc.isPty) {
+          (proc.process as IPty).kill();
+        } else {
+          (proc.process as ChildProcess).kill("SIGTERM");
+        }
+      } catch { /* ignore - process may already be dead */ }
+    }
+    this.processes.clear();
+  }
+
+  /**
    * Broadcast a message to all subscribers of a process
    */
   private broadcast(processId: string, msg: LogMessage): void {

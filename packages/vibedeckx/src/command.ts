@@ -29,11 +29,30 @@ const startCommand = buildCommand({
     // 打开浏览器
     await open(url);
 
-    // 处理退出信号
+    // Graceful shutdown with re-entrancy guard and force-exit timeout
+    let shuttingDown = false;
+
     const cleanup = async () => {
+      if (shuttingDown) {
+        console.log("\nForce exiting...");
+        process.exit(1);
+      }
+      shuttingDown = true;
       console.log("\nShutting down...");
-      await server.close();
-      storage.close();
+
+      // Force exit after 5 seconds if cleanup hangs
+      const forceExit = setTimeout(() => {
+        console.log("Shutdown timed out, force exiting...");
+        process.exit(1);
+      }, 5000);
+      forceExit.unref();
+
+      try {
+        await server.close(); // triggers onClose hooks that kill child processes
+        storage.close();
+      } catch (err) {
+        console.error("Error during shutdown:", err);
+      }
       process.exit(0);
     };
 

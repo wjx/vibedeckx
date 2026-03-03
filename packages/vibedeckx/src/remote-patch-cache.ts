@@ -190,6 +190,21 @@ export class RemotePatchCache {
     }
   }
 
+  /**
+   * Close all remote WebSockets and clear all reconnect timers for graceful shutdown
+   */
+  shutdown(): void {
+    for (const [id, entry] of this.cache) {
+      if (entry.reconnectTimer) {
+        clearTimeout(entry.reconnectTimer);
+      }
+      if (entry.remoteWs) {
+        try { entry.remoteWs.close(); } catch { /* ignore */ }
+      }
+    }
+    this.cache.clear();
+  }
+
   delete(sessionId: string): void {
     const entry = this.cache.get(sessionId);
     if (entry) {

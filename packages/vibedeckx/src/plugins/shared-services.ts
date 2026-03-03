@@ -53,6 +53,13 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   fastify.decorate("remotePatchCache", remotePatchCache);
   agentSessionManager.setEventBus(eventBus);
   processManager.setEventBus(eventBus);
+
+  // Graceful shutdown: kill child processes and clear timers when server closes
+  fastify.addHook("onClose", async () => {
+    agentSessionManager.shutdown();
+    processManager.shutdown();
+    remotePatchCache.shutdown();
+  });
 };
 
 export default fp(sharedServices, { name: "shared-services" });
