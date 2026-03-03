@@ -77,6 +77,7 @@ export interface AgentSession {
   project_id: string;
   branch: string;
   status: AgentSessionStatus;
+  permission_mode?: string;
   created_at: string;
 }
 
@@ -134,12 +135,17 @@ export interface Storage {
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
   };
   agentSessions: {
-    create: (opts: { id: string; project_id: string; branch: string }) => AgentSession;
+    create: (opts: { id: string; project_id: string; branch: string; permission_mode?: string }) => AgentSession;
+    getAll: () => AgentSession[];
     getById: (id: string) => AgentSession | undefined;
     getByProjectId: (projectId: string) => AgentSession[];
     getByBranch: (projectId: string, branch: string) => AgentSession | undefined;
     updateStatus: (id: string, status: AgentSessionStatus) => void;
+    updatePermissionMode: (id: string, mode: string) => void;
     delete: (id: string) => void;
+    upsertEntry: (sessionId: string, entryIndex: number, data: string) => void;
+    getEntries: (sessionId: string) => Array<{ entry_index: number; data: string }>;
+    deleteEntries: (sessionId: string) => void;
   };
   settings: {
     get: (key: string) => string | undefined;

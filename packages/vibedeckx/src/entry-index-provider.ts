@@ -93,6 +93,13 @@ export class EntryTracker {
   }
 
   /**
+   * Directly set an entry index for a key (used during session restoration)
+   */
+  set(key: string, index: number): void {
+    this.entryIndices.set(key, index);
+  }
+
+  /**
    * Remove tracking for a key
    */
   remove(key: string): boolean {

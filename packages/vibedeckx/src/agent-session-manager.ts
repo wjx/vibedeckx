@@ -34,7 +34,8 @@ interface RunningSession {
   id: string;
   projectId: string;
   branch: string | null;
-  process: ChildProcess;
+  process: ChildProcess | null;
+  dormant: boolean; // true when restored from DB (no process yet)
   store: MessageStore;
   subscribers: Set<WebSocket>;
   status: AgentSessionStatus;
@@ -86,20 +87,34 @@ export class AgentSessionManager {
     skipDb = false,
     permissionMode: "plan" | "edit" = "edit"
   ): string {
-    // Check if session already exists in memory
+    // Check if session already exists in memory (including dormant)
     for (const [id, session] of this.sessions) {
       if (
         session.projectId === projectId &&
-        session.branch === branch &&
-        session.status === "running"
+        session.branch === branch
       ) {
-        // If permission mode differs, switch mode on existing session
-        if (session.permissionMode !== permissionMode) {
-          console.log(`[AgentSession] Session ${id} exists with mode ${session.permissionMode}, switching to ${permissionMode}`);
-          this.switchMode(id, projectPath, permissionMode);
+        if (session.dormant) {
+          // Dormant session found — update permission mode if needed, return ID
+          // Don't spawn process yet (lazy — wait for user message)
+          if (session.permissionMode !== permissionMode) {
+            session.permissionMode = permissionMode;
+            if (!session.skipDb) {
+              this.storage.agentSessions.updatePermissionMode(id, permissionMode);
+            }
+          }
+          console.log(`[AgentSession] Returning dormant session ${id}`);
+          return id;
         }
-        console.log(`[AgentSession] Returning existing session ${id}`);
-        return id;
+
+        if (session.status === "running") {
+          // If permission mode differs, switch mode on existing session
+          if (session.permissionMode !== permissionMode) {
+            console.log(`[AgentSession] Session ${id} exists with mode ${session.permissionMode}, switching to ${permissionMode}`);
+            this.switchMode(id, projectPath, permissionMode);
+          }
+          console.log(`[AgentSession] Returning existing session ${id}`);
+          return id;
+        }
       }
     }
 
@@ -138,6 +153,7 @@ export class AgentSessionManager {
         id: sessionId,
         project_id: projectId,
         branch: branch ?? "",
+        permission_mode: permissionMode,
       });
     }
 
@@ -157,7 +173,8 @@ export class AgentSessionManager {
       id: sessionId,
       projectId,
       branch,
-      process: null as unknown as ChildProcess,
+      process: null,
+      dormant: false,
       store,
       subscribers: new Set(),
       status: "running",
@@ -329,6 +346,7 @@ export class AgentSessionManager {
       const systemMsg = msg as { type: "system"; message?: string };
       if (systemMsg.message) {
         // Clear current assistant key - system message breaks streaming
+        this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
         this.pushEntry(sessionId, {
           type: "system",
@@ -341,6 +359,7 @@ export class AgentSessionManager {
 
     if (msg.type === "result") {
       const resultMsg = msg as { type: "result"; subtype?: string; error?: string; duration_ms?: number; cost_usd?: number };
+      this.finalizeStreamingEntry(session);
       session.store.currentAssistantIndex = null;
 
       if (resultMsg.subtype === "error" && resultMsg.error) {
@@ -397,7 +416,8 @@ export class AgentSessionManager {
         break;
 
       case "tool_use": {
-        // Tool use breaks the assistant streaming
+        // Tool use breaks the assistant streaming — finalize before clearing
+        this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
         // Deduplicate by block ID — streaming can replay the same assistant message
         const tuKey = `tool_use:${block.id}`;
@@ -422,11 +442,16 @@ export class AgentSessionManager {
           session.store.patches.push(patch);
           this.broadcastPatch(sessionId, patch);
         }
+        // Persist tool_use immediately
+        if (!session.skipDb) {
+          this.persistEntry(session, tuIndex, tuMessage);
+        }
         break;
       }
 
       case "tool_result": {
-        // Tool result breaks the assistant streaming
+        // Tool result breaks the assistant streaming — finalize before clearing
+        this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
         // Deduplicate by tool_use_id
         const trKey = `tool_result:${block.tool_use_id}`;
@@ -449,11 +474,16 @@ export class AgentSessionManager {
           session.store.patches.push(patch);
           this.broadcastPatch(sessionId, patch);
         }
+        // Persist tool_result immediately
+        if (!session.skipDb) {
+          this.persistEntry(session, trIndex, trMessage);
+        }
         break;
       }
 
       case "thinking":
-        // Thinking is always new
+        // Thinking breaks the assistant streaming — finalize before clearing
+        this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
         this.pushEntry(sessionId, {
           type: "thinking",
@@ -525,6 +555,11 @@ export class AgentSessionManager {
     const patch = ConversationPatch.addEntry(index, message);
     store.patches.push(patch);
 
+    // Persist to DB (skip streaming assistant text — those get finalized later)
+    if (!session.skipDb && message.type !== "assistant") {
+      this.persistEntry(session, index, message);
+    }
+
     if (broadcast) {
       this.broadcastPatch(sessionId, patch);
     }
@@ -533,15 +568,52 @@ export class AgentSessionManager {
   }
 
   /**
+   * Persist a single entry to the database
+   */
+  private persistEntry(session: RunningSession, index: number, message: AgentMessage): void {
+    try {
+      this.storage.agentSessions.upsertEntry(session.id, index, JSON.stringify(message));
+    } catch (error) {
+      console.error(`[AgentSession] Failed to persist entry ${index}:`, error);
+    }
+  }
+
+  /**
+   * Finalize and persist the current streaming assistant message
+   */
+  private finalizeStreamingEntry(session: RunningSession): void {
+    const index = session.store.currentAssistantIndex;
+    if (index === null || session.skipDb) return;
+
+    const entry = session.store.entries[index];
+    if (entry) {
+      this.persistEntry(session, index, entry);
+    }
+  }
+
+  /**
    * Send a user message to the agent
    */
-  sendUserMessage(sessionId: string, content: string): boolean {
+  sendUserMessage(sessionId: string, content: string, projectPath?: string): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session || session.status !== "running") {
+    if (!session) return false;
+
+    // If session is dormant, wake it up
+    if (session.dormant) {
+      if (!projectPath) {
+        console.error(`[AgentSession] Cannot wake dormant session ${sessionId} without projectPath`);
+        return false;
+      }
+      this.wakeDormantSession(session, projectPath, content);
+      return true;
+    }
+
+    if (session.status !== "running") {
       return false;
     }
 
     // Clear current assistant key - user message breaks streaming
+    this.finalizeStreamingEntry(session);
     session.store.currentAssistantIndex = null;
 
     // Add user message with ADD patch
@@ -561,7 +633,7 @@ export class AgentSessionManager {
     };
 
     try {
-      session.process.stdin?.write(JSON.stringify(input) + "\n");
+      session.process?.stdin?.write(JSON.stringify(input) + "\n");
       return true;
     } catch (error) {
       console.error(`[AgentSession] Failed to send message:`, error);
@@ -644,7 +716,8 @@ export class AgentSessionManager {
     }
 
     try {
-      session.process.kill("SIGTERM");
+      session.process?.kill("SIGTERM");
+      session.dormant = false;
       session.status = "stopped";
       if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "stopped");
       this.broadcastPatch(sessionId, ConversationPatch.updateStatus("stopped"));
@@ -682,31 +755,36 @@ export class AgentSessionManager {
 
     // 1. Kill the existing process
     try {
-      session.process.kill("SIGTERM");
+      session.process?.kill("SIGTERM");
     } catch (error) {
       console.error(`[AgentSession] Failed to kill process:`, error);
     }
 
-    // 2. Clear message store
+    // 2. Clear persisted entries
+    if (!session.skipDb) {
+      this.storage.agentSessions.deleteEntries(sessionId);
+    }
+
+    // 3. Clear message store
     session.store.patches = [];
     session.store.entries = [];
     session.store.indexProvider.reset();
     session.store.toolTracker.clear();
     session.store.currentAssistantIndex = null;
     session.buffer = "";
+    session.dormant = false;
 
-    // 3. Broadcast clear signal to all subscribers
-    // Send a special patch to clear all entries on the client
+    // 4. Broadcast clear signal to all subscribers
     const clearPatch = ConversationPatch.clearAll();
     this.broadcastPatch(sessionId, clearPatch);
 
-    // 4. Update status to running
+    // 5. Update status to running
     session.status = "running";
     if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "running");
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
     this.eventBus?.emit({ type: "session:status", projectId: session.projectId, branch: session.branch, sessionId: session.id, status: "running" });
 
-    // 5. Calculate absolute worktree path and respawn
+    // 6. Calculate absolute worktree path and respawn
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
     this.spawnClaudeCode(session, absoluteWorktreePath);
@@ -732,18 +810,23 @@ export class AgentSessionManager {
 
     // 1. Kill existing process
     try {
-      session.process.kill("SIGTERM");
+      session.process?.kill("SIGTERM");
     } catch (error) {
       console.error(`[AgentSession] Failed to kill process:`, error);
     }
 
     // 2. Keep message store intact (preserve history in UI)
     // Only reset streaming state and buffer
+    this.finalizeStreamingEntry(session);
     session.store.currentAssistantIndex = null;
     session.buffer = "";
+    session.dormant = false;
 
-    // 3. Set new permission mode
+    // 3. Set new permission mode + persist
     session.permissionMode = newMode;
+    if (!session.skipDb) {
+      this.storage.agentSessions.updatePermissionMode(session.id, newMode);
+    }
 
     // 4. Update status to running, broadcast
     session.status = "running";
@@ -763,22 +846,22 @@ export class AgentSessionManager {
         this.sendUserMessage(sessionId, initialMessage);
       }, 500);
     } else {
-      // Build conversation summary from existing entries
-      const summary = this.buildConversationSummary(session.store.entries);
-      if (summary) {
+      // Build full conversation context from existing entries
+      const context = this.buildFullConversationContext(session.store.entries);
+      if (context) {
         setTimeout(() => {
-          // Send summary as context without adding to visible messages
+          // Send context without adding to visible messages
           const input: ClaudeUserInput = {
             type: "user",
             message: {
               role: "user",
-              content: summary,
+              content: context,
             },
           };
           try {
-            session.process.stdin?.write(JSON.stringify(input) + "\n");
+            session.process?.stdin?.write(JSON.stringify(input) + "\n");
           } catch (error) {
-            console.error(`[AgentSession] Failed to send context summary:`, error);
+            console.error(`[AgentSession] Failed to send conversation context:`, error);
           }
         }, 500);
       }
@@ -799,30 +882,174 @@ export class AgentSessionManager {
   }
 
   /**
-   * Build a conversation summary from message entries for context transfer
+   * Build full conversation context from message entries for context transfer.
+   * Includes tool information for generic agent compatibility.
    */
-  private buildConversationSummary(entries: AgentMessage[]): string | null {
+  private buildFullConversationContext(entries: AgentMessage[]): string | null {
     const lines: string[] = [];
-    let pairCount = 0;
-    const maxPairs = 20;
 
-    // Iterate through entries, extract user and assistant text messages
     for (const entry of entries) {
       if (!entry) continue;
-      if (pairCount >= maxPairs) break;
 
-      if (entry.type === "user") {
-        lines.push(`User: ${entry.content}`);
-        pairCount++;
-      } else if (entry.type === "assistant") {
-        lines.push(`Assistant: ${entry.content}`);
+      switch (entry.type) {
+        case "user":
+          lines.push(`User: ${entry.content}`);
+          break;
+        case "assistant":
+          lines.push(`Assistant: ${entry.content}`);
+          break;
+        case "tool_use": {
+          const inputStr = typeof entry.input === "string"
+            ? entry.input
+            : JSON.stringify(entry.input);
+          const truncatedInput = inputStr.length > 2000 ? inputStr.substring(0, 2000) + "..." : inputStr;
+          lines.push(`[Tool: ${entry.tool}] Input: ${truncatedInput}`);
+          break;
+        }
+        case "tool_result": {
+          const truncatedOutput = entry.output.length > 2000 ? entry.output.substring(0, 2000) + "..." : entry.output;
+          lines.push(`[Tool Result]: ${truncatedOutput}`);
+          break;
+        }
+        case "error":
+          lines.push(`[Error]: ${entry.message}`);
+          break;
+        case "system":
+          lines.push(`[System]: ${entry.content}`);
+          break;
+        // Skip thinking blocks (internal)
       }
-      // Skip tool_use, tool_result, thinking, system, error (too verbose)
     }
 
     if (lines.length === 0) return null;
 
-    return `[Previous conversation context]\n${lines.join("\n")}\n[End of previous context]\n\nPlease continue from where the previous conversation left off.`;
+    return `[Previous conversation history - please continue from where this left off]\n\n${lines.join("\n")}\n\n[End of previous conversation history]\n\nContinue this conversation. The user will send a new message.`;
+  }
+
+  /**
+   * Wake a dormant session: spawn process, send full context + user message
+   */
+  private wakeDormantSession(session: RunningSession, projectPath: string, userMessage: string): void {
+    console.log(`[AgentSession] Waking dormant session ${session.id}`);
+
+    session.dormant = false;
+    session.status = "running";
+    if (!session.skipDb) this.storage.agentSessions.updateStatus(session.id, "running");
+    this.broadcastPatch(session.id, ConversationPatch.updateStatus("running"));
+    this.eventBus?.emit({ type: "session:status", projectId: session.projectId, branch: session.branch, sessionId: session.id, status: "running" });
+
+    // Spawn Claude Code process
+    const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
+    this.spawnClaudeCode(session, absoluteWorktreePath);
+
+    // Push user message to store (+ persist to DB)
+    this.pushEntry(session.id, {
+      type: "user",
+      content: userMessage,
+      timestamp: Date.now(),
+    }, true);
+
+    // After process ready: send full context + new message to stdin
+    setTimeout(() => {
+      const context = this.buildFullConversationContext(session.store.entries);
+      if (context) {
+        const input: ClaudeUserInput = {
+          type: "user",
+          message: {
+            role: "user",
+            content: context,
+          },
+        };
+        try {
+          session.process?.stdin?.write(JSON.stringify(input) + "\n");
+        } catch (error) {
+          console.error(`[AgentSession] Failed to send context to woken session:`, error);
+        }
+      }
+    }, 500);
+  }
+
+  /**
+   * Restore sessions from database on startup.
+   * Creates dormant RunningSession objects with process=null for sessions that have entries.
+   */
+  restoreSessionsFromDb(): void {
+    const allSessions = this.storage.agentSessions.getAll();
+    let restoredCount = 0;
+
+    for (const dbSession of allSessions) {
+      // Skip sessions already in memory
+      if (this.sessions.has(dbSession.id)) continue;
+
+      const entries = this.storage.agentSessions.getEntries(dbSession.id);
+      // Skip sessions with no entries (stale metadata)
+      if (entries.length === 0) continue;
+
+      // Rebuild MessageStore
+      const indexProvider = new EntryIndexProvider();
+      const toolTracker = new EntryTracker(indexProvider);
+      const store: MessageStore = {
+        patches: [],
+        entries: [],
+        indexProvider,
+        toolTracker,
+        currentAssistantIndex: null,
+      };
+
+      let maxIndex = -1;
+      for (const row of entries) {
+        try {
+          const message = JSON.parse(row.data) as AgentMessage;
+          const idx = row.entry_index;
+          store.entries[idx] = message;
+
+          // Generate ADD patch for history replay
+          const patch = ConversationPatch.addEntry(idx, message);
+          store.patches.push(patch);
+
+          // Rebuild tool tracker for tool_use and tool_result entries
+          if (message.type === "tool_use" && message.toolUseId) {
+            toolTracker.set(`tool_use:${message.toolUseId}`, idx);
+          } else if (message.type === "tool_result" && message.toolUseId) {
+            toolTracker.set(`tool_result:${message.toolUseId}`, idx);
+          }
+
+          if (idx > maxIndex) maxIndex = idx;
+        } catch (error) {
+          console.error(`[AgentSession] Failed to parse entry for session ${dbSession.id}:`, error);
+        }
+      }
+
+      // Set index provider to continue after the max restored index
+      indexProvider.setIndex(maxIndex + 1);
+
+      const permissionMode = (dbSession.permission_mode === "plan" ? "plan" : "edit") as "plan" | "edit";
+
+      const runningSession: RunningSession = {
+        id: dbSession.id,
+        projectId: dbSession.project_id,
+        branch: dbSession.branch || null,
+        process: null,
+        dormant: true,
+        store,
+        subscribers: new Set(),
+        status: "stopped",
+        buffer: "",
+        skipDb: false,
+        permissionMode,
+      };
+
+      this.sessions.set(dbSession.id, runningSession);
+
+      // Update DB status to stopped (was likely "running" when server crashed)
+      this.storage.agentSessions.updateStatus(dbSession.id, "stopped");
+
+      restoredCount++;
+    }
+
+    if (restoredCount > 0) {
+      console.log(`[AgentSession] Restored ${restoredCount} dormant session(s) from database`);
+    }
   }
 
   /**

@@ -252,7 +252,17 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(result.status || 200).send(result.data);
     }
 
-    const success = fastify.agentSessionManager.sendUserMessage(req.params.sessionId, content);
+    // For dormant sessions, we need projectPath to spawn the process
+    const session = fastify.agentSessionManager.getSession(req.params.sessionId);
+    let projectPathForWake: string | undefined;
+    if (session?.dormant) {
+      projectPathForWake = resolveProjectPath(session.projectId, fastify.storage) ?? undefined;
+      if (!projectPathForWake) {
+        return reply.code(400).send({ error: "Cannot wake session: project has no local path" });
+      }
+    }
+
+    const success = fastify.agentSessionManager.sendUserMessage(req.params.sessionId, content, projectPathForWake);
     if (!success) {
       return reply.code(404).send({ error: "Session not found or not running" });
     }

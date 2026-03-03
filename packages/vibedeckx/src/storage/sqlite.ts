@@ -192,6 +192,25 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     `);
   }
 
+  // Migration: add permission_mode column to agent_sessions
+  const sessionInfo2 = db.prepare("PRAGMA table_info(agent_sessions)").all() as { name: string }[];
+  if (!sessionInfo2.some(col => col.name === "permission_mode")) {
+    db.exec("ALTER TABLE agent_sessions ADD COLUMN permission_mode TEXT DEFAULT 'edit'");
+  }
+
+  // Create agent_session_entries table for conversation persistence
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_session_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      entry_index INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(session_id, entry_index),
+      FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+    )
+  `);
+
   return db;
 };
 
@@ -503,19 +522,25 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     agentSessions: {
-      create: ({ id, project_id, branch }) => {
+      create: ({ id, project_id, branch, permission_mode }) => {
         // Delete any existing session for this branch (one-to-one binding)
         db.prepare(
           `DELETE FROM agent_sessions WHERE project_id = @project_id AND branch = @branch`
         ).run({ project_id, branch });
 
         db.prepare(
-          `INSERT INTO agent_sessions (id, project_id, branch, status) VALUES (@id, @project_id, @branch, 'running')`
-        ).run({ id, project_id, branch });
+          `INSERT INTO agent_sessions (id, project_id, branch, status, permission_mode) VALUES (@id, @project_id, @branch, 'running', @permission_mode)`
+        ).run({ id, project_id, branch, permission_mode: permission_mode ?? 'edit' });
 
         return db
           .prepare<{ id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE id = @id`)
           .get({ id })!;
+      },
+
+      getAll: () => {
+        return db
+          .prepare<{}, AgentSession>(`SELECT * FROM agent_sessions ORDER BY created_at DESC`)
+          .all({});
       },
 
       getById: (id: string) => {
@@ -544,8 +569,36 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         ).run({ id, status });
       },
 
+      updatePermissionMode: (id: string, mode: string) => {
+        db.prepare(
+          `UPDATE agent_sessions SET permission_mode = @mode WHERE id = @id`
+        ).run({ id, mode });
+      },
+
       delete: (id: string) => {
         db.prepare(`DELETE FROM agent_sessions WHERE id = @id`).run({ id });
+      },
+
+      upsertEntry: (sessionId: string, entryIndex: number, data: string) => {
+        db.prepare(
+          `INSERT INTO agent_session_entries (session_id, entry_index, data)
+           VALUES (@session_id, @entry_index, @data)
+           ON CONFLICT(session_id, entry_index) DO UPDATE SET data = excluded.data`
+        ).run({ session_id: sessionId, entry_index: entryIndex, data });
+      },
+
+      getEntries: (sessionId: string) => {
+        return db
+          .prepare<{ session_id: string }, { entry_index: number; data: string }>(
+            `SELECT entry_index, data FROM agent_session_entries WHERE session_id = @session_id ORDER BY entry_index ASC`
+          )
+          .all({ session_id: sessionId });
+      },
+
+      deleteEntries: (sessionId: string) => {
+        db.prepare(
+          `DELETE FROM agent_session_entries WHERE session_id = @session_id`
+        ).run({ session_id: sessionId });
       },
     },
 
