@@ -209,6 +209,9 @@ export class ProcessManager {
     ptyProcess.onData((data: string) => {
       const msg: LogMessage = { type: "pty", data };
       runningProcess.logs.push(msg);
+      if (runningProcess.logs.length > TERMINAL_MAX_LOG_ENTRIES) {
+        runningProcess.logs = runningProcess.logs.slice(-TERMINAL_MAX_LOG_ENTRIES);
+      }
       this.broadcast(processId, msg);
     });
 
@@ -267,6 +270,9 @@ export class ProcessManager {
     childProcess.stdout?.on("data", (data: Buffer) => {
       const msg: LogMessage = { type: "stdout", data: data.toString() };
       runningProcess.logs.push(msg);
+      if (runningProcess.logs.length > TERMINAL_MAX_LOG_ENTRIES) {
+        runningProcess.logs = runningProcess.logs.slice(-TERMINAL_MAX_LOG_ENTRIES);
+      }
       this.broadcast(processId, msg);
     });
 
@@ -274,6 +280,9 @@ export class ProcessManager {
     childProcess.stderr?.on("data", (data: Buffer) => {
       const msg: LogMessage = { type: "stderr", data: data.toString() };
       runningProcess.logs.push(msg);
+      if (runningProcess.logs.length > TERMINAL_MAX_LOG_ENTRIES) {
+        runningProcess.logs = runningProcess.logs.slice(-TERMINAL_MAX_LOG_ENTRIES);
+      }
       this.broadcast(processId, msg);
     });
 
