@@ -24,6 +24,7 @@ interface AgentConversationContextValue {
   acceptPlan: (planContent: string) => Promise<void>;
   permissionMode: "plan" | "edit";
   agentType: AgentType;
+  sessionId: string | null;
 }
 
 const AgentConversationContext = createContext<AgentConversationContextValue | null>(null);
@@ -275,7 +276,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               )}
             </div>
           ) : (
-            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode, agentType }}>
+            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode, agentType, sessionId: session?.id ?? null }}>
               <div className="space-y-1">
                 {messages.map((msg, index) => (
                   <AgentMessageItem key={index} message={msg} messageIndex={index} />

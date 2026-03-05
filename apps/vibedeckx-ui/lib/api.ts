@@ -252,6 +252,18 @@ export async function getAgentProviders(): Promise<AgentProviderInfo[]> {
   return data.providers;
 }
 
+export async function sendApprovalResponse(sessionId: string, requestId: string, decision: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId, decision }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: "Approval request failed" }));
+    throw new Error(data.error || "Approval request failed");
+  }
+}
+
 export const api = {
   async getProjects(): Promise<Project[]> {
     const res = await fetch(`${getApiBase()}/api/projects`);
