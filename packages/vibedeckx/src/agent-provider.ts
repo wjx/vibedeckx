@@ -27,8 +27,9 @@ export type ParsedAgentEvent =
   | { type: "thinking"; content: string }
   | { type: "system"; content: string }
   | { type: "error"; message: string }
-  | { type: "result"; subtype: "success" | "error"; error?: string; duration_ms?: number; cost_usd?: number }
-  | { type: "approval_request"; id: string; command: string; cwd?: string };
+  | { type: "result"; subtype: "success" | "error"; error?: string; duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number }
+  | { type: "approval_request"; requestType: "command"; requestId: string; command: string; cwd?: string }
+  | { type: "approval_request"; requestType: "fileChange"; requestId: string; changes: Array<{path: string; diff?: string; kind: string}> };
 
 // ============ AgentProvider Interface (task 1.1) ============
 
