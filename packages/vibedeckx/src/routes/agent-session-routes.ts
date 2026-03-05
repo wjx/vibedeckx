@@ -34,7 +34,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         pseudoProjectId,
         branch ?? null,
         projectPath,
-        true,
+        false,
         permissionMode || "edit"
       );
 
