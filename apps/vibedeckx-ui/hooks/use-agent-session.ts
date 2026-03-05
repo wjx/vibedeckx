@@ -55,7 +55,7 @@ type AgentWsMessage =
   | { Ready: true }
   | { finished: true }
   | { error: string }
-  | { taskCompleted: { duration_ms?: number; cost_usd?: number } }
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } }
   | { remoteStatus: RemoteConnectionStatus; attempt?: number };
 
 // Container for patch target
@@ -375,7 +375,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
         // Handle task completed - show toast
         if ("taskCompleted" in msg) {
-          const { duration_ms, cost_usd } = msg.taskCompleted;
+          const { duration_ms, cost_usd, input_tokens, output_tokens } = msg.taskCompleted;
           const parts: string[] = [];
           if (duration_ms != null) {
             const secs = (duration_ms / 1000).toFixed(1);
@@ -383,6 +383,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           }
           if (cost_usd != null) {
             parts.push(`$${cost_usd.toFixed(4)}`);
+          } else if (input_tokens != null || output_tokens != null) {
+            const total = (input_tokens ?? 0) + (output_tokens ?? 0);
+            const formatted = total > 1000 ? `${(total / 1000).toFixed(1)}K` : String(total);
+            parts.push(`${formatted} tokens`);
           }
           toast.success("Task completed", {
             description: parts.length > 0 ? parts.join(" · ") : undefined,
