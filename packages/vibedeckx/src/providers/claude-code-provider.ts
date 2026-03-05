@@ -32,9 +32,29 @@ export class ClaudeCodeProvider implements AgentProvider {
     return this.binaryPath;
   }
 
-  buildSpawnConfig(_cwd: string, _permissionMode: "plan" | "edit"): SpawnConfig {
-    // TODO: task 2.3 — extract from agent-session-manager.ts
-    return { command: "claude", args: [], shell: true };
+  buildSpawnConfig(_cwd: string, permissionMode: "plan" | "edit"): SpawnConfig {
+    const nativeBinary = this.detectBinary();
+
+    const permissionFlag = permissionMode === "plan"
+      ? "--permission-mode=plan"
+      : "--dangerously-skip-permissions";
+
+    const claudeArgs = [
+      "-p",
+      "--output-format=stream-json",
+      "--input-format=stream-json",
+      permissionFlag,
+      "--verbose",
+    ];
+
+    if (nativeBinary) {
+      return { command: nativeBinary, args: claudeArgs, shell: true };
+    }
+    return {
+      command: "npx",
+      args: ["-y", "@anthropic-ai/claude-code", ...claudeArgs],
+      shell: true,
+    };
   }
 
   parseStdoutLine(_line: string, _sessionId: string): ParsedAgentEvent[] {
