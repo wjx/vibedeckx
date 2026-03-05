@@ -16,6 +16,7 @@ import { ConversationPatch } from "./conversation-patch.js";
 import type { Patch, AgentWsMessage } from "./conversation-patch.js";
 import type { Storage } from "./storage/types.js";
 import type { ProcessManager, LogMessage } from "./process-manager.js";
+import { resolveWorktreePath } from "./utils/worktree-paths.js";
 
 // ============ Types ============
 
@@ -149,7 +150,9 @@ export class ChatSessionManager {
     return [
       "You are a helpful assistant for a software development workspace.",
       "You can check the status of running executors (dev servers, build processes, etc.) using the getExecutorStatus tool.",
-      "When the user asks about running processes, errors, build status, or dev server status, use the tool to check.",
+      "You can start executors using the runExecutor tool and stop them using the stopExecutor tool.",
+      "When the user asks about running processes, errors, build status, or dev server status, use the getExecutorStatus tool.",
+      "When the user asks to start, run, or launch a process, use runExecutor. When they ask to stop or kill a process, use stopExecutor.",
       `Current workspace: project=${projectId}, branch=${branch ?? "default"}.`,
     ].join("\n");
   }
@@ -197,6 +200,127 @@ export class ChatSessionManager {
           });
 
           return { executors: results };
+        },
+      }),
+
+      runExecutor: tool({
+        description:
+          "Start an executor (dev server, build process, etc.) by name. " +
+          "Use this when the user asks to start, run, or launch a process.",
+        inputSchema: z.object({
+          executorName: z
+            .string()
+            .describe("Name of the executor to start (case-insensitive match)"),
+        }),
+        execute: async ({ executorName }) => {
+          const group = branch
+            ? storage.executorGroups.getByBranch(projectId, branch)
+            : undefined;
+
+          if (!group) {
+            return { success: false, message: "No executor group found for this workspace." };
+          }
+
+          const executors = storage.executors.getByGroupId(group.id);
+          const executor = executors.find(
+            (e) => e.name.toLowerCase() === executorName.toLowerCase()
+          );
+
+          if (!executor) {
+            const available = executors.map((e) => e.name).join(", ");
+            return {
+              success: false,
+              message: `Executor "${executorName}" not found. Available: ${available || "none"}`,
+            };
+          }
+
+          // Check if already running
+          const processes = processManager.getProcessesByExecutorId(executor.id);
+          const running = processes.find((p) => p.isRunning);
+          if (running) {
+            return {
+              success: false,
+              processId: running.processId,
+              executorName: executor.name,
+              message: `Executor "${executor.name}" is already running (processId=${running.processId}).`,
+            };
+          }
+
+          // Resolve project path
+          const project = storage.projects.getById(projectId);
+          if (!project?.path) {
+            return { success: false, message: "No project path configured." };
+          }
+
+          const basePath = resolveWorktreePath(project.path, branch);
+
+          try {
+            const processId = processManager.start(executor, basePath);
+            return {
+              success: true,
+              processId,
+              executorName: executor.name,
+              command: executor.command,
+              message: `Started "${executor.name}" (${executor.command}).`,
+            };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            return { success: false, message: `Failed to start executor: ${msg}` };
+          }
+        },
+      }),
+
+      stopExecutor: tool({
+        description:
+          "Stop a running executor (dev server, build process, etc.) by name. " +
+          "Use this when the user asks to stop, kill, or terminate a process.",
+        inputSchema: z.object({
+          executorName: z
+            .string()
+            .describe("Name of the executor to stop (case-insensitive match)"),
+        }),
+        execute: async ({ executorName }) => {
+          const group = branch
+            ? storage.executorGroups.getByBranch(projectId, branch)
+            : undefined;
+
+          if (!group) {
+            return { success: false, message: "No executor group found for this workspace." };
+          }
+
+          const executors = storage.executors.getByGroupId(group.id);
+          const executor = executors.find(
+            (e) => e.name.toLowerCase() === executorName.toLowerCase()
+          );
+
+          if (!executor) {
+            const available = executors.map((e) => e.name).join(", ");
+            return {
+              success: false,
+              message: `Executor "${executorName}" not found. Available: ${available || "none"}`,
+            };
+          }
+
+          const processes = processManager.getProcessesByExecutorId(executor.id);
+          const running = processes.find((p) => p.isRunning);
+
+          if (!running) {
+            return {
+              success: false,
+              executorName: executor.name,
+              message: `Executor "${executor.name}" is not running.`,
+            };
+          }
+
+          const stopped = processManager.stop(running.processId);
+          return {
+            success: stopped,
+            executorName: executor.name,
+            processId: running.processId,
+            message: stopped
+              ? `Stopped "${executor.name}" (processId=${running.processId}).`
+              : `Failed to stop "${executor.name}".`,
+          };
         },
       }),
     };
