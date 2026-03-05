@@ -1,5 +1,6 @@
 import { execFileSync } from "child_process";
 import type { AgentType } from "../agent-types.js";
+import type { ClaudeOutputMessage, ClaudeContentBlock } from "../agent-types.js";
 import type { AgentProvider, SpawnConfig, ParsedAgentEvent } from "../agent-provider.js";
 
 export class ClaudeCodeProvider implements AgentProvider {
@@ -57,8 +58,70 @@ export class ClaudeCodeProvider implements AgentProvider {
     };
   }
 
-  parseStdoutLine(_line: string, _sessionId: string): ParsedAgentEvent[] {
-    // TODO: task 2.4 — extract from agent-session-manager.ts
+  parseStdoutLine(line: string, _sessionId: string): ParsedAgentEvent[] {
+    let msg: ClaudeOutputMessage;
+    try {
+      msg = JSON.parse(line) as ClaudeOutputMessage;
+    } catch {
+      return [];
+    }
+
+    if (msg.type === "user") {
+      return [];
+    }
+
+    if (msg.type === "assistant") {
+      const content = (msg as { type: "assistant"; message?: { content?: ClaudeContentBlock[] } }).message?.content;
+      if (!content) return [];
+      const events: ParsedAgentEvent[] = [];
+      for (const block of content) {
+        switch (block.type) {
+          case "text":
+            events.push({ type: "text", content: block.text });
+            break;
+          case "tool_use":
+            events.push({ type: "tool_use", tool: block.name, input: block.input, toolUseId: block.id });
+            break;
+          case "tool_result":
+            events.push({
+              type: "tool_result",
+              tool: "",
+              output: typeof block.content === "string" ? block.content : JSON.stringify(block.content),
+              toolUseId: block.tool_use_id,
+            });
+            break;
+          case "thinking":
+            events.push({ type: "thinking", content: block.thinking });
+            break;
+        }
+      }
+      return events;
+    }
+
+    if (msg.type === "system") {
+      const systemMsg = msg as { type: "system"; message?: string };
+      if (systemMsg.message) {
+        return [{ type: "system", content: systemMsg.message }];
+      }
+      return [];
+    }
+
+    if (msg.type === "result") {
+      const resultMsg = msg as { type: "result"; subtype?: string; error?: string; duration_ms?: number; cost_usd?: number };
+      const events: ParsedAgentEvent[] = [];
+      if (resultMsg.subtype === "error" && resultMsg.error) {
+        events.push({ type: "error", message: resultMsg.error });
+      }
+      events.push({
+        type: "result",
+        subtype: resultMsg.subtype === "error" ? "error" : "success",
+        error: resultMsg.error,
+        duration_ms: resultMsg.duration_ms,
+        cost_usd: resultMsg.cost_usd,
+      });
+      return events;
+    }
+
     return [];
   }
 
