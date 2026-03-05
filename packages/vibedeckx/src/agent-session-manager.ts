@@ -12,6 +12,7 @@ import type {
   ClaudeContentBlock,
 } from "./agent-types.js";
 import { getProvider } from "./providers/index.js";
+import type { ParsedAgentEvent } from "./agent-provider.js";
 import { ConversationPatch, type Patch, type AgentWsMessage } from "./conversation-patch.js";
 import type { EventBus } from "./event-bus.js";
 import { EntryIndexProvider, EntryTracker } from "./entry-index-provider.js";
@@ -279,7 +280,7 @@ export class AgentSessionManager {
   }
 
   /**
-   * Handle stdout data from Claude Code
+   * Handle stdout data from agent process
    */
   private handleStdout(session: RunningSession, data: string): void {
     // Add to buffer
@@ -289,16 +290,178 @@ export class AgentSessionManager {
     const lines = session.buffer.split("\n");
     session.buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
+    const provider = getProvider(session.agentType);
+
     for (const line of lines) {
       if (!line.trim()) continue;
 
-      try {
-        const json = JSON.parse(line) as ClaudeOutputMessage;
-        this.processClaudeMessage(session.id, json);
-      } catch (e) {
-        // Not JSON, might be debug output
-        console.log(`[AgentSession] Non-JSON stdout: ${line.substring(0, 100)}`);
+      const events = provider.parseStdoutLine(line, session.id);
+      for (const event of events) {
+        this.processAgentEvent(session.id, event);
       }
+    }
+  }
+
+  /**
+   * Process a single parsed agent event (provider-agnostic).
+   * Full implementation in task 3.5 — stub routes to existing processClaudeMessage/processContentBlock for now.
+   */
+  private processAgentEvent(sessionId: string, event: ParsedAgentEvent): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    const timestamp = Date.now();
+
+    switch (event.type) {
+      case "text":
+        this.updateAssistantMessage(sessionId, event.content, timestamp);
+        break;
+
+      case "tool_use": {
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        const tuKey = `tool_use:${event.toolUseId}`;
+        const { index: tuIndex, isNew: tuIsNew } = session.store.toolTracker.getOrCreate(tuKey);
+        const tuMessage: AgentMessage = {
+          type: "tool_use",
+          tool: event.tool,
+          input: event.input,
+          toolUseId: event.toolUseId,
+          timestamp,
+        };
+        if (tuIsNew) {
+          session.store.entries[tuIndex] = tuMessage;
+          const patch = ConversationPatch.addEntry(tuIndex, tuMessage);
+          session.store.patches.push(patch);
+          this.broadcastPatch(sessionId, patch);
+        } else {
+          session.store.entries[tuIndex] = tuMessage;
+          const patch = ConversationPatch.replaceEntry(tuIndex, tuMessage);
+          session.store.patches.push(patch);
+          this.broadcastPatch(sessionId, patch);
+        }
+        if (!session.skipDb) {
+          this.persistEntry(session, tuIndex, tuMessage);
+        }
+        break;
+      }
+
+      case "tool_result": {
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        const trKey = `tool_result:${event.toolUseId}`;
+        const { index: trIndex, isNew: trIsNew } = session.store.toolTracker.getOrCreate(trKey);
+        const trMessage: AgentMessage = {
+          type: "tool_result",
+          tool: event.tool,
+          output: event.output,
+          toolUseId: event.toolUseId,
+          timestamp,
+        };
+        if (trIsNew) {
+          session.store.entries[trIndex] = trMessage;
+          const patch = ConversationPatch.addEntry(trIndex, trMessage);
+          session.store.patches.push(patch);
+          this.broadcastPatch(sessionId, patch);
+        } else {
+          session.store.entries[trIndex] = trMessage;
+          const patch = ConversationPatch.replaceEntry(trIndex, trMessage);
+          session.store.patches.push(patch);
+          this.broadcastPatch(sessionId, patch);
+        }
+        if (!session.skipDb) {
+          this.persistEntry(session, trIndex, trMessage);
+        }
+        break;
+      }
+
+      case "thinking":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        this.pushEntry(sessionId, {
+          type: "thinking",
+          content: event.content,
+          timestamp,
+        }, true);
+        break;
+
+      case "system":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        this.pushEntry(sessionId, {
+          type: "system",
+          content: event.content,
+          timestamp,
+        }, true);
+        break;
+
+      case "error":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        this.pushEntry(sessionId, {
+          type: "error",
+          message: event.message,
+          timestamp,
+        }, true);
+        break;
+
+      case "result":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+
+        if (event.subtype === "error" && event.error) {
+          this.pushEntry(sessionId, {
+            type: "error",
+            message: event.error,
+            timestamp,
+          }, true);
+        }
+
+        if (event.subtype === "success") {
+          this.broadcastRaw(sessionId, {
+            taskCompleted: {
+              duration_ms: event.duration_ms,
+              cost_usd: event.cost_usd,
+            },
+          });
+
+          // Auto-update task status to "done" for the branch's assigned task
+          const tasks = this.storage.tasks.getByProjectId(session.projectId);
+          const branchKey = session.branch ?? "";
+          const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
+          if (assignedTask && assignedTask.status !== "done") {
+            this.storage.tasks.update(assignedTask.id, { status: "done" });
+            this.eventBus?.emit({
+              type: "task:updated",
+              projectId: session.projectId,
+              task: { ...assignedTask, status: "done" } as Record<string, unknown>,
+            });
+          }
+        }
+        break;
+
+      case "approval_request":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        if (event.requestType === "command") {
+          this.pushEntry(sessionId, {
+            type: "approval_request",
+            requestType: "command",
+            requestId: event.requestId,
+            command: event.command,
+            cwd: event.cwd,
+            timestamp,
+          }, true);
+        } else {
+          this.pushEntry(sessionId, {
+            type: "approval_request",
+            requestType: "fileChange",
+            requestId: event.requestId,
+            changes: event.changes,
+            timestamp,
+          }, true);
+        }
+        break;
     }
   }
 
