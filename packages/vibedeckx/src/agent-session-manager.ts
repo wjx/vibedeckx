@@ -785,6 +785,30 @@ export class AgentSessionManager {
   }
 
   /**
+   * Send an approval response to the agent process (for agents with approval flow).
+   * Returns false if session not found, not running, or provider doesn't support approvals.
+   */
+  sendApprovalResponse(sessionId: string, requestId: string, decision: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+
+    if (session.status !== "running" || !session.process?.stdin) {
+      return false;
+    }
+
+    try {
+      const provider = getProvider(session.agentType);
+      const formatted = provider.formatApprovalResponse?.(requestId, decision, session.id);
+      if (!formatted) return false;
+      session.process.stdin.write(formatted);
+      return true;
+    } catch (error) {
+      console.error(`[AgentSession] Failed to send approval response:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Subscribe to session updates (WebSocket connection)
    */
   subscribe(sessionId: string, ws: WebSocket): (() => void) | null {
