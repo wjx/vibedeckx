@@ -25,6 +25,7 @@ import { WebFetchToolUseUI, WebFetchToolResultUI } from "./web-fetch-tools";
 import { WebSearchToolUseUI, WebSearchToolResultUI } from "./web-search-tools";
 import { SkillToolUseUI, SkillToolResultUI } from "./skill-tools";
 import { TaskOutputToolUseUI, TaskOutputToolResultUI } from "./task-output-tools";
+import { FileChangeToolUseUI, FileChangeToolResultUI } from "./file-change-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -326,6 +327,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "FileChange") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center">
+          <FilePenLine className="w-4 h-4 text-sky-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-sky-500 mb-1">File Changes</p>
+          <FileChangeToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
@@ -477,6 +492,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
       <div className="flex gap-3 py-3 pl-11">
         <div className="flex-1 min-w-0 overflow-hidden">
           <SkillToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
+  if (tool === "FileChange") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <FileChangeToolResultUI output={output} />
         </div>
       </div>
     );
