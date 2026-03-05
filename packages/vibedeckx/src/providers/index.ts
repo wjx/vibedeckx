@@ -1,7 +1,11 @@
 import type { AgentType } from "../agent-types.js";
 import type { AgentProvider } from "../agent-provider.js";
+import { ClaudeCodeProvider } from "./claude-code-provider.js";
 
 const providers = new Map<AgentType, AgentProvider>();
+
+// Register built-in providers at module scope
+registerProvider(new ClaudeCodeProvider());
 
 export function registerProvider(provider: AgentProvider): void {
   providers.set(provider.getAgentType(), provider);
