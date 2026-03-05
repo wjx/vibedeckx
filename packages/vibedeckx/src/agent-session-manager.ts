@@ -771,17 +771,11 @@ export class AgentSessionManager {
       timestamp: Date.now(),
     }, true);
 
-    // Send to Claude Code stdin
-    const input: ClaudeUserInput = {
-      type: "user",
-      message: {
-        role: "user",
-        content,
-      },
-    };
-
+    // Send to agent stdin via provider
     try {
-      session.process?.stdin?.write(JSON.stringify(input) + "\n");
+      const provider = getProvider(session.agentType);
+      const formatted = provider.formatUserInput(content, session.id);
+      session.process?.stdin?.write(formatted);
       return true;
     } catch (error) {
       console.error(`[AgentSession] Failed to send message:`, error);
