@@ -304,7 +304,7 @@ export class AgentSessionManager {
   /**
    * Process a single parsed agent event (provider-agnostic).
    * Routes each ParsedAgentEvent to the appropriate message store / broadcast action.
-   * Note: input_tokens/output_tokens in taskCompleted broadcast added in task 3.8.
+   * Includes input_tokens/output_tokens in taskCompleted broadcast for token reporting.
    */
   private processAgentEvent(sessionId: string, event: ParsedAgentEvent): void {
     const session = this.sessions.get(sessionId);
@@ -422,6 +422,8 @@ export class AgentSessionManager {
             taskCompleted: {
               duration_ms: event.duration_ms,
               cost_usd: event.cost_usd,
+              input_tokens: event.input_tokens,
+              output_tokens: event.output_tokens,
             },
           });
 
