@@ -192,16 +192,17 @@ export class AgentSessionManager {
     this.sessions.set(sessionId, runningSession);
 
     // Spawn Claude Code process
-    this.spawnClaudeCode(runningSession, absoluteWorktreePath);
+    this.spawnAgent(runningSession, absoluteWorktreePath);
 
     return sessionId;
   }
 
   /**
-   * Spawn Claude Code CLI process
+   * Spawn agent process using the provider for this session's agent type
    */
-  private spawnClaudeCode(session: RunningSession, cwd: string): void {
-    console.log(`[AgentSession] Spawning Claude Code in ${cwd}`);
+  private spawnAgent(session: RunningSession, cwd: string): void {
+    const provider = getProvider(session.agentType);
+    console.log(`[AgentSession] Spawning ${provider.getDisplayName()} in ${cwd}`);
 
     // Verify cwd exists
     if (!existsSync(cwd)) {
@@ -219,36 +220,13 @@ export class AgentSessionManager {
       return;
     }
 
-    const nativeBinary = this.detectClaudeBinary();
+    const config = provider.buildSpawnConfig(cwd, session.permissionMode);
 
-    const permissionFlag = session.permissionMode === "plan"
-      ? "--permission-mode=plan"
-      : "--dangerously-skip-permissions";
-
-    const claudeArgs = [
-      "-p",
-      "--output-format=stream-json",
-      "--input-format=stream-json",
-      permissionFlag,
-      "--verbose",
-    ];
-
-    let command: string;
-    let args: string[];
-
-    if (nativeBinary) {
-      command = nativeBinary;
-      args = claudeArgs;
-    } else {
-      command = "npx";
-      args = ["-y", "@anthropic-ai/claude-code", ...claudeArgs];
-    }
-
-    const childProcess = spawn(command, args, {
+    const childProcess = spawn(config.command, config.args, {
       cwd,
-      env: { ...process.env, FORCE_COLOR: "1" },
+      env: { ...process.env, FORCE_COLOR: "1", ...config.env },
       stdio: ["pipe", "pipe", "pipe"],
-      shell: true,
+      shell: config.shell ?? false,
     });
 
     session.process = childProcess;
@@ -806,7 +784,7 @@ export class AgentSessionManager {
     // 6. Calculate absolute worktree path and respawn
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     return true;
   }
@@ -856,7 +834,7 @@ export class AgentSessionManager {
     // 5. Respawn Claude Code with new mode flags
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     // 6. Send initial message or conversation summary
     if (initialMessage) {
@@ -959,7 +937,7 @@ export class AgentSessionManager {
 
     // Spawn Claude Code process
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     // Push user message to store (+ persist to DB)
     this.pushEntry(session.id, {
