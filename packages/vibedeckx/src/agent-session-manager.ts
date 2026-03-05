@@ -1,4 +1,4 @@
-import { spawn, execFileSync, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import type { WebSocket } from "@fastify/websocket";
@@ -7,8 +7,6 @@ import type {
   AgentMessage,
   AgentSessionStatus,
   AgentType,
-  ClaudeOutputMessage,
-  ClaudeContentBlock,
 } from "./agent-types.js";
 import { getProvider } from "./providers/index.js";
 import type { ParsedAgentEvent } from "./agent-provider.js";
@@ -50,7 +48,6 @@ interface RunningSession {
 export class AgentSessionManager {
   private sessions: Map<string, RunningSession> = new Map();
   private storage: Storage;
-  private claudeBinaryPath: string | null | undefined = undefined; // undefined = not yet checked
   private eventBus: EventBus | null = null;
 
   constructor(storage: Storage) {
@@ -59,25 +56,6 @@ export class AgentSessionManager {
 
   setEventBus(eventBus: EventBus): void {
     this.eventBus = eventBus;
-  }
-
-  private detectClaudeBinary(): string | null {
-    if (this.claudeBinaryPath !== undefined) {
-      return this.claudeBinaryPath;
-    }
-    try {
-      const cmd = process.platform === "win32" ? "where" : "which";
-      const result = execFileSync(cmd, ["claude"], {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "ignore"],
-      }).trim();
-      this.claudeBinaryPath = result || null;
-      console.log(`[AgentSession] Native claude binary found: ${result}`);
-    } catch {
-      this.claudeBinaryPath = null;
-      console.log(`[AgentSession] Native claude binary not found, will use npx`);
-    }
-    return this.claudeBinaryPath;
   }
 
   /**
@@ -466,182 +444,6 @@ export class AgentSessionManager {
             timestamp,
           }, true);
         }
-        break;
-    }
-  }
-
-  /**
-   * Process a parsed Claude Code message
-   */
-  private processClaudeMessage(sessionId: string, msg: ClaudeOutputMessage): void {
-    const timestamp = Date.now();
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-
-    if (msg.type === "assistant") {
-      const assistantMsg = msg as { type: "assistant"; message?: { content?: ClaudeContentBlock[] } };
-      const content = assistantMsg.message?.content;
-      if (!content) return;
-
-      for (const block of content) {
-        this.processContentBlock(sessionId, block, timestamp);
-      }
-      return;
-    }
-
-    if (msg.type === "user") {
-      // Echo of user message - we already added it when sending
-      return;
-    }
-
-    if (msg.type === "system") {
-      const systemMsg = msg as { type: "system"; message?: string };
-      if (systemMsg.message) {
-        // Clear current assistant key - system message breaks streaming
-        this.finalizeStreamingEntry(session);
-        session.store.currentAssistantIndex = null;
-        this.pushEntry(sessionId, {
-          type: "system",
-          content: systemMsg.message,
-          timestamp,
-        }, true);
-      }
-      return;
-    }
-
-    if (msg.type === "result") {
-      const resultMsg = msg as { type: "result"; subtype?: string; error?: string; duration_ms?: number; cost_usd?: number };
-      this.finalizeStreamingEntry(session);
-      session.store.currentAssistantIndex = null;
-
-      if (resultMsg.subtype === "error" && resultMsg.error) {
-        this.pushEntry(sessionId, {
-          type: "error",
-          message: resultMsg.error,
-          timestamp,
-        }, true);
-      }
-
-      if (resultMsg.subtype === "success") {
-        this.broadcastRaw(sessionId, {
-          taskCompleted: {
-            duration_ms: resultMsg.duration_ms,
-            cost_usd: resultMsg.cost_usd,
-          },
-        });
-
-        // Auto-update task status to "done" for the branch's assigned task
-        const tasks = this.storage.tasks.getByProjectId(session.projectId);
-        const branchKey = session.branch ?? "";
-        const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
-        if (assignedTask && assignedTask.status !== "done") {
-          this.storage.tasks.update(assignedTask.id, { status: "done" });
-          this.eventBus?.emit({
-            type: "task:updated",
-            projectId: session.projectId,
-            task: { ...assignedTask, status: "done" } as Record<string, unknown>,
-          });
-        }
-      }
-      return;
-    }
-
-    // Log unknown message types for debugging
-    console.log(`[AgentSession] Unknown message type: ${msg.type}`);
-  }
-
-  /**
-   * Process a content block from assistant message
-   */
-  private processContentBlock(
-    sessionId: string,
-    block: ClaudeContentBlock,
-    timestamp: number
-  ): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-
-    switch (block.type) {
-      case "text":
-        // For text blocks, use streaming update pattern
-        this.updateAssistantMessage(sessionId, block.text, timestamp);
-        break;
-
-      case "tool_use": {
-        // Tool use breaks the assistant streaming — finalize before clearing
-        this.finalizeStreamingEntry(session);
-        session.store.currentAssistantIndex = null;
-        // Deduplicate by block ID — streaming can replay the same assistant message
-        const tuKey = `tool_use:${block.id}`;
-        const { index: tuIndex, isNew: tuIsNew } = session.store.toolTracker.getOrCreate(tuKey);
-        const tuMessage: AgentMessage = {
-          type: "tool_use",
-          tool: block.name,
-          input: block.input,
-          toolUseId: block.id,
-          timestamp,
-        };
-        if (tuIsNew) {
-          // First time seeing this tool_use — add entry
-          session.store.entries[tuIndex] = tuMessage;
-          const patch = ConversationPatch.addEntry(tuIndex, tuMessage);
-          session.store.patches.push(patch);
-          this.broadcastPatch(sessionId, patch);
-        } else {
-          // Already seen — replace (input may have been updated during streaming)
-          session.store.entries[tuIndex] = tuMessage;
-          const patch = ConversationPatch.replaceEntry(tuIndex, tuMessage);
-          session.store.patches.push(patch);
-          this.broadcastPatch(sessionId, patch);
-        }
-        // Persist tool_use immediately
-        if (!session.skipDb) {
-          this.persistEntry(session, tuIndex, tuMessage);
-        }
-        break;
-      }
-
-      case "tool_result": {
-        // Tool result breaks the assistant streaming — finalize before clearing
-        this.finalizeStreamingEntry(session);
-        session.store.currentAssistantIndex = null;
-        // Deduplicate by tool_use_id
-        const trKey = `tool_result:${block.tool_use_id}`;
-        const { index: trIndex, isNew: trIsNew } = session.store.toolTracker.getOrCreate(trKey);
-        const trMessage: AgentMessage = {
-          type: "tool_result",
-          tool: "",
-          output: typeof block.content === "string" ? block.content : JSON.stringify(block.content),
-          toolUseId: block.tool_use_id,
-          timestamp,
-        };
-        if (trIsNew) {
-          session.store.entries[trIndex] = trMessage;
-          const patch = ConversationPatch.addEntry(trIndex, trMessage);
-          session.store.patches.push(patch);
-          this.broadcastPatch(sessionId, patch);
-        } else {
-          session.store.entries[trIndex] = trMessage;
-          const patch = ConversationPatch.replaceEntry(trIndex, trMessage);
-          session.store.patches.push(patch);
-          this.broadcastPatch(sessionId, patch);
-        }
-        // Persist tool_result immediately
-        if (!session.skipDb) {
-          this.persistEntry(session, trIndex, trMessage);
-        }
-        break;
-      }
-
-      case "thinking":
-        // Thinking breaks the assistant streaming — finalize before clearing
-        this.finalizeStreamingEntry(session);
-        session.store.currentAssistantIndex = null;
-        this.pushEntry(sessionId, {
-          type: "thinking",
-          content: block.thinking,
-          timestamp,
-        }, true);
         break;
     }
   }
