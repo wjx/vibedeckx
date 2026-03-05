@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, ListTodo, FolderOpen, GitBranch, Plus } from "lucide-react";
+import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Worktree, Project } from "@/lib/api";
 import type { WorkspaceStatus } from "@/app/page";
@@ -15,6 +15,7 @@ interface AppSidebarProps {
   onBranchChange?: (branch: string | null) => void;
   currentProject?: Project | null;
   onCreateWorktreeOpen?: () => void;
+  onDeleteWorktree?: (worktree: Worktree) => void;
   workspaceStatuses?: Map<string, WorkspaceStatus>;
 }
 
@@ -40,6 +41,7 @@ export function AppSidebar({
   onBranchChange,
   currentProject,
   onCreateWorktreeOpen,
+  onDeleteWorktree,
   workspaceStatuses,
 }: AppSidebarProps) {
   return (
@@ -101,25 +103,38 @@ export function AppSidebar({
       {worktrees && worktrees.length > 0 && (
         <div className="flex flex-col gap-0.5">
           {worktrees.map((wt) => (
-            <button
-              key={wt.branch ?? "__main__"}
-              onClick={() => {
-                onBranchChange?.(wt.branch);
-                onViewChange("workspace");
-              }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md pl-7 pr-2 py-1.5 text-xs transition-colors",
-                "hover:bg-accent hover:text-accent-foreground",
-                activeView === "workspace" && selectedBranch === wt.branch
-                  ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/20"
-                  : "text-muted-foreground"
+            <div key={wt.branch ?? "__main__"} className="group relative flex items-center">
+              <button
+                onClick={() => {
+                  onBranchChange?.(wt.branch);
+                  onViewChange("workspace");
+                }}
+                className={cn(
+                  "flex-1 flex items-center gap-1.5 rounded-md pl-7 pr-6 py-1.5 text-xs transition-colors",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  activeView === "workspace" && selectedBranch === wt.branch
+                    ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/20"
+                    : "text-muted-foreground"
+                )}
+                title={wt.branch ?? "main"}
+              >
+                <StatusDot status={workspaceStatuses?.get(wt.branch === null ? "" : wt.branch)} />
+                <GitBranch className="h-3 w-3 shrink-0" />
+                <span className="truncate">{wt.branch ?? "main"}</span>
+              </button>
+              {wt.branch !== null && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteWorktree?.(wt);
+                  }}
+                  className="absolute right-1 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-opacity"
+                  title="Delete worktree"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               )}
-              title={wt.branch ?? "main"}
-            >
-              <StatusDot status={workspaceStatuses?.get(wt.branch === null ? "" : wt.branch)} />
-              <GitBranch className="h-3 w-3 shrink-0" />
-              <span className="truncate">{wt.branch ?? "main"}</span>
-            </button>
+            </div>
           ))}
         </div>
       )}

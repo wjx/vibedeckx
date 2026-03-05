@@ -11,13 +11,14 @@ import { Plus, Settings } from 'lucide-react';
 import { CreateProjectDialog } from '@/components/project/create-project-dialog';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { CreateWorktreeDialog } from '@/components/project/create-worktree-dialog';
+import { DeleteWorktreeDialog } from '@/components/project/delete-worktree-dialog';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { MainConversation } from '@/components/conversation';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
 import { FilesView } from '@/components/files';
-import type { ExecutionMode, Task } from '@/lib/api';
+import type { ExecutionMode, Task, Worktree } from '@/lib/api';
 import { useGlobalEvents } from '@/hooks/use-global-events';
 import { useUrlState } from '@/hooks/use-url-state';
 import { buildUrl } from '@/lib/url-state';
@@ -47,6 +48,8 @@ export default function Home() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createWorktreeDialogOpen, setCreateWorktreeDialogOpen] = useState(false);
+  const [deleteWorktreeDialogOpen, setDeleteWorktreeDialogOpen] = useState(false);
+  const [worktreeToDelete, setWorktreeToDelete] = useState<Worktree | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(urlBranch);
   const [activeView, setActiveView] = useState<ActiveView>(urlTab);
@@ -265,6 +268,10 @@ Please proceed step by step and let me know if there are any issues or conflicts
             onBranchChange={setSelectedBranch}
             currentProject={currentProject}
             onCreateWorktreeOpen={() => setCreateWorktreeDialogOpen(true)}
+            onDeleteWorktree={(wt) => {
+              setWorktreeToDelete(wt);
+              setDeleteWorktreeDialogOpen(true);
+            }}
             workspaceStatuses={workspaceStatuses}
           />
 
@@ -350,6 +357,15 @@ Please proceed step by step and let me know if there are any issues or conflicts
             open={createWorktreeDialogOpen}
             onOpenChange={setCreateWorktreeDialogOpen}
             onWorktreeCreated={handleWorktreeCreated}
+          />
+        )}
+        {currentProject && (
+          <DeleteWorktreeDialog
+            projectId={currentProject.id}
+            worktree={worktreeToDelete}
+            open={deleteWorktreeDialogOpen}
+            onOpenChange={setDeleteWorktreeDialogOpen}
+            onWorktreeDeleted={refetchWorktrees}
           />
         )}
       </div>
