@@ -20,9 +20,9 @@ function resolveProjectPath(
 const routes: FastifyPluginAsync = async (fastify) => {
   // Start agent session at a path (path-based, for remote execution)
   fastify.post<{
-    Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit" };
+    Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
   }>("/api/path/agent-sessions", async (req, reply) => {
-    const { path: projectPath, branch, permissionMode } = req.body;
+    const { path: projectPath, branch, permissionMode, agentType } = req.body;
     if (!projectPath) {
       return reply.code(400).send({ error: "Path is required" });
     }
@@ -46,7 +46,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
         branch ?? null,
         projectPath,
         false,
-        permissionMode || "edit"
+        permissionMode || "edit",
+        (agentType as AgentType) || "claude-code"
       );
 
       const session = fastify.agentSessionManager.getSession(sessionId);
