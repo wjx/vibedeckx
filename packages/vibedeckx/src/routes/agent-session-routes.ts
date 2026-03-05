@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AgentType } from "../agent-types.js";
+import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
 import "../server-types.js";
 
@@ -18,6 +19,16 @@ function resolveProjectPath(
 }
 
 const routes: FastifyPluginAsync = async (fastify) => {
+  // List available agent providers
+  fastify.get("/api/agent-providers", async (_req, reply) => {
+    const providers = getAllProviders().map((provider) => ({
+      type: provider.getAgentType(),
+      displayName: provider.getDisplayName(),
+      available: provider.detectBinary() !== null,
+    }));
+    return reply.code(200).send({ providers });
+  });
+
   // Start agent session at a path (path-based, for remote execution)
   fastify.post<{
     Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
