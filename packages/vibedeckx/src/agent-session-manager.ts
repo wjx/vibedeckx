@@ -1015,7 +1015,7 @@ export class AgentSessionManager {
         buffer: "",
         skipDb: false,
         permissionMode,
-        agentType: "claude-code",
+        agentType: ((dbSession as unknown as Record<string, unknown>).agent_type as AgentType) || "claude-code",
       };
 
       this.sessions.set(dbSession.id, runningSession);
