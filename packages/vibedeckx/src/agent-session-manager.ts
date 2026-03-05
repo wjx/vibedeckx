@@ -304,7 +304,8 @@ export class AgentSessionManager {
 
   /**
    * Process a single parsed agent event (provider-agnostic).
-   * Full implementation in task 3.5 — stub routes to existing processClaudeMessage/processContentBlock for now.
+   * Routes each ParsedAgentEvent to the appropriate message store / broadcast action.
+   * Note: input_tokens/output_tokens in taskCompleted broadcast added in task 3.8.
    */
   private processAgentEvent(sessionId: string, event: ParsedAgentEvent): void {
     const session = this.sessions.get(sessionId);
