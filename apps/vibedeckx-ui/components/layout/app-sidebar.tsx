@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, X } from "lucide-react";
+import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Worktree, Project } from "@/lib/api";
 import type { WorkspaceStatus } from "@/app/page";
@@ -131,7 +131,7 @@ export function AppSidebar({
                   className="absolute right-1 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-opacity"
                   title="Delete worktree"
                 >
-                  <X className="h-3 w-3" />
+                  <Trash2 className="h-3 w-3" />
                 </button>
               )}
             </div>
