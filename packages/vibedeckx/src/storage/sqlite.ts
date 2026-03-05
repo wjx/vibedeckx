@@ -198,6 +198,11 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     db.exec("ALTER TABLE agent_sessions ADD COLUMN permission_mode TEXT DEFAULT 'edit'");
   }
 
+  // Migration: add agent_type column to agent_sessions
+  if (!sessionInfo2.some(col => col.name === "agent_type")) {
+    db.exec("ALTER TABLE agent_sessions ADD COLUMN agent_type TEXT DEFAULT 'claude-code'");
+  }
+
   // Create agent_session_entries table for conversation persistence
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_session_entries (
