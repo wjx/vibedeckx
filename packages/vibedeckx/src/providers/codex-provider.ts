@@ -7,6 +7,7 @@ interface CodexSessionState {
   rpcIdCounter: number;
   initialized: boolean;
   pendingRequests: Map<number, string>;
+  permissionMode: "plan" | "edit";
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,6 +16,7 @@ export class CodexProvider implements AgentProvider {
   private binaryPath: string | null | undefined = undefined;
   private sessions = new Map<string, CodexSessionState>();
   private static idCounter = 0;
+  private lastPermissionMode: "plan" | "edit" = "edit";
 
   getAgentType(): AgentType {
     return "codex";
@@ -43,7 +45,9 @@ export class CodexProvider implements AgentProvider {
     return this.binaryPath;
   }
 
-  buildSpawnConfig(_cwd: string, _permissionMode: "plan" | "edit"): SpawnConfig {
+  buildSpawnConfig(_cwd: string, permissionMode: "plan" | "edit"): SpawnConfig {
+    // Store permissionMode for use in formatUserInput's turn/start params (task 5.12)
+    this.lastPermissionMode = permissionMode;
     const nativeBinary = this.detectBinary();
     if (nativeBinary) {
       return { command: nativeBinary, args: ["app-server"], shell: false };
@@ -239,7 +243,10 @@ export class CodexProvider implements AgentProvider {
 
   formatUserInput(content: string, sessionId: string): string {
     const state = this.getSessionState(sessionId);
+    // Sync permissionMode from last buildSpawnConfig call
+    state.permissionMode = this.lastPermissionMode;
     const input = [{ type: "text", text: content }];
+    const permissionParams = this.buildPermissionParams(state.permissionMode);
 
     if (!state.initialized) {
       // First call: pipeline initialize + thread/start + turn/start
@@ -255,7 +262,7 @@ export class CodexProvider implements AgentProvider {
       const msgs = [
         JSON.stringify({ jsonrpc: "2.0", id: id1, method: "initialize", params: {} }),
         JSON.stringify({ jsonrpc: "2.0", id: id2, method: "thread/start", params: {} }),
-        JSON.stringify({ jsonrpc: "2.0", id: id3, method: "turn/start", params: { input } }),
+        JSON.stringify({ jsonrpc: "2.0", id: id3, method: "turn/start", params: { input, ...permissionParams } }),
       ];
       return msgs.join("\n") + "\n";
     }
@@ -268,8 +275,23 @@ export class CodexProvider implements AgentProvider {
       jsonrpc: "2.0",
       id,
       method: "turn/start",
-      params: { threadId: state.threadId, input },
+      params: { threadId: state.threadId, input, ...permissionParams },
     }) + "\n";
+  }
+
+  // ============ Task 5.12: Permission mode mapping ============
+
+  private buildPermissionParams(mode: "plan" | "edit"): Record<string, unknown> {
+    if (mode === "plan") {
+      return {
+        sandboxPolicy: { type: "readOnly" },
+      };
+    }
+    // edit mode
+    return {
+      sandboxPolicy: { type: "workspaceWrite" },
+      approvalPolicy: "on-request",
+    };
   }
 
   // ============ Task 5.11: formatApprovalResponse ============
@@ -290,6 +312,7 @@ export class CodexProvider implements AgentProvider {
       rpcIdCounter: 1,
       initialized: false,
       pendingRequests: new Map(),
+      permissionMode: "edit",
     });
   }
 
@@ -306,6 +329,7 @@ export class CodexProvider implements AgentProvider {
         rpcIdCounter: 1,
         initialized: false,
         pendingRequests: new Map(),
+        permissionMode: "edit",
       };
       this.sessions.set(sessionId, state);
     }
