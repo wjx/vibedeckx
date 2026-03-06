@@ -599,6 +599,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
     try {
       await restartSessionApi(session.id, agentType);
+      // Update local session state with new agent type
+      if (agentType) {
+        setSession((prev) => prev ? { ...prev, agentType } : null);
+      }
       // The WebSocket will receive the clearAll patch and status update
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Failed to restart session";
