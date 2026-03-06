@@ -336,7 +336,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
           remoteInfo.remoteUrl,
           remoteInfo.remoteApiKey,
           "POST",
-          `/api/agent-sessions/${remoteInfo.remoteSessionId}/restart`
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/restart`,
+          req.body
         );
         fastify.remotePatchCache.replaceAll(req.params.sessionId, [], 0);
         return reply.code(result.status || 200).send(result.data);
