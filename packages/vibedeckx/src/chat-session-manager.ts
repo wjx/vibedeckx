@@ -18,6 +18,8 @@ import type { Storage } from "./storage/types.js";
 import type { ProcessManager, LogMessage } from "./process-manager.js";
 import type { AgentSessionManager } from "./agent-session-manager.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
+import { proxyToRemote } from "./utils/remote-proxy.js";
+import type { RemoteSessionInfo } from "./server-types.js";
 
 // ============ Types ============
 
@@ -64,15 +66,67 @@ export class ChatSessionManager {
   private storage: Storage;
   private processManager: ProcessManager;
   private agentSessionManager: AgentSessionManager;
+  private remoteSessionMap: Map<string, RemoteSessionInfo>;
 
   private deepseek = createDeepSeek({
     apiKey: process.env.DEEPSEEK_API_KEY ?? "",
   });
 
-  constructor(storage: Storage, processManager: ProcessManager, agentSessionManager: AgentSessionManager) {
+  constructor(
+    storage: Storage,
+    processManager: ProcessManager,
+    agentSessionManager: AgentSessionManager,
+    remoteSessionMap: Map<string, RemoteSessionInfo>,
+  ) {
     this.storage = storage;
     this.processManager = processManager;
     this.agentSessionManager = agentSessionManager;
+    this.remoteSessionMap = remoteSessionMap;
+  }
+
+  private findRemoteSessionForProject(projectId: string): { localSessionId: string; info: RemoteSessionInfo } | null {
+    const prefix = `remote-${projectId}-`;
+    for (const [key, info] of this.remoteSessionMap) {
+      if (key.startsWith(prefix)) {
+        return { localSessionId: key, info };
+      }
+    }
+    return null;
+  }
+
+  private summarizeMessages(messages: AgentMessage[]) {
+    return messages.map((msg) => {
+      switch (msg.type) {
+        case "user":
+          return { type: "user", content: msg.content };
+        case "assistant":
+          return { type: "assistant", content: msg.content };
+        case "tool_use": {
+          const inputStr = typeof msg.input === "string"
+            ? msg.input
+            : JSON.stringify(msg.input);
+          return {
+            type: "tool_use",
+            tool: msg.tool,
+            input: inputStr.length > 500 ? inputStr.substring(0, 500) + "..." : inputStr,
+          };
+        }
+        case "tool_result":
+          return {
+            type: "tool_result",
+            tool: msg.tool,
+            output: msg.output.length > 500 ? msg.output.substring(0, 500) + "..." : msg.output,
+          };
+        case "error":
+          return { type: "error", message: msg.message };
+        case "system":
+          return { type: "system", content: msg.content };
+        case "thinking":
+          return { type: "thinking", content: msg.content };
+        default:
+          return { type: (msg as AgentMessage).type };
+      }
+    });
   }
 
   // ---- Session lifecycle ----
@@ -196,52 +250,45 @@ export class ChatSessionManager {
             }
           }
 
-          if (!agentSession) {
-            return { messages: [], status: "no_session", message: "No coding agent session found for this workspace." };
+          if (agentSession) {
+            const allMessages = agentSessionManager.getMessages(agentSession.id);
+            const recent = allMessages.slice(-tailMessages);
+            return {
+              sessionId: agentSession.id,
+              status: agentSession.status,
+              totalMessages: allMessages.length,
+              messages: this.summarizeMessages(recent),
+            };
           }
 
-          const allMessages = agentSessionManager.getMessages(agentSession.id);
-          const recent = allMessages.slice(-tailMessages);
-
-          const summarized = recent.map((msg) => {
-            switch (msg.type) {
-              case "user":
-                return { type: "user", content: msg.content };
-              case "assistant":
-                return { type: "assistant", content: msg.content };
-              case "tool_use": {
-                const inputStr = typeof msg.input === "string"
-                  ? msg.input
-                  : JSON.stringify(msg.input);
+          // Fallback: check remote sessions
+          const remote = this.findRemoteSessionForProject(projectId);
+          if (remote) {
+            try {
+              const result = await proxyToRemote(
+                remote.info.remoteUrl,
+                remote.info.remoteApiKey,
+                "GET",
+                `/api/agent-sessions/${remote.info.remoteSessionId}`,
+              );
+              if (result.ok) {
+                const data = result.data as { session: { status: string }; messages: AgentMessage[] };
+                const allMessages = data.messages ?? [];
+                const recent = allMessages.slice(-tailMessages);
                 return {
-                  type: "tool_use",
-                  tool: msg.tool,
-                  input: inputStr.length > 500 ? inputStr.substring(0, 500) + "..." : inputStr,
+                  sessionId: remote.localSessionId,
+                  status: data.session?.status ?? "unknown",
+                  totalMessages: allMessages.length,
+                  messages: this.summarizeMessages(recent),
                 };
               }
-              case "tool_result":
-                return {
-                  type: "tool_result",
-                  tool: msg.tool,
-                  output: msg.output.length > 500 ? msg.output.substring(0, 500) + "..." : msg.output,
-                };
-              case "error":
-                return { type: "error", message: msg.message };
-              case "system":
-                return { type: "system", content: msg.content };
-              case "thinking":
-                return { type: "thinking", content: msg.content };
-              default:
-                return { type: (msg as AgentMessage).type };
+              console.error(`[ChatSession] getAgentConversation: remote proxy failed status=${result.status}`);
+            } catch (err) {
+              console.error(`[ChatSession] getAgentConversation: remote proxy error:`, err);
             }
-          });
+          }
 
-          return {
-            sessionId: agentSession.id,
-            status: agentSession.status,
-            totalMessages: allMessages.length,
-            messages: summarized,
-          };
+          return { messages: [], status: "no_session", message: "No coding agent session found for this workspace." };
         },
       }),
 

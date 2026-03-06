@@ -24,6 +24,8 @@ function getToolLabel(tool: string): string {
   switch (tool) {
     case "getExecutorStatus":
       return "Checking executor status...";
+    case "getAgentConversation":
+      return "Checking agent conversation...";
     default:
       return `Running ${tool}...`;
   }
