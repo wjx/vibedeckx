@@ -133,6 +133,15 @@ async function restartSessionApi(sessionId: string, agentType?: AgentType): Prom
   }
 }
 
+async function stopSessionApi(sessionId: string): Promise<void> {
+  const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/stop`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to stop session");
+  }
+}
+
 async function switchModeApi(sessionId: string, mode: "plan" | "edit"): Promise<void> {
   const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/switch-mode`, {
     method: "POST",
@@ -587,6 +596,19 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     [session?.id]
   );
 
+  // Stop session - sends stop signal to the running agent process
+  const stopSession = useCallback(async () => {
+    if (!session?.id) return;
+    try {
+      await stopSessionApi(session.id);
+      // Status update will come via WebSocket patches
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Failed to stop session";
+      console.error("[AgentSession] Failed to stop session:", e);
+      toast.error("Failed to stop session");
+    }
+  }, [session?.id]);
+
   // Restart session - clears conversation and respawns Claude Code process
   const restartSession = useCallback(async (agentType?: AgentType) => {
     if (!session?.id) return;
@@ -741,6 +763,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     remoteStatus,
     startSession,
     sendMessage,
+    stopSession,
     restartSession,
     switchMode,
     acceptPlan,

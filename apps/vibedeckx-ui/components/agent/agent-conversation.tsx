@@ -67,6 +67,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     remoteStatus,
     startSession,
     sendMessage,
+    stopSession,
     restartSession,
     switchMode,
     acceptPlan,
@@ -252,9 +253,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  // TODO: Implement stop
-                }}
+                onClick={() => stopSession()}
                 className="h-7 text-xs"
               >
                 <Square className="h-3 w-3 mr-1" />
