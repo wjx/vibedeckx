@@ -63,11 +63,11 @@ export function getWorktreeBranches(projectPath: string): Array<{ branch: string
   const entries = parseGitWorktreeList(projectPath);
   const worktrees: Array<{ branch: string | null }> = [{ branch: null }];
 
-  // The first entry is the main worktree (projectPath itself) — skip it.
+  // The first entry (index 0) is always the main worktree — skip it.
   // Add all other worktrees that have a branch name.
-  for (const entry of entries) {
-    if (entry.path !== projectPath && entry.branch) {
-      worktrees.push({ branch: entry.branch });
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i].branch) {
+      worktrees.push({ branch: entries[i].branch });
     }
   }
 
