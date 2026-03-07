@@ -46,6 +46,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     CREATE TABLE IF NOT EXISTS executor_processes (
       id TEXT PRIMARY KEY,
       executor_id TEXT NOT NULL,
+      pid INTEGER,
       status TEXT NOT NULL DEFAULT 'running',
       exit_code INTEGER,
       started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -202,6 +203,15 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
   if (!sessionInfo2.some(col => col.name === "agent_type")) {
     db.exec("ALTER TABLE agent_sessions ADD COLUMN agent_type TEXT DEFAULT 'claude-code'");
   }
+
+  // Migration: add pid column to executor_processes
+  const processTableInfo = db.prepare("PRAGMA table_info(executor_processes)").all() as { name: string }[];
+  if (!processTableInfo.some(col => col.name === "pid")) {
+    db.exec("ALTER TABLE executor_processes ADD COLUMN pid INTEGER");
+  }
+
+  // Clean up stale "running" processes from previous server instances
+  db.exec("UPDATE executor_processes SET status = 'killed', finished_at = CURRENT_TIMESTAMP WHERE status = 'running'");
 
   // Create agent_session_entries table for conversation persistence
   db.exec(`
@@ -496,10 +506,10 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     executorProcesses: {
-      create: ({ id, executor_id }) => {
+      create: ({ id, executor_id, pid }) => {
         db.prepare(
-          `INSERT INTO executor_processes (id, executor_id, status) VALUES (@id, @executor_id, 'running')`
-        ).run({ id, executor_id });
+          `INSERT INTO executor_processes (id, executor_id, pid, status) VALUES (@id, @executor_id, @pid, 'running')`
+        ).run({ id, executor_id, pid: pid ?? null });
 
         return db
           .prepare<{ id: string }, ExecutorProcess>(`SELECT * FROM executor_processes WHERE id = @id`)
@@ -523,6 +533,12 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         db.prepare(
           `UPDATE executor_processes SET status = @status, exit_code = @exit_code, finished_at = @finished_at WHERE id = @id`
         ).run({ id, status, exit_code: exitCode ?? null, finished_at: finishedAt });
+      },
+
+      updatePid: (id: string, pid: number) => {
+        db.prepare(
+          `UPDATE executor_processes SET pid = @pid WHERE id = @id`
+        ).run({ id, pid });
       },
     },
 

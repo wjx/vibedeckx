@@ -48,6 +48,7 @@ export type ExecutorProcessStatus = 'running' | 'completed' | 'failed' | 'killed
 export interface ExecutorProcess {
   id: string;
   executor_id: string;
+  pid: number | null;
   status: ExecutorProcessStatus;
   exit_code: number | null;
   started_at: string;
@@ -130,10 +131,11 @@ export interface Storage {
     reorder: (groupId: string, orderedIds: string[]) => void;
   };
   executorProcesses: {
-    create: (opts: { id: string; executor_id: string }) => ExecutorProcess;
+    create: (opts: { id: string; executor_id: string; pid?: number }) => ExecutorProcess;
     getById: (id: string) => ExecutorProcess | undefined;
     getRunning: () => ExecutorProcess[];
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
+    updatePid: (id: string, pid: number) => void;
   };
   agentSessions: {
     create: (opts: { id: string; project_id: string; branch: string; permission_mode?: string; agent_type?: string }) => AgentSession;

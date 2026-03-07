@@ -90,6 +90,19 @@ export class ProcessManager {
       this.startRegularProcess(processId, executor, cwd, skipDb);
     }
 
+    // Store PID in database for recovery after server restart
+    if (!skipDb) {
+      const runningProcess = this.processes.get(processId);
+      if (runningProcess) {
+        const pid = runningProcess.isPty
+          ? (runningProcess.process as IPty).pid
+          : (runningProcess.process as ChildProcess).pid;
+        if (pid) {
+          this.storage.executorProcesses.updatePid(processId, pid);
+        }
+      }
+    }
+
     this.eventBus?.emit({ type: "executor:started", projectId: executor.project_id, executorId: executor.id, processId });
 
     return processId;
@@ -332,25 +345,80 @@ export class ProcessManager {
   stop(processId: string): boolean {
     const runningProcess = this.processes.get(processId);
     if (!runningProcess) {
-      return false;
+      // Process not in memory (e.g., server was restarted) — try to kill by PID from DB
+      return this.stopByPid(processId);
     }
 
     let killed = false;
     if (runningProcess.isPty) {
-      // For PTY processes, use kill method
+      // For PTY processes, kill the process group to ensure all children are terminated
       const ptyProcess = runningProcess.process as IPty;
-      ptyProcess.kill();
-      killed = true;
+      const pid = ptyProcess.pid;
+      killed = this.killProcessGroup(pid);
+      if (!killed) {
+        // Fallback to node-pty's kill method
+        ptyProcess.kill();
+        killed = true;
+      }
     } else {
-      // For regular processes, use SIGTERM
+      // For regular processes, kill the process group
       const childProcess = runningProcess.process as ChildProcess;
-      killed = childProcess.kill("SIGTERM");
+      const pid = childProcess.pid;
+      if (pid) {
+        killed = this.killProcessGroup(pid);
+      }
+      if (!killed) {
+        killed = childProcess.kill("SIGTERM");
+      }
     }
 
     if (killed && !runningProcess.skipDb) {
       this.storage.executorProcesses.updateStatus(processId, "killed");
     }
 
+    return killed;
+  }
+
+  /**
+   * Kill a process group by sending SIGTERM to the negative PID
+   */
+  private killProcessGroup(pid: number): boolean {
+    try {
+      process.kill(-pid, "SIGTERM");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Try to stop a process by looking up its PID in the database (for orphaned processes after server restart)
+   */
+  private stopByPid(processId: string): boolean {
+    const dbProcess = this.storage.executorProcesses.getById(processId);
+    if (!dbProcess || !dbProcess.pid || dbProcess.status !== "running") {
+      return false;
+    }
+
+    console.log(`[ProcessManager] Process ${processId} not in memory, attempting to kill by PID ${dbProcess.pid}`);
+
+    let killed = false;
+    // Try process group kill first
+    try {
+      process.kill(-dbProcess.pid, "SIGTERM");
+      killed = true;
+    } catch {
+      // Process group kill failed, try direct kill
+      try {
+        process.kill(dbProcess.pid, "SIGTERM");
+        killed = true;
+      } catch {
+        // Process already dead
+        console.log(`[ProcessManager] PID ${dbProcess.pid} is already dead`);
+      }
+    }
+
+    this.storage.executorProcesses.updateStatus(processId, "killed");
     return killed;
   }
 
