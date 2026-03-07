@@ -259,6 +259,8 @@ export class ProcessManager {
     const childProcess = spawn(executor.command, {
       shell: true,
       cwd,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, FORCE_COLOR: "1" },
     });
 
@@ -362,14 +364,16 @@ export class ProcessManager {
         killed = true;
       }
     } else {
-      // For regular processes, kill the process group
+      // For regular processes, kill the process group (detached: true makes them group leaders)
       const childProcess = runningProcess.process as ChildProcess;
       const pid = childProcess.pid;
       if (pid) {
         killed = this.killProcessGroup(pid);
+        console.log(`[ProcessManager] Process group kill (pid=${pid}): ${killed}`);
       }
       if (!killed) {
         killed = childProcess.kill("SIGTERM");
+        console.log(`[ProcessManager] Direct SIGTERM kill (pid=${pid}): ${killed}`);
       }
     }
 
