@@ -263,6 +263,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
             console.log(`[WebSocket] Connected to remote process ${remoteInfo.remoteProcessId}`);
           });
 
+          // Ping/pong keepalive to prevent idle disconnections when browser tab is backgrounded
+          const pingInterval = setInterval(() => {
+            if (remoteWs.readyState === WebSocket.OPEN) {
+              remoteWs.ping();
+            }
+          }, 30000);
+
           remoteWs.on("message", (data) => {
             try {
               socket.send(data.toString());
@@ -283,17 +290,20 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
           remoteWs.on("close", () => {
             console.log(`[WebSocket] Remote connection closed for process ${processId}`);
+            clearInterval(pingInterval);
             socket.close();
           });
 
           remoteWs.on("error", (error) => {
             console.error(`[WebSocket] Remote connection error:`, error);
+            clearInterval(pingInterval);
             socket.send(JSON.stringify({ type: "error", message: "Remote connection error" }));
             socket.close();
           });
 
           socket.on("close", () => {
             console.log(`[WebSocket] Client disconnected from remote process ${processId}`);
+            clearInterval(pingInterval);
             remoteWs.close();
           });
 

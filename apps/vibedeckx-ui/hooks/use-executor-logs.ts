@@ -5,6 +5,10 @@ import { getWebSocketUrl, type LogMessage, type InputMessage } from "@/lib/api";
 
 export type ConnectionStatus = "connecting" | "connected" | "closed" | "error";
 
+const RECONNECT_MAX_ATTEMPTS = 8;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 15000;
+
 export interface UseExecutorLogsResult {
   logs: LogMessage[];
   status: ConnectionStatus;
@@ -22,6 +26,10 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
   const [isPty, setIsPty] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
   const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishedRef = useRef(false);
+  const unmountedRef = useRef(false);
 
   const clearLogs = useCallback(() => {
     setLogs([]);
@@ -57,61 +65,109 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
     setLogs([]);
     setExitCode(null);
     setIsPty(false);
-    setStatus("connecting");
+    finishedRef.current = false;
+    unmountedRef.current = false;
+    reconnectAttemptRef.current = 0;
 
-    const wsUrl = getWebSocketUrl(`/api/executor-processes/${processId}/logs`);
-    console.log(`[useExecutorLogs] Connecting to WebSocket: ${wsUrl}`);
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    function connect() {
+      if (unmountedRef.current || finishedRef.current) return;
 
-    ws.onopen = () => {
-      console.log(`[useExecutorLogs] WebSocket connected`);
-      setStatus("connected");
+      setStatus("connecting");
 
-      // Send any resize that was queued before the connection opened
-      if (pendingResizeRef.current) {
-        const { cols, rows } = pendingResizeRef.current;
-        const message: InputMessage = { type: "resize", cols, rows };
-        ws.send(JSON.stringify(message));
-        pendingResizeRef.current = null;
-      }
-    };
+      const wsUrl = getWebSocketUrl(`/api/executor-processes/${processId}/logs`);
+      console.log(`[useExecutorLogs] Connecting to WebSocket: ${wsUrl}`);
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      console.log(`[useExecutorLogs] Received message:`, event.data);
-      try {
-        const msg: LogMessage = JSON.parse(event.data);
+      ws.onopen = () => {
+        console.log(`[useExecutorLogs] WebSocket connected`);
+        setStatus("connected");
+        reconnectAttemptRef.current = 0;
 
-        if (msg.type === "init") {
-          setIsPty(msg.isPty);
-        } else if (msg.type === "finished") {
-          setExitCode(msg.exitCode);
-          setStatus("closed");
-        } else if (msg.type === "error") {
-          setStatus("error");
-        } else {
-          setLogs((prev) => [...prev, msg]);
+        // Send any resize that was queued before the connection opened
+        if (pendingResizeRef.current) {
+          const { cols, rows } = pendingResizeRef.current;
+          const message: InputMessage = { type: "resize", cols, rows };
+          ws.send(JSON.stringify(message));
+          pendingResizeRef.current = null;
         }
-      } catch (error) {
-        console.error("Failed to parse WebSocket message:", error);
-      }
-    };
+      };
 
-    ws.onerror = (error) => {
-      console.error(`[useExecutorLogs] WebSocket error:`, error);
-      setStatus("error");
-    };
+      ws.onmessage = (event) => {
+        try {
+          const msg: LogMessage = JSON.parse(event.data);
 
-    ws.onclose = (event) => {
-      console.log(`[useExecutorLogs] WebSocket closed:`, event.code, event.reason);
-      if (status !== "error") {
-        setStatus("closed");
-      }
-    };
+          if (msg.type === "init") {
+            setIsPty(msg.isPty);
+          } else if (msg.type === "finished") {
+            finishedRef.current = true;
+            setExitCode(msg.exitCode);
+            setStatus("closed");
+          } else if (msg.type === "error") {
+            setStatus("error");
+          } else {
+            setLogs((prev) => [...prev, msg]);
+          }
+        } catch (error) {
+          console.error("Failed to parse WebSocket message:", error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error(`[useExecutorLogs] WebSocket error:`, error);
+      };
+
+      ws.onclose = (event) => {
+        console.log(`[useExecutorLogs] WebSocket closed:`, event.code, event.reason);
+        wsRef.current = null;
+
+        // Don't reconnect if the process finished normally, component unmounted,
+        // or this is a local process (reconnection only helps remote terminals
+        // where the process survives independently)
+        if (finishedRef.current || unmountedRef.current || !processId?.startsWith("remote-")) {
+          setStatus("closed");
+          return;
+        }
+
+        // Attempt reconnection for remote terminals
+        if (reconnectAttemptRef.current < RECONNECT_MAX_ATTEMPTS) {
+          const attempt = reconnectAttemptRef.current;
+          const delay = Math.min(
+            RECONNECT_MAX_DELAY_MS,
+            RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt)
+          );
+          const jitter = delay * Math.random() * 0.25;
+          const totalDelay = delay + jitter;
+
+          console.log(
+            `[useExecutorLogs] Scheduling reconnect in ${Math.round(totalDelay)}ms (attempt ${attempt + 1}/${RECONNECT_MAX_ATTEMPTS})`
+          );
+          setStatus("connecting");
+          reconnectAttemptRef.current = attempt + 1;
+
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            connect();
+          }, totalDelay);
+        } else {
+          console.log(`[useExecutorLogs] Max reconnect attempts reached`);
+          setStatus("error");
+        }
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      unmountedRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [processId]);
 
