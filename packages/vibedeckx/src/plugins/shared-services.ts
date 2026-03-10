@@ -22,9 +22,9 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   agentSessionManager.restoreSessionsFromDb();
   const remoteExecutorMap = new Map<string, RemoteExecutorInfo>();
   const remoteSessionMap = new Map<string, RemoteSessionInfo>();
-  const chatSessionManager = new ChatSessionManager(opts.storage, processManager, agentSessionManager, remoteSessionMap);
-  const eventBus = new EventBus();
   const remotePatchCache = new RemotePatchCache();
+  const chatSessionManager = new ChatSessionManager(opts.storage, processManager, agentSessionManager, remoteSessionMap, remotePatchCache);
+  const eventBus = new EventBus();
 
   // Initialize proxy manager from stored settings
   const proxyManager = new ProxyManager();

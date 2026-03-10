@@ -20,6 +20,7 @@ import type { AgentSessionManager } from "./agent-session-manager.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
 import { proxyToRemote } from "./utils/remote-proxy.js";
 import type { RemoteSessionInfo } from "./server-types.js";
+import type { RemotePatchCache } from "./remote-patch-cache.js";
 
 // ============ Types ============
 
@@ -67,6 +68,7 @@ export class ChatSessionManager {
   private processManager: ProcessManager;
   private agentSessionManager: AgentSessionManager;
   private remoteSessionMap: Map<string, RemoteSessionInfo>;
+  private remotePatchCache: RemotePatchCache;
 
   private deepseek = createDeepSeek({
     apiKey: process.env.DEEPSEEK_API_KEY ?? "",
@@ -77,11 +79,13 @@ export class ChatSessionManager {
     processManager: ProcessManager,
     agentSessionManager: AgentSessionManager,
     remoteSessionMap: Map<string, RemoteSessionInfo>,
+    remotePatchCache: RemotePatchCache,
   ) {
     this.storage = storage;
     this.processManager = processManager;
     this.agentSessionManager = agentSessionManager;
     this.remoteSessionMap = remoteSessionMap;
+    this.remotePatchCache = remotePatchCache;
   }
 
   private findRemoteSessionForProject(projectId: string): { localSessionId: string; info: RemoteSessionInfo } | null {
@@ -92,6 +96,39 @@ export class ChatSessionManager {
       }
     }
     return null;
+  }
+
+  /**
+   * Extract AgentMessage[] from the local remotePatchCache for a given session.
+   * Parses cached WS messages and collects ENTRY patch values into an ordered array.
+   */
+  private extractMessagesFromCache(sessionId: string): AgentMessage[] {
+    const cacheEntry = this.remotePatchCache.get(sessionId);
+    if (!cacheEntry || cacheEntry.messages.length === 0) return [];
+
+    const result: AgentMessage[] = [];
+
+    for (const raw of cacheEntry.messages) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed.JsonPatch || !Array.isArray(parsed.JsonPatch)) continue;
+
+        for (const op of parsed.JsonPatch) {
+          if ((op.op === "add" || op.op === "replace") && op.value?.type === "ENTRY" && op.value.content) {
+            const match = op.path?.match(/^\/entries\/(\d+)$/);
+            if (match) {
+              const index = parseInt(match[1], 10);
+              result[index] = op.value.content as AgentMessage;
+            }
+          }
+        }
+      } catch {
+        // Skip unparseable messages
+      }
+    }
+
+    // Filter out sparse array holes
+    return result.filter(Boolean);
   }
 
   private summarizeMessages(messages: AgentMessage[]) {
@@ -269,7 +306,13 @@ export class ChatSessionManager {
               );
               if (result.ok) {
                 const data = result.data as { session: { status: string }; messages: AgentMessage[] };
-                const allMessages = data.messages ?? [];
+                let allMessages = data.messages ?? [];
+
+                // Fallback: if remote returned no messages, extract from local cache
+                if (allMessages.length === 0) {
+                  allMessages = this.extractMessagesFromCache(remote.localSessionId);
+                }
+
                 const recent = allMessages.slice(-tailMessages);
                 remoteResult = {
                   sessionId: remote.localSessionId,
@@ -279,9 +322,29 @@ export class ChatSessionManager {
                 };
               } else {
                 console.error(`[ChatSession] getAgentConversation: remote proxy failed status=${result.status}`);
+                // Try local cache even if remote returned non-ok status
+                const cachedMessages = this.extractMessagesFromCache(remote.localSessionId);
+                if (cachedMessages.length > 0) {
+                  remoteResult = {
+                    sessionId: remote.localSessionId,
+                    status: "running",
+                    totalMessages: cachedMessages.length,
+                    messages: this.summarizeMessages(cachedMessages.slice(-tailMessages)),
+                  };
+                }
               }
             } catch (err) {
               console.error(`[ChatSession] getAgentConversation: remote proxy error:`, err);
+              // Try local cache even if remote is unreachable
+              const cachedMessages = this.extractMessagesFromCache(remote.localSessionId);
+              if (cachedMessages.length > 0) {
+                remoteResult = {
+                  sessionId: remote.localSessionId,
+                  status: "running",
+                  totalMessages: cachedMessages.length,
+                  messages: this.summarizeMessages(cachedMessages.slice(-tailMessages)),
+                };
+              }
             }
           }
 
