@@ -92,6 +92,13 @@ function connectPersistentRemoteWs(
     remoteWs.once("close", () => clearTimeout(stabilityTimer));
   });
 
+  // Ping/pong keepalive to prevent idle disconnections (e.g. Cloudflare 100s timeout)
+  const pingInterval = setInterval(() => {
+    if (remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.ping();
+    }
+  }, 30000);
+
   if (!hasCachedData) {
     // First connection ever — stream directly in live mode
     remoteWs.on("message", handleLiveMessage);
@@ -170,11 +177,13 @@ function connectPersistentRemoteWs(
 
   remoteWs.on("error", (error) => {
     console.error(`[AgentWS] Persistent remote WS error for ${sessionId}:`, error);
+    clearInterval(pingInterval);
     // "close" event fires next and handles reconnection
   });
 
   remoteWs.on("close", () => {
     console.log(`[AgentWS] Persistent remote WS closed for ${sessionId}`);
+    clearInterval(pingInterval);
     cache.setRemoteWs(sessionId, null);
 
     // Don't reconnect if session is finished or cache entry was deleted

@@ -748,6 +748,28 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     }
   }, [projectId, session, isLoading, startSession]);
 
+  // Reconnect when tab becomes visible again (browser may suspend timers when backgrounded)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && session?.id && !finishedRef.current) {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          console.log("[AgentSession] Tab visible, WebSocket disconnected - reconnecting");
+          reconnectAttemptRef.current = 0;
+          shortLivedConnectionsRef.current = 0;
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          connectWebSocket(session.id);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [session?.id, connectWebSocket]);
+
   // Reconnect when session changes
   useEffect(() => {
     if (session?.id && !isConnected && !finishedRef.current) {
