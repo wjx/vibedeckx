@@ -105,7 +105,7 @@ export function AppSidebar({
         <TooltipProvider delayDuration={300}>
           <div className="flex flex-col gap-0.5">
             {worktrees.map((wt) => (
-              <div key={wt.branch ?? "__main__"} className="group relative flex items-center">
+              <div key={wt.branch ?? "__main__"} className="group relative flex items-center min-w-0">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -114,7 +114,7 @@ export function AppSidebar({
                         onViewChange("workspace");
                       }}
                       className={cn(
-                        "flex-1 flex items-center gap-1.5 rounded-md pl-7 pr-6 py-1.5 text-xs transition-colors",
+                        "flex-1 min-w-0 flex items-center gap-1.5 rounded-md pl-7 pr-6 py-1.5 text-xs transition-colors overflow-hidden",
                         "hover:bg-accent hover:text-accent-foreground",
                         activeView === "workspace" && selectedBranch === wt.branch
                           ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/20"
