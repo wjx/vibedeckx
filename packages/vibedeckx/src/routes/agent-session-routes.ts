@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AgentType } from "../agent-types.js";
+import type { AgentMessage, AgentType } from "../agent-types.js";
+import { ConversationPatch } from "../conversation-patch.js";
 import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
 import "../server-types.js";
@@ -151,6 +152,17 @@ const routes: FastifyPluginAsync = async (fastify) => {
             remoteApiKey: project.remote_api_key!,
             remoteSessionId: remoteData.session.id,
           });
+
+          // Seed remotePatchCache with REST messages so WS replay has data immediately
+          if (remoteData.messages && remoteData.messages.length > 0) {
+            const cacheEntry = fastify.remotePatchCache.getOrCreate(localSessionId);
+            if (cacheEntry.messages.length === 0) {
+              for (let i = 0; i < remoteData.messages.length; i++) {
+                const patch = ConversationPatch.addEntry(i, remoteData.messages[i] as AgentMessage);
+                fastify.remotePatchCache.appendMessage(localSessionId, JSON.stringify({ JsonPatch: patch }), true);
+              }
+            }
+          }
 
           return reply.code(200).send({
             session: {

@@ -317,8 +317,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       return;
     }
 
-    // Reset state for new connection
-    containerRef.current = { entries: [], status: "running" };
+    // Only reset container if it has no existing data (preserve REST-provided messages)
+    if (containerRef.current.entries.filter(Boolean).length === 0) {
+      containerRef.current = { entries: [], status: "running" };
+    }
     finishedRef.current = false;
     isReplayingRef.current = true; // Buffer patches until Ready signal
 
@@ -550,6 +552,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       // (WebSocket replay will update containerRef in the background and flush on Ready)
       if (initialMessages && initialMessages.length > 0) {
         setMessages(initialMessages);
+        containerRef.current = { entries: [...initialMessages], status: newSession.status };
       }
 
       // Connect WebSocket - it will receive history via patches
