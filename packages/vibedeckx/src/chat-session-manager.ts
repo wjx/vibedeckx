@@ -104,6 +104,7 @@ export class ChatSessionManager {
    */
   private extractMessagesFromCache(sessionId: string): AgentMessage[] {
     const cacheEntry = this.remotePatchCache.get(sessionId);
+    console.log(`[ChatSession] extractMessagesFromCache: sessionId=${sessionId}, cacheExists=${!!cacheEntry}, cachedMsgCount=${cacheEntry?.messages.length ?? 0}, patchCount=${cacheEntry?.patchCount ?? 0}`);
     if (!cacheEntry || cacheEntry.messages.length === 0) return [];
 
     const result: AgentMessage[] = [];
@@ -127,8 +128,9 @@ export class ChatSessionManager {
       }
     }
 
-    // Filter out sparse array holes
-    return result.filter(Boolean);
+    const filtered = result.filter(Boolean);
+    console.log(`[ChatSession] extractMessagesFromCache: extracted ${filtered.length} messages from ${cacheEntry.messages.length} cached raw messages`);
+    return filtered;
   }
 
   private summarizeMessages(messages: AgentMessage[]) {
@@ -296,6 +298,7 @@ export class ChatSessionManager {
           // Collect remote session
           let remoteResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[] } | null = null;
           const remote = this.findRemoteSessionForProject(projectId);
+          console.log(`[ChatSession] getAgentConversation: projectId=${projectId}, remote=${remote ? remote.localSessionId : "null"}`);
           if (remote) {
             try {
               const result = await proxyToRemote(
@@ -304,9 +307,11 @@ export class ChatSessionManager {
                 "GET",
                 `/api/agent-sessions/${remote.info.remoteSessionId}`,
               );
+              console.log(`[ChatSession] getAgentConversation: remote proxy result ok=${result.ok}, status=${result.status}`);
               if (result.ok) {
                 const data = result.data as { session: { status: string }; messages: AgentMessage[] };
                 let allMessages = data.messages ?? [];
+                console.log(`[ChatSession] getAgentConversation: remote returned ${allMessages.length} messages, session.status=${data.session?.status}`);
 
                 // Fallback: if remote returned no messages, extract from local cache
                 if (allMessages.length === 0) {
