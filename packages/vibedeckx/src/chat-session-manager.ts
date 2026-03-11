@@ -104,15 +104,26 @@ export class ChatSessionManager {
    */
   private extractMessagesFromCache(sessionId: string): AgentMessage[] {
     const cacheEntry = this.remotePatchCache.get(sessionId);
-    console.log(`[ChatSession] extractMessagesFromCache: sessionId=${sessionId}, cacheExists=${!!cacheEntry}, cachedMsgCount=${cacheEntry?.messages.length ?? 0}, patchCount=${cacheEntry?.patchCount ?? 0}`);
+    console.log(`[ChatSession] extractMessagesFromCache: sessionId=${sessionId}, cacheExists=${!!cacheEntry}, cachedMsgCount=${cacheEntry?.messages.length ?? 0}, patchCount=${cacheEntry?.patchCount ?? 0}, finished=${cacheEntry?.finished ?? "N/A"}, remoteWsState=${cacheEntry?.remoteWs?.readyState ?? "null"}, subscribers=${cacheEntry?.subscribers.size ?? 0}`);
     if (!cacheEntry || cacheEntry.messages.length === 0) return [];
 
     const result: AgentMessage[] = [];
+    // Track patch types for diagnostics
+    let entryCount = 0;
+    let statusCount = 0;
+    let readyCount = 0;
+    let finishedCount = 0;
+    let otherCount = 0;
+    let nonJsonPatchCount = 0;
+    let parseErrorCount = 0;
 
     for (const raw of cacheEntry.messages) {
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed.JsonPatch || !Array.isArray(parsed.JsonPatch)) continue;
+        if (!parsed.JsonPatch || !Array.isArray(parsed.JsonPatch)) {
+          nonJsonPatchCount++;
+          continue;
+        }
 
         for (const op of parsed.JsonPatch) {
           if ((op.op === "add" || op.op === "replace") && op.value?.type === "ENTRY" && op.value.content) {
@@ -120,16 +131,25 @@ export class ChatSessionManager {
             if (match) {
               const index = parseInt(match[1], 10);
               result[index] = op.value.content as AgentMessage;
+              entryCount++;
             }
+          } else if (op.path === "/status") {
+            statusCount++;
+          } else if (op.value?.type === "READY") {
+            readyCount++;
+          } else if (op.value?.type === "FINISHED") {
+            finishedCount++;
+          } else {
+            otherCount++;
           }
         }
       } catch {
-        // Skip unparseable messages
+        parseErrorCount++;
       }
     }
 
     const filtered = result.filter(Boolean);
-    console.log(`[ChatSession] extractMessagesFromCache: extracted ${filtered.length} messages from ${cacheEntry.messages.length} cached raw messages`);
+    console.log(`[ChatSession] extractMessagesFromCache: extracted ${filtered.length} messages from ${cacheEntry.messages.length} cached raw messages. Patch breakdown: entry=${entryCount}, status=${statusCount}, ready=${readyCount}, finished=${finishedCount}, other=${otherCount}, nonJsonPatch=${nonJsonPatchCount}, parseErrors=${parseErrorCount}`);
     return filtered;
   }
 
@@ -321,10 +341,17 @@ export class ChatSessionManager {
                 // If session is running but still no messages, poll cache briefly
                 // to allow time for ENTRY patches to arrive via WebSocket
                 if (allMessages.length === 0 && data.session?.status === "running") {
+                  const cacheState = this.remotePatchCache.get(remote.localSessionId);
+                  console.log(`[ChatSession] getAgentConversation: 0 messages for running session, starting retry. Cache state: wsState=${cacheState?.remoteWs?.readyState ?? "null"}, cachedMsgs=${cacheState?.messages.length ?? 0}, patchCount=${cacheState?.patchCount ?? 0}, finished=${cacheState?.finished ?? "N/A"}, reconnecting=${cacheState?.reconnecting ?? "N/A"}`);
                   for (let attempt = 0; attempt < 3; attempt++) {
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     allMessages = this.extractMessagesFromCache(remote.localSessionId);
+                    console.log(`[ChatSession] getAgentConversation: retry attempt ${attempt + 1}/3, extracted ${allMessages.length} messages`);
                     if (allMessages.length > 0) break;
+                  }
+                  if (allMessages.length === 0) {
+                    const finalCache = this.remotePatchCache.get(remote.localSessionId);
+                    console.log(`[ChatSession] getAgentConversation: all retries exhausted, still 0 messages. Final cache: wsState=${finalCache?.remoteWs?.readyState ?? "null"}, cachedMsgs=${finalCache?.messages.length ?? 0}, patchCount=${finalCache?.patchCount ?? 0}`);
                   }
                 }
 
