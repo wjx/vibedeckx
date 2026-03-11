@@ -18,6 +18,7 @@ export interface RemoteSessionInfo {
   remoteUrl: string;
   remoteApiKey: string;
   remoteSessionId: string;
+  branch?: string | null;
 }
 
 declare module "fastify" {

@@ -151,6 +151,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
             remoteUrl: project.remote_url!,
             remoteApiKey: project.remote_api_key!,
             remoteSessionId: remoteData.session.id,
+            branch: branch ?? null,
           });
 
           // Seed remotePatchCache with REST messages so WS replay has data immediately

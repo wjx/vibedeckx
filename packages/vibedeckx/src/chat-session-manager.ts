@@ -88,14 +88,27 @@ export class ChatSessionManager {
     this.remotePatchCache = remotePatchCache;
   }
 
-  private findRemoteSessionForProject(projectId: string): { localSessionId: string; info: RemoteSessionInfo } | null {
+  private findRemoteSessionForProject(projectId: string, branch?: string | null): { localSessionId: string; info: RemoteSessionInfo } | null {
     const prefix = `remote-${projectId}-`;
+    let fallback: { localSessionId: string; info: RemoteSessionInfo } | null = null;
+
     for (const [key, info] of this.remoteSessionMap) {
       if (key.startsWith(prefix)) {
-        return { localSessionId: key, info };
+        // Exact branch match
+        if (info.branch === (branch ?? null)) {
+          return { localSessionId: key, info };
+        }
+        // Keep first match as fallback in case no branch match
+        if (!fallback) {
+          fallback = { localSessionId: key, info };
+        }
       }
     }
-    return null;
+
+    if (fallback) {
+      console.log(`[ChatSession] findRemoteSessionForProject: no exact branch match for branch=${branch ?? "null"}, using fallback session=${fallback.localSessionId} (branch=${fallback.info.branch ?? "null"})`);
+    }
+    return fallback;
   }
 
   /**
@@ -317,8 +330,8 @@ export class ChatSessionManager {
 
           // Collect remote session
           let remoteResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[]; note?: string } | null = null;
-          const remote = this.findRemoteSessionForProject(projectId);
-          console.log(`[ChatSession] getAgentConversation: projectId=${projectId}, remote=${remote ? remote.localSessionId : "null"}`);
+          const remote = this.findRemoteSessionForProject(projectId, branch);
+          console.log(`[ChatSession] getAgentConversation: projectId=${projectId}, branch=${branch ?? "null"}, remote=${remote ? remote.localSessionId : "null"}, remoteBranch=${remote?.info.branch ?? "null"}`);
           if (remote) {
             try {
               const result = await proxyToRemote(
