@@ -296,7 +296,7 @@ export class ChatSessionManager {
           }
 
           // Collect remote session
-          let remoteResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[] } | null = null;
+          let remoteResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[]; note?: string } | null = null;
           const remote = this.findRemoteSessionForProject(projectId);
           console.log(`[ChatSession] getAgentConversation: projectId=${projectId}, remote=${remote ? remote.localSessionId : "null"}`);
           if (remote) {
@@ -318,12 +318,25 @@ export class ChatSessionManager {
                   allMessages = this.extractMessagesFromCache(remote.localSessionId);
                 }
 
+                // If session is running but still no messages, poll cache briefly
+                // to allow time for ENTRY patches to arrive via WebSocket
+                if (allMessages.length === 0 && data.session?.status === "running") {
+                  for (let attempt = 0; attempt < 3; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    allMessages = this.extractMessagesFromCache(remote.localSessionId);
+                    if (allMessages.length > 0) break;
+                  }
+                }
+
                 const recent = allMessages.slice(-tailMessages);
                 remoteResult = {
                   sessionId: remote.localSessionId,
                   status: data.session?.status ?? "unknown",
                   totalMessages: allMessages.length,
                   messages: this.summarizeMessages(recent),
+                  ...(allMessages.length === 0 && data.session?.status === "running"
+                    ? { note: "Session just started, agent is still initializing. Try again in a few seconds." }
+                    : {}),
                 };
               } else {
                 console.error(`[ChatSession] getAgentConversation: remote proxy failed status=${result.status}`);
