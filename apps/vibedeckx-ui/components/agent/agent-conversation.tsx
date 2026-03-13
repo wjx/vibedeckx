@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
-import type { AgentMessage } from "@/hooks/use-agent-session";
+import type { AgentMessage, ContentPart } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,17 @@ import {
   PromptInput,
   PromptInputTextarea,
   PromptInputSubmit,
+  PromptInputAttachments,
+  PromptInputAttachment,
+  PromptInputActionMenu,
+  PromptInputActionMenuTrigger,
+  PromptInputActionMenuContent,
+  PromptInputActionAddAttachments,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputHeader,
 } from "@/components/ai-elements/prompt-input";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
 import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
 import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
@@ -19,7 +29,7 @@ import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib
 import { getAgentProviders } from "@/lib/api";
 
 interface AgentConversationContextValue {
-  sendMessage: (content: string, sessionId?: string) => Promise<void>;
+  sendMessage: (content: string | ContentPart[], sessionId?: string) => Promise<void>;
   messages: AgentMessage[];
   acceptPlan: (planContent: string) => Promise<void>;
   permissionMode: "plan" | "edit";
@@ -131,18 +141,38 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     }
   }), [session, status, startSession, sendMessage, permissionMode]);
 
-  const handleSubmit = async () => {
-    if (!input.trim()) return;
+  const handleSubmit = async (message: PromptInputMessage) => {
+    const text = message.text.trim();
+    const hasFiles = message.files.length > 0;
+    if (!text && !hasFiles) return;
 
-    const content = input.trim();
     setInput("");
 
+    // Build content: plain string when no files, ContentPart[] when files are attached
+    let content: string | ContentPart[];
+    if (!hasFiles) {
+      content = text;
+    } else {
+      const parts: ContentPart[] = [];
+      if (text) {
+        parts.push({ type: "text", text });
+      }
+      for (const file of message.files) {
+        if (file.mediaType && file.url) {
+          // Extract base64 data from data URL (format: "data:mediaType;base64,DATA")
+          const base64Match = file.url.match(/^data:[^;]+;base64,(.+)$/);
+          if (base64Match) {
+            parts.push({ type: "image", mediaType: file.mediaType, data: base64Match[1] });
+          }
+        }
+      }
+      content = parts;
+    }
+
     if (!session || status !== "running") {
-      // Start session with first message, passing current permission mode
-      onStatusChange?.();  // Immediate visual feedback before async session start
+      onStatusChange?.();
       const newSession = await startSession(permissionMode);
       if (newSession) {
-        // Use returned session ID directly to avoid React state timing issues
         sendMessage(content, newSession.id);
       }
     } else {
@@ -316,9 +346,15 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       {/* Input area */}
       <div className="flex-shrink-0 border-t p-4">
         <PromptInput
-          onSubmit={() => handleSubmit()}
+          onSubmit={handleSubmit}
+          accept="image/*"
           className="w-full"
         >
+          <PromptInputHeader>
+            <PromptInputAttachments>
+              {(attachment) => <PromptInputAttachment data={attachment} />}
+            </PromptInputAttachments>
+          </PromptInputHeader>
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -327,19 +363,21 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 ? "Ask the agent to help with your code..."
                 : "Type your first message to start..."
             }
-            className="pr-12"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
           />
-          <PromptInputSubmit
-            className="absolute bottom-1 right-1"
-            disabled={!input.trim()}
-            status={isLoading ? "streaming" : "ready"}
-          />
+          <PromptInputFooter>
+            <PromptInputTools>
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger />
+                <PromptInputActionMenuContent>
+                  <PromptInputActionAddAttachments label="Add images" />
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+            </PromptInputTools>
+            <PromptInputSubmit
+              disabled={!input.trim() && !isLoading}
+              status={isLoading ? "streaming" : "ready"}
+            />
+          </PromptInputFooter>
         </PromptInput>
       </div>
     </div>

@@ -6,10 +6,16 @@ import { toast } from "sonner";
 import { getWebSocketUrl } from "@/lib/api";
 import type { AgentType } from "@/lib/api";
 
+// ============ Content Part Types (for image attachments) ============
+
+export type TextPart = { type: "text"; text: string };
+export type ImagePart = { type: "image"; mediaType: string; data: string }; // base64
+export type ContentPart = TextPart | ImagePart;
+
 // ============ Types ============
 
 export type AgentMessage =
-  | { type: "user"; content: string; timestamp: number }
+  | { type: "user"; content: string | ContentPart[]; timestamp: number }
   | { type: "assistant"; content: string; partial?: boolean; timestamp: number }
   | { type: "tool_use"; tool: string; input: unknown; toolUseId?: string; timestamp: number }
   | { type: "tool_result"; tool: string; output: string; toolUseId?: string; timestamp: number }
@@ -97,7 +103,7 @@ async function createOrGetSession(
   return response.json();
 }
 
-async function sendMessageToSession(sessionId: string, content: string): Promise<void> {
+async function sendMessageToSession(sessionId: string, content: string | ContentPart[]): Promise<void> {
   const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -582,13 +588,17 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
   // Send user message - optionally accepts sessionId for immediate use after session creation
   const sendMessage = useCallback(
-    async (content: string, sessionId?: string) => {
+    async (content: string | ContentPart[], sessionId?: string) => {
       const targetSessionId = sessionId || session?.id;
-      if (!targetSessionId || !content.trim()) return;
+      if (!targetSessionId) return;
+      // Validate: non-empty string or non-empty array
+      if (typeof content === "string" && !content.trim()) return;
+      if (Array.isArray(content) && content.length === 0) return;
 
       try {
         // Send via REST API (more reliable than WebSocket for important actions)
-        await sendMessageToSession(targetSessionId, content.trim());
+        const trimmed = typeof content === "string" ? content.trim() : content;
+        await sendMessageToSession(targetSessionId, trimmed);
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : "Failed to send message";
         console.error("[AgentSession] Failed to send message:", errorMsg);

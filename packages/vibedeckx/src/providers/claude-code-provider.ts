@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import type { AgentType } from "../agent-types.js";
+import type { AgentType, ContentPart } from "../agent-types.js";
 import type { ClaudeOutputMessage, ClaudeContentBlock } from "../agent-types.js";
 import type { AgentProvider, SpawnConfig, ParsedAgentEvent } from "../agent-provider.js";
 
@@ -125,8 +125,18 @@ export class ClaudeCodeProvider implements AgentProvider {
     return [];
   }
 
-  formatUserInput(content: string, _sessionId: string): string {
-    return JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
+  formatUserInput(content: string | ContentPart[], _sessionId: string): string {
+    if (typeof content === "string") {
+      return JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
+    }
+    // Map ContentPart[] to Claude's content block format
+    const blocks = content.map((part) => {
+      if (part.type === "text") {
+        return { type: "text", text: part.text };
+      }
+      return { type: "image", source: { type: "base64", media_type: part.mediaType, data: part.data } };
+    });
+    return JSON.stringify({ type: "user", message: { role: "user", content: blocks } }) + "\n";
   }
 
   // Lifecycle hooks are no-ops for Claude (stateless per-session)

@@ -599,7 +599,7 @@ export class ChatSessionManager {
       )
       .map((e) => ({
         role: e.type as "user" | "assistant",
-        content: e.content,
+        content: typeof e.content === "string" ? e.content : e.content.filter(p => p.type === "text").map(p => (p as { text: string }).text).join("\n"),
       }));
 
     // 4. Stream response

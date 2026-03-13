@@ -517,7 +517,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
           try {
             const message = JSON.parse(data.toString()) as AgentWsInput;
             if (message.type === "user_message") {
-              fastify.chatSessionManager.sendMessage(sessionId, message.content);
+              // Chat sessions only accept string content
+              const chatContent = typeof message.content === "string" ? message.content : message.content.filter(p => p.type === "text").map(p => p.text).join("\n");
+              fastify.chatSessionManager.sendMessage(sessionId, chatContent);
             }
           } catch (error) {
             console.error("[ChatWS] Failed to parse message:", error);

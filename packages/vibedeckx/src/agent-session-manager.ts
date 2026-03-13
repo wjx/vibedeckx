@@ -7,6 +7,7 @@ import type {
   AgentMessage,
   AgentSessionStatus,
   AgentType,
+  ContentPart,
 } from "./agent-types.js";
 import { getProvider } from "./providers/index.js";
 import type { ParsedAgentEvent } from "./agent-provider.js";
@@ -561,7 +562,7 @@ export class AgentSessionManager {
   /**
    * Send a user message to the agent
    */
-  sendUserMessage(sessionId: string, content: string, projectPath?: string): boolean {
+  sendUserMessage(sessionId: string, content: string | ContentPart[], projectPath?: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
 
@@ -895,9 +896,13 @@ export class AgentSessionManager {
       if (!entry) continue;
 
       switch (entry.type) {
-        case "user":
-          lines.push(`User: ${entry.content}`);
+        case "user": {
+          const text = typeof entry.content === "string"
+            ? entry.content
+            : entry.content.filter(p => p.type === "text").map(p => (p as { text: string }).text).join("\n");
+          lines.push(`User: ${text}`);
           break;
+        }
         case "assistant":
           lines.push(`Assistant: ${entry.content}`);
           break;
@@ -932,7 +937,7 @@ export class AgentSessionManager {
   /**
    * Wake a dormant session: spawn process, send full context + user message
    */
-  private wakeDormantSession(session: RunningSession, projectPath: string, userMessage: string): void {
+  private wakeDormantSession(session: RunningSession, projectPath: string, userMessage: string | ContentPart[]): void {
     console.log(`[AgentSession] Waking dormant session ${session.id}`);
 
     session.dormant = false;

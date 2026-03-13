@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles, FilePlus2, Globe2, ShieldAlert } from "lucide-react";
-import type { AgentMessage } from "@/hooks/use-agent-session";
+import type { AgentMessage, ContentPart } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { useAgentConversation } from "./agent-conversation";
 import { AskUserQuestion } from "./ask-user-question";
@@ -89,7 +89,7 @@ export function AgentMessageItem({ message, messageIndex }: AgentMessageProps) {
   }
 }
 
-function UserMessage({ content }: { content: string }) {
+function UserMessage({ content }: { content: string | ContentPart[] }) {
   return (
     <div className="flex gap-3 py-4">
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -98,7 +98,22 @@ function UserMessage({ content }: { content: string }) {
       <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-foreground mb-1">You</p>
         <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
-          <MessageResponse>{content ?? ""}</MessageResponse>
+          {typeof content === "string" ? (
+            <MessageResponse>{content ?? ""}</MessageResponse>
+          ) : (
+            content.map((part, i) =>
+              part.type === "text" ? (
+                <MessageResponse key={i}>{part.text}</MessageResponse>
+              ) : (
+                <img
+                  key={i}
+                  src={`data:${part.mediaType};base64,${part.data}`}
+                  alt="Attached image"
+                  className="max-w-sm rounded-lg mt-2"
+                />
+              )
+            )
+          )}
         </div>
       </div>
     </div>

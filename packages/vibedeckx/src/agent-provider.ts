@@ -6,7 +6,7 @@
  * stdout parsing, and stdin formatting.
  */
 
-import type { AgentType } from "./agent-types.js";
+import type { AgentType, ContentPart } from "./agent-types.js";
 export type { AgentType };
 
 // ============ SpawnConfig (task 1.3) ============
@@ -45,7 +45,7 @@ export interface AgentProvider {
   parseStdoutLine(line: string, sessionId: string): ParsedAgentEvent[];
 
   /** Format user input for writing to the agent's stdin. */
-  formatUserInput(content: string, sessionId: string): string;
+  formatUserInput(content: string | ContentPart[], sessionId: string): string;
 
   /** Format an approval response (optional — only needed for agents with approval flow). */
   formatApprovalResponse?(requestId: string, decision: string, sessionId: string): string;

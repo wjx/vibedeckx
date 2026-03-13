@@ -6,10 +6,16 @@
 
 export type AgentType = "claude-code" | "codex";
 
+// ============ Content Part Types (for image attachments) ============
+
+export type TextPart = { type: "text"; text: string };
+export type ImagePart = { type: "image"; mediaType: string; data: string }; // base64
+export type ContentPart = TextPart | ImagePart;
+
 // ============ Agent Message Types ============
 
 export type AgentMessage =
-  | { type: 'user'; content: string; timestamp: number }
+  | { type: 'user'; content: string | ContentPart[]; timestamp: number }
   | { type: 'assistant'; content: string; partial?: boolean; timestamp: number }
   | { type: 'tool_use'; tool: string; input: unknown; toolUseId?: string; timestamp: number }
   | { type: 'tool_result'; tool: string; output: string; toolUseId?: string; timestamp: number }
@@ -81,13 +87,15 @@ export type ClaudeContentBlock =
   | { type: 'tool_result'; tool_use_id: string; content: string | unknown }
   | { type: 'thinking'; thinking: string };
 
+export type ClaudeImageBlock = { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+
 // ============ Messages to Claude Code stdin ============
 
 export interface ClaudeUserInput {
   type: 'user';
   message: {
     role: 'user';
-    content: string;
+    content: string | (ClaudeContentBlock | ClaudeImageBlock)[];
   };
 }
 
@@ -111,5 +119,5 @@ export type { AgentWsMessage, Patch, PatchEntry, PatchValue } from './conversati
 
 export interface AgentWsInput {
   type: 'user_message';
-  content: string;
+  content: string | ContentPart[];
 }

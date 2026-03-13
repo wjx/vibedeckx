@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AgentMessage, AgentType } from "../agent-types.js";
+import type { AgentMessage, AgentType, ContentPart } from "../agent-types.js";
 import { ConversationPatch } from "../conversation-patch.js";
 import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
@@ -259,11 +259,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 发送消息到 Agent Session
   fastify.post<{
     Params: { sessionId: string };
-    Body: { content: string };
-  }>("/api/agent-sessions/:sessionId/message", async (req, reply) => {
+    Body: { content: string | ContentPart[] };
+  }>("/api/agent-sessions/:sessionId/message", { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
     const { content } = req.body;
 
-    if (!content || typeof content !== "string") {
+    // Validate: must be a non-empty string or non-empty array
+    const isValidString = typeof content === "string" && content.trim().length > 0;
+    const isValidArray = Array.isArray(content) && content.length > 0;
+    if (!isValidString && !isValidArray) {
       return reply.code(400).send({ error: "Content is required" });
     }
 

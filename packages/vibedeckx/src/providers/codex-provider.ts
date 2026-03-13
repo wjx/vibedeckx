@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import type { AgentType } from "../agent-types.js";
+import type { AgentType, ContentPart } from "../agent-types.js";
 import type { AgentProvider, SpawnConfig, ParsedAgentEvent } from "../agent-provider.js";
 
 interface CodexSessionState {
@@ -9,7 +9,7 @@ interface CodexSessionState {
   pendingRequests: Map<number, string>;
   permissionMode: "plan" | "edit";
   /** Buffered first-turn content, sent after thread/start response provides threadId */
-  pendingTurnContent: string | null;
+  pendingTurnContent: string | ContentPart[] | null;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -90,7 +90,7 @@ export class CodexProvider implements AgentProvider {
             jsonrpc: "2.0",
             id,
             method: "turn/start",
-            params: { threadId: state.threadId, input: [{ type: "text", text: content }] },
+            params: { threadId: state.threadId, input: this.buildCodexInput(content) },
           }) + "\n";
           return [{ type: "stdin_write", content: turnMsg }];
         }
@@ -283,7 +283,7 @@ export class CodexProvider implements AgentProvider {
 
   // ============ Task 5.10: formatUserInput — JSON-RPC message construction ============
 
-  formatUserInput(content: string, sessionId: string): string {
+  formatUserInput(content: string | ContentPart[], sessionId: string): string {
     const state = this.getSessionState(sessionId);
     // Sync permissionMode from last buildSpawnConfig call
     state.permissionMode = this.lastPermissionMode;
@@ -296,7 +296,7 @@ export class CodexProvider implements AgentProvider {
         jsonrpc: "2.0",
         id,
         method: "turn/start",
-        params: { threadId: state.threadId, input: [{ type: "text", text: content }] },
+        params: { threadId: state.threadId, input: this.buildCodexInput(content) },
       }) + "\n";
     }
 
@@ -381,6 +381,19 @@ export class CodexProvider implements AgentProvider {
       this.sessions.set(sessionId, state);
     }
     return state;
+  }
+
+  /** Build Codex input array from string or ContentPart[] */
+  private buildCodexInput(content: string | ContentPart[]): unknown[] {
+    if (typeof content === "string") {
+      return [{ type: "text", text: content }];
+    }
+    return content.map((part) => {
+      if (part.type === "text") {
+        return { type: "text", text: part.text };
+      }
+      return { type: "image", url: `data:${part.mediaType};base64,${part.data}` };
+    });
   }
 
   private generateId(): string {

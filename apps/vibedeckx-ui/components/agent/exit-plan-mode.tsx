@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useAgentConversation } from "./agent-conversation";
+import type { ContentPart } from "@/hooks/use-agent-session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -12,7 +13,7 @@ interface ExitPlanModeUIProps {
   messageIndex: number;
 }
 
-function extractPlanContent(input: unknown, messages: { type: string; content?: string; tool?: string; input?: unknown }[], agentType: string): string {
+function extractPlanContent(input: unknown, messages: { type: string; content?: string | ContentPart[]; tool?: string; input?: unknown }[], agentType: string): string {
   // 1. Check ExitPlanMode tool input for plan field
   const inputObj = typeof input === "string" ? tryParse(input) : input;
   if (inputObj && typeof inputObj === "object" && "plan" in (inputObj as Record<string, unknown>)) {
@@ -77,7 +78,8 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
     const msg = messages[i];
     if (msg?.type === "user") {
       isResponded = true;
-      respondedText = msg.content ?? "";
+      const rawContent = msg.content ?? "";
+      respondedText = typeof rawContent === "string" ? rawContent : rawContent.filter(p => p.type === "text").map(p => p.text).join("\n");
       break;
     }
   }
