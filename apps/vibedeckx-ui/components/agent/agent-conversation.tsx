@@ -365,9 +365,9 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
           {/* Attachment thumbnails — only rendered when images are attached */}
           <AttachmentHeader />
           {/* Single row: [+ button] [textarea] [submit button] */}
-          <div className="flex w-full items-center">
+          <div className="relative flex w-full items-start">
             <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger />
+              <PromptInputActionMenuTrigger className="mt-2.5 ml-1" />
               <PromptInputActionMenuContent>
                 <PromptInputActionAddAttachments label="Add images" />
               </PromptInputActionMenuContent>
@@ -380,8 +380,10 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   ? "Ask the agent to help with your code..."
                   : "Type your first message to start..."
               }
+              className="pr-12"
             />
             <PromptInputSubmit
+              className="absolute bottom-1 right-1"
               disabled={!input.trim() && !isLoading}
               status={isLoading ? "streaming" : "ready"}
             />
