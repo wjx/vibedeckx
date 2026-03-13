@@ -16,9 +16,8 @@ import {
   PromptInputActionMenuTrigger,
   PromptInputActionMenuContent,
   PromptInputActionAddAttachments,
-  PromptInputFooter,
-  PromptInputTools,
   PromptInputHeader,
+  usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
@@ -27,6 +26,19 @@ import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
 import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
 import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
 import { getAgentProviders } from "@/lib/api";
+
+/** Only renders the attachment header when there are files attached */
+function AttachmentHeader() {
+  const attachments = usePromptInputAttachments();
+  if (attachments.files.length === 0) return null;
+  return (
+    <PromptInputHeader>
+      <PromptInputAttachments>
+        {(attachment) => <PromptInputAttachment data={attachment} />}
+      </PromptInputAttachments>
+    </PromptInputHeader>
+  );
+}
 
 interface AgentConversationContextValue {
   sendMessage: (content: string | ContentPart[], sessionId?: string) => Promise<void>;
@@ -350,11 +362,15 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
           accept="image/*"
           className="w-full"
         >
-          <PromptInputHeader>
-            <PromptInputAttachments>
-              {(attachment) => <PromptInputAttachment data={attachment} />}
-            </PromptInputAttachments>
-          </PromptInputHeader>
+          {/* Attachment thumbnails — only rendered when images are attached */}
+          <AttachmentHeader />
+          {/* Single row: [+ button] [textarea] [submit button] */}
+          <PromptInputActionMenu>
+            <PromptInputActionMenuTrigger />
+            <PromptInputActionMenuContent>
+              <PromptInputActionAddAttachments label="Add images" />
+            </PromptInputActionMenuContent>
+          </PromptInputActionMenu>
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -364,20 +380,10 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 : "Type your first message to start..."
             }
           />
-          <PromptInputFooter>
-            <PromptInputTools>
-              <PromptInputActionMenu>
-                <PromptInputActionMenuTrigger />
-                <PromptInputActionMenuContent>
-                  <PromptInputActionAddAttachments label="Add images" />
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
-            </PromptInputTools>
-            <PromptInputSubmit
-              disabled={!input.trim() && !isLoading}
-              status={isLoading ? "streaming" : "ready"}
-            />
-          </PromptInputFooter>
+          <PromptInputSubmit
+            disabled={!input.trim() && !isLoading}
+            status={isLoading ? "streaming" : "ready"}
+          />
         </PromptInput>
       </div>
     </div>
