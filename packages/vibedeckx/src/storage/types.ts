@@ -1,4 +1,4 @@
-export type ExecutionMode = 'local' | 'remote';
+export type ExecutionMode = 'local' | string;
 
 export type SyncActionType = 'command' | 'prompt';
 
@@ -6,6 +6,31 @@ export interface SyncButtonConfig {
   actionType: SyncActionType;
   executionMode: ExecutionMode;
   content: string;
+}
+
+export interface RemoteServer {
+  id: string;
+  name: string;
+  url: string;
+  api_key?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRemote {
+  id: string;
+  project_id: string;
+  remote_server_id: string;
+  remote_path: string;
+  sort_order: number;
+  sync_up_config?: SyncButtonConfig;
+  sync_down_config?: SyncButtonConfig;
+}
+
+export interface ProjectRemoteWithServer extends ProjectRemote {
+  server_name: string;
+  server_url: string;
+  server_api_key?: string;
 }
 
 export interface Project {
@@ -112,6 +137,33 @@ export interface Storage {
       sync_down_config?: SyncButtonConfig | null;
     }) => Project | undefined;
     delete: (id: string) => void;
+  };
+  remoteServers: {
+    create(server: { name: string; url: string; api_key?: string }): RemoteServer;
+    getAll(): RemoteServer[];
+    getById(id: string): RemoteServer | undefined;
+    getByUrl(url: string): RemoteServer | undefined;
+    update(id: string, opts: { name?: string; url?: string; api_key?: string }): RemoteServer | undefined;
+    delete(id: string): boolean;
+  };
+  projectRemotes: {
+    getByProject(projectId: string): ProjectRemoteWithServer[];
+    getByProjectAndServer(projectId: string, remoteServerId: string): ProjectRemoteWithServer | undefined;
+    add(opts: {
+      project_id: string;
+      remote_server_id: string;
+      remote_path: string;
+      sort_order?: number;
+      sync_up_config?: SyncButtonConfig;
+      sync_down_config?: SyncButtonConfig;
+    }): ProjectRemote;
+    update(id: string, opts: {
+      remote_path?: string;
+      sort_order?: number;
+      sync_up_config?: SyncButtonConfig | null;
+      sync_down_config?: SyncButtonConfig | null;
+    }): ProjectRemote | undefined;
+    remove(id: string): boolean;
   };
   executorGroups: {
     create: (opts: { id: string; project_id: string; name: string; branch: string }) => ExecutorGroup;
