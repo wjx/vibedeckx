@@ -247,6 +247,54 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     )
   `);
 
+  // Migration: existing remote projects → remote_servers + project_remotes
+  // This migrates data from the old single-remote model (remote_url on projects table)
+  // into the new multi-remote model (remote_servers + project_remotes tables).
+  // Idempotent: checks for existing records before inserting.
+  {
+    const existingRemotes = db.prepare(
+      `SELECT DISTINCT remote_url, remote_api_key FROM projects WHERE remote_url IS NOT NULL AND remote_url != ''`
+    ).all() as { remote_url: string; remote_api_key: string | null }[];
+
+    for (const row of existingRemotes) {
+      const existing = db.prepare(`SELECT id FROM remote_servers WHERE url = ?`).get(row.remote_url) as { id: string } | undefined;
+      if (!existing) {
+        let name: string;
+        try { name = new URL(row.remote_url).hostname; } catch { name = row.remote_url; }
+        const id = crypto.randomUUID();
+        db.prepare(
+          `INSERT INTO remote_servers (id, name, url, api_key, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`
+        ).run(id, name, row.remote_url, row.remote_api_key);
+      }
+    }
+
+    const projectsWithRemote = db.prepare(
+      `SELECT id, remote_url, remote_path, sync_up_config, sync_down_config, agent_mode, executor_mode FROM projects WHERE remote_url IS NOT NULL AND remote_url != ''`
+    ).all() as { id: string; remote_url: string; remote_path: string | null; sync_up_config: string | null; sync_down_config: string | null; agent_mode: string; executor_mode: string }[];
+
+    for (const proj of projectsWithRemote) {
+      const server = db.prepare(`SELECT id FROM remote_servers WHERE url = ?`).get(proj.remote_url) as { id: string } | undefined;
+      if (!server) continue;
+
+      const existingLink = db.prepare(
+        `SELECT id FROM project_remotes WHERE project_id = ? AND remote_server_id = ?`
+      ).get(proj.id, server.id);
+      if (!existingLink && proj.remote_path) {
+        db.prepare(
+          `INSERT INTO project_remotes (id, project_id, remote_server_id, remote_path, sort_order, sync_up_config, sync_down_config) VALUES (?, ?, ?, ?, 0, ?, ?)`
+        ).run(crypto.randomUUID(), proj.id, server.id, proj.remote_path, proj.sync_up_config, proj.sync_down_config);
+      }
+
+      // Update agent_mode/executor_mode from 'remote' to the corresponding remote_server_id
+      if (proj.agent_mode === 'remote') {
+        db.prepare(`UPDATE projects SET agent_mode = ? WHERE id = ?`).run(server.id, proj.id);
+      }
+      if (proj.executor_mode === 'remote') {
+        db.prepare(`UPDATE projects SET executor_mode = ? WHERE id = ?`).run(server.id, proj.id);
+      }
+    }
+  }
+
   return db;
 };
 
