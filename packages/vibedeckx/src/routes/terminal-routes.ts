@@ -80,13 +80,24 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const branch = req.body?.branch;
     const explicitLocation = req.body?.location;
 
-    // Determine whether to use remote
-    const hasRemoteConfig = !!(project.remote_url && project.remote_api_key && project.remote_path);
+    const executorMode = project.executor_mode;
+
+    // When remote, resolve connection info from project_remotes table
+    const remoteConfig = executorMode !== 'local'
+      ? fastify.storage.projectRemotes.getByProjectAndServer(project.id, executorMode)
+      : undefined;
+
+    // Fallback to legacy project fields if no project_remote found
+    const effectiveRemoteUrl = remoteConfig?.server_url ?? project.remote_url;
+    const effectiveRemoteApiKey = remoteConfig?.server_api_key ?? project.remote_api_key;
+    const effectiveRemotePath = remoteConfig?.remote_path ?? project.remote_path;
+
+    const hasRemoteConfig = !!(effectiveRemoteUrl && effectiveRemoteApiKey && effectiveRemotePath);
     const useRemote =
       explicitLocation === "remote" ||
       (explicitLocation === undefined &&
         hasRemoteConfig &&
-        (!project.path || project.executor_mode === "remote"));
+        (!project.path || executorMode !== "local"));
 
     if (useRemote) {
       if (!hasRemoteConfig) {
@@ -96,12 +107,12 @@ const routes: FastifyPluginAsync = async (fastify) => {
       }
 
       const result = await proxyToRemote(
-        project.remote_url!,
-        project.remote_api_key!,
+        effectiveRemoteUrl!,
+        effectiveRemoteApiKey!,
         "POST",
         "/api/path/terminals",
         {
-          path: project.remote_path,
+          path: effectiveRemotePath,
           branch: branch ?? undefined,
         }
       );
@@ -114,9 +125,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const localId = `remote-terminal-${remoteId}`;
 
         fastify.remoteExecutorMap.set(localId, {
-          remoteServerId: String(project.executor_mode),
-          remoteUrl: project.remote_url!,
-          remoteApiKey: project.remote_api_key!,
+          remoteServerId: executorMode,
+          remoteUrl: effectiveRemoteUrl!,
+          remoteApiKey: effectiveRemoteApiKey!,
           remoteProcessId: remoteId,
           projectId: req.params.projectId,
           branch: branch ?? null,

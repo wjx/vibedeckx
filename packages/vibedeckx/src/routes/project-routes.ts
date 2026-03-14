@@ -197,29 +197,50 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Execute sync command for a project
   fastify.post<{
     Params: { id: string };
-    Body: { syncType: 'up' | 'down'; branch?: string | null };
+    Body: { syncType: 'up' | 'down'; branch?: string | null; remoteServerId?: string };
   }>("/api/projects/:id/execute-sync", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.id);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { syncType, branch } = req.body;
-    const config = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
+    const { syncType, branch, remoteServerId } = req.body;
 
-    if (!config || config.actionType !== 'command') {
+    let syncConfig: import("../storage/types.js").SyncButtonConfig | undefined;
+    let remoteUrl: string | undefined;
+    let remoteApiKey: string | undefined;
+    let remotePath: string | undefined;
+
+    if (remoteServerId) {
+      const pr = fastify.storage.projectRemotes.getByProjectAndServer(project.id, remoteServerId);
+      if (!pr) {
+        return reply.code(404).send({ error: "Remote not linked to project" });
+      }
+      syncConfig = syncType === 'up' ? pr.sync_up_config : pr.sync_down_config;
+      remoteUrl = pr.server_url;
+      remoteApiKey = pr.server_api_key;
+      remotePath = pr.remote_path;
+    } else {
+      // Fallback to legacy project fields
+      syncConfig = syncType === 'up' ? project.sync_up_config : project.sync_down_config;
+      remoteUrl = project.remote_url;
+      remoteApiKey = project.remote_api_key;
+      remotePath = project.remote_path;
+    }
+
+    if (!syncConfig || syncConfig.actionType !== 'command') {
       return reply.code(400).send({ error: "Sync command not configured or not a command type" });
     }
 
-    const executionMode = config.executionMode;
+    const executionMode = syncConfig.executionMode;
 
     if (executionMode === 'remote') {
-      if (!project.remote_url || !project.remote_api_key) {
+      if (!remoteUrl || !remoteApiKey) {
         return reply.code(400).send({ error: "Remote not configured for this project" });
       }
-      const remoteCwd = resolveWorktreePath(project.remote_path ?? '', branch ?? null);
-      const result = await proxyToRemote(project.remote_url, project.remote_api_key, 'POST', '/api/execute-one-shot', {
-        command: config.content,
+      const remoteCwd = resolveWorktreePath(remotePath ?? '', branch ?? null);
+      const result = await proxyToRemote(remoteUrl, remoteApiKey, 'POST', '/api/execute-one-shot', {
+        command: syncConfig.content,
         cwd: remoteCwd,
       });
       if (!result.ok) {
@@ -237,7 +258,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
-        exec(config.content, { cwd, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+        exec(syncConfig.content, { cwd, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
           resolve({
             stdout: stdout || '',
             stderr: stderr || '',
