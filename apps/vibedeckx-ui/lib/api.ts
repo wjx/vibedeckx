@@ -36,7 +36,7 @@ export function getWebSocketUrl(path: string): string {
   return `${protocol}//${host}${path}`;
 }
 
-export type ExecutionMode = 'local' | 'remote';
+export type ExecutionMode = 'local' | string;
 
 export type SyncActionType = 'command' | 'prompt';
 
@@ -65,6 +65,26 @@ export interface Project {
   sync_up_config?: SyncButtonConfig;
   sync_down_config?: SyncButtonConfig;
   created_at: string;
+}
+
+export interface RemoteServer {
+  id: string;
+  name: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRemote {
+  id: string;
+  project_id: string;
+  remote_server_id: string;
+  remote_path: string;
+  sort_order: number;
+  sync_up_config?: SyncButtonConfig;
+  sync_down_config?: SyncButtonConfig;
+  server_name: string;
+  server_url: string;
 }
 
 export interface RemoteBrowseItem {
@@ -873,5 +893,123 @@ export const api = {
       throw new Error(error.error);
     }
     return res.json();
+  },
+
+  // Remote Servers API
+  async getRemoteServers(): Promise<RemoteServer[]> {
+    const res = await fetch(`${getApiBase()}/api/remote-servers`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.servers;
+  },
+
+  async createRemoteServer(opts: { name: string; url: string; apiKey?: string }): Promise<RemoteServer> {
+    const res = await fetch(`${getApiBase()}/api/remote-servers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.server;
+  },
+
+  async updateRemoteServer(id: string, opts: { name?: string; url?: string; apiKey?: string }): Promise<RemoteServer> {
+    const res = await fetch(`${getApiBase()}/api/remote-servers/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.server;
+  },
+
+  async deleteRemoteServer(id: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/remote-servers/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  async testRemoteServer(id: string): Promise<{ success: boolean }> {
+    const res = await fetch(`${getApiBase()}/api/remote-servers/${id}/test`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    return res.json();
+  },
+
+  // Project Remotes API
+  async getProjectRemotes(projectId: string): Promise<ProjectRemote[]> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/remotes`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.remotes;
+  },
+
+  async addProjectRemote(projectId: string, opts: {
+    remoteServerId: string;
+    remotePath: string;
+    sortOrder?: number;
+  }): Promise<ProjectRemote> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/remotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.remote;
+  },
+
+  async updateProjectRemote(projectId: string, remoteId: string, opts: {
+    remotePath?: string;
+    sortOrder?: number;
+    syncUpConfig?: SyncButtonConfig | null;
+    syncDownConfig?: SyncButtonConfig | null;
+  }): Promise<ProjectRemote> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/remotes/${remoteId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.remote;
+  },
+
+  async removeProjectRemote(projectId: string, remoteId: string): Promise<void> {
+    const res = await fetch(`${getApiBase()}/api/projects/${projectId}/remotes/${remoteId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
   },
 };
