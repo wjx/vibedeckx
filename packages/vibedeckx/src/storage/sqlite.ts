@@ -2,7 +2,8 @@ import Database from "better-sqlite3";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
-import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Storage, ExecutionMode, SyncButtonConfig } from "./types.js";
+import crypto from "crypto";
+import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Storage, ExecutionMode, SyncButtonConfig, RemoteServer } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -80,6 +81,15 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     CREATE TABLE IF NOT EXISTS global_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS remote_servers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL UNIQUE,
+      api_key TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
 
@@ -371,6 +381,68 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       delete: (id: string) => {
         db.prepare(`DELETE FROM projects WHERE id = @id`).run({ id });
+      },
+    },
+
+    remoteServers: {
+      create: (server: { name: string; url: string; api_key?: string }): RemoteServer => {
+        const id = crypto.randomUUID();
+        db.prepare(
+          `INSERT INTO remote_servers (id, name, url, api_key) VALUES (@id, @name, @url, @api_key)`
+        ).run({ id, name: server.name, url: server.url, api_key: server.api_key ?? null });
+
+        return db
+          .prepare<{ id: string }, RemoteServer>(`SELECT * FROM remote_servers WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getAll: (): RemoteServer[] => {
+        return db
+          .prepare<{}, RemoteServer>(`SELECT * FROM remote_servers ORDER BY created_at DESC`)
+          .all({});
+      },
+
+      getById: (id: string): RemoteServer | undefined => {
+        return db
+          .prepare<{ id: string }, RemoteServer>(`SELECT * FROM remote_servers WHERE id = @id`)
+          .get({ id });
+      },
+
+      getByUrl: (url: string): RemoteServer | undefined => {
+        return db
+          .prepare<{ url: string }, RemoteServer>(`SELECT * FROM remote_servers WHERE url = @url`)
+          .get({ url });
+      },
+
+      update: (id: string, opts: { name?: string; url?: string; api_key?: string }): RemoteServer | undefined => {
+        const updates: string[] = [];
+        const params: Record<string, unknown> = { id };
+
+        if (opts.name !== undefined) {
+          updates.push('name = @name');
+          params.name = opts.name;
+        }
+        if (opts.url !== undefined) {
+          updates.push('url = @url');
+          params.url = opts.url;
+        }
+        if (opts.api_key !== undefined) {
+          updates.push('api_key = @api_key');
+          params.api_key = opts.api_key;
+        }
+
+        if (updates.length === 0) {
+          return db.prepare<{ id: string }, RemoteServer>(`SELECT * FROM remote_servers WHERE id = @id`).get({ id });
+        }
+
+        updates.push("updated_at = datetime('now')");
+        db.prepare(`UPDATE remote_servers SET ${updates.join(', ')} WHERE id = @id`).run(params);
+        return db.prepare<{ id: string }, RemoteServer>(`SELECT * FROM remote_servers WHERE id = @id`).get({ id });
+      },
+
+      delete: (id: string): boolean => {
+        const result = db.prepare(`DELETE FROM remote_servers WHERE id = @id`).run({ id });
+        return result.changes > 0;
       },
     },
 
