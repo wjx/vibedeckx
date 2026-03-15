@@ -904,7 +904,7 @@ export const api = {
       throw new Error(error.error);
     }
     const data = await res.json();
-    return data.servers;
+    return data;
   },
 
   async createRemoteServer(opts: { name: string; url: string; apiKey?: string }): Promise<RemoteServer> {
@@ -964,7 +964,7 @@ export const api = {
       throw new Error(error.error);
     }
     const data = await res.json();
-    return data.remotes;
+    return data;
   },
 
   async addProjectRemote(projectId: string, opts: {
