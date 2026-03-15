@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
-import { FolderOpen, Loader2, Check, X, Terminal, Bot } from "lucide-react";
+import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
+import { useProjectRemotes } from "@/hooks/use-project-remotes";
+import { FolderOpen, Loader2, Check, X, Terminal, Bot, Monitor, Cloud } from "lucide-react";
 import { api, type Project, type SyncButtonConfig, type SyncActionType, type ExecutionMode } from "@/lib/api";
 import { RemoteDirectoryBrowser } from "./remote-directory-browser";
 import { cn } from "@/lib/utils";
@@ -105,24 +106,29 @@ function SyncConfigForm({
   config,
   onChange,
   label,
+  targets,
 }: {
   config: SyncConfigState;
   onChange: (config: SyncConfigState) => void;
   label: string;
+  targets: ExecutionModeTarget[];
 }) {
   return (
     <div className="space-y-4 py-2">
       <label className="text-sm font-medium">{label}</label>
 
-      <div className="space-y-2">
-        <label className="text-xs text-muted-foreground">Execution Environment</label>
-        <div>
-          <ExecutionModeToggle
-            mode={config.executionMode}
-            onModeChange={(executionMode) => onChange({ ...config, executionMode })}
-          />
+      {targets.length > 0 && (
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Execution Environment</label>
+          <div>
+            <ExecutionModeToggle
+              targets={targets}
+              activeTarget={config.executionMode}
+              onTargetChange={(executionMode: string) => onChange({ ...config, executionMode })}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-xs text-muted-foreground">Action Type</label>
@@ -155,6 +161,15 @@ export function EditProjectDialog({
   onOpenChange,
   onProjectUpdated,
 }: EditProjectDialogProps) {
+  const { remotes } = useProjectRemotes(project.id);
+
+  // Build execution mode targets for sync config toggles
+  const syncTargets: ExecutionModeTarget[] = [];
+  if (project.path) syncTargets.push({ id: "local", label: "Local", icon: Monitor });
+  for (const r of remotes) {
+    syncTargets.push({ id: r.remote_server_id, label: r.server_name, icon: Cloud });
+  }
+
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [remoteUrl, setRemoteUrl] = useState("");
@@ -421,6 +436,7 @@ export function EditProjectDialog({
               config={syncUpConfig}
               onChange={setSyncUpConfig}
               label="Sync Up Button"
+              targets={syncTargets}
             />
           </TabsContent>
 
@@ -429,6 +445,7 @@ export function EditProjectDialog({
               config={syncDownConfig}
               onChange={setSyncDownConfig}
               label="Sync Down Button"
+              targets={syncTargets}
             />
           </TabsContent>
         </Tabs>

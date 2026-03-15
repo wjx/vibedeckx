@@ -21,9 +21,10 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
-import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud } from "lucide-react";
+import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
 import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
+import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
 import { getAgentProviders } from "@/lib/api";
 
@@ -77,6 +78,14 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const { remotes } = useProjectRemotes(project?.id ?? undefined);
+
+  // Build execution mode targets from local path + project remotes
+  const agentTargets: ExecutionModeTarget[] = [];
+  if (project?.path) agentTargets.push({ id: "local", label: "Local", icon: Monitor });
+  for (const r of remotes) {
+    agentTargets.push({ id: r.remote_server_id, label: r.server_name, icon: Cloud });
+  }
 
   const {
     session,
@@ -239,10 +248,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             onModeChange={handlePermissionModeChange}
             disabled={isLoading}
           />
-          {project && project.path && project.remote_path && onAgentModeChange && (
+          {agentTargets.length > 1 && onAgentModeChange && (
             <ExecutionModeToggle
-              mode={project.agent_mode}
-              onModeChange={onAgentModeChange}
+              targets={agentTargets}
+              activeTarget={project?.agent_mode ?? "local"}
+              onTargetChange={onAgentModeChange}
             />
           )}
           {session && (() => {
