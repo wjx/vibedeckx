@@ -223,9 +223,21 @@ node dist/bin.js
 ## CLI Commands
 
 ```
-vibedeckx start [--port value]   Start the server (default port: 3000)
+vibedeckx start [options]        Start the server
+  --port <value>                 Port to run the server on (default: 3000)
+  --auth                         Enable Clerk authentication
+  --data-dir <path>              Directory for storing database file (default: ~/.vibedeckx)
 vibedeckx --help                 Show help
 vibedeckx --version              Show version
+```
+
+### Custom Data Directory
+
+Use `--data-dir` to specify a custom directory for the database file:
+
+```bash
+vibedeckx start --data-dir /path/to/data
+# Database will be stored at /path/to/data/data.sqlite
 ```
 
 ## Data Storage
