@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { RefreshCw, GitBranch, GitMerge, ChevronsUpDown } from 'lucide-react';
+import { RefreshCw, GitBranch, GitMerge, ChevronsUpDown, Monitor, Cloud } from 'lucide-react';
 import { FileDiff } from './file-diff';
 import { CommitSelector } from './commit-selector';
-import { ExecutionModeToggle } from '@/components/ui/execution-mode-toggle';
+import { ExecutionModeToggle, type ExecutionModeTarget } from '@/components/ui/execution-mode-toggle';
+import { useProjectRemotes } from '@/hooks/use-project-remotes';
 import { useDiff } from '@/hooks/use-diff';
 import { useCommits } from '@/hooks/use-commits';
 import type { Project } from '@/lib/api';
@@ -20,16 +21,24 @@ interface DiffPanelProps {
 
 export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }: DiffPanelProps) {
   const [sinceCommit, setSinceCommit] = useState<string | null>(null);
-  const defaultTarget = project?.path ? 'local' : 'remote';
-  const [diffTarget, setDiffTarget] = useState<'local' | 'remote'>(defaultTarget);
+  const { remotes } = useProjectRemotes(project?.id ?? undefined);
+
+  // Build execution mode targets from local path + project remotes
+  const diffTargets: ExecutionModeTarget[] = [];
+  if (project?.path) diffTargets.push({ id: 'local', label: 'Local', icon: Monitor });
+  for (const r of remotes) {
+    diffTargets.push({ id: r.remote_server_id, label: r.server_name, icon: Cloud });
+  }
+
+  const defaultTarget = project?.path ? 'local' : (remotes.length > 0 ? remotes[0].remote_server_id : 'local');
+  const [diffTarget, setDiffTarget] = useState<string>(defaultTarget);
   const [allExpanded, setAllExpanded] = useState(true);
   const [expandKey, setExpandKey] = useState(0);
-  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit, diffTarget);
-  const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch, undefined, diffTarget);
 
-  const hasLocal = !!project?.path;
-  const hasRemote = !!(project?.remote_url && project?.remote_path);
-  const isHybrid = hasLocal && hasRemote;
+  // Map diffTarget to 'local' | 'remote' for hooks that still use old API
+  const hookTarget: 'local' | 'remote' = diffTarget === 'local' ? 'local' : 'remote';
+  const { diff, loading, error, refresh } = useDiff(projectId, selectedBranch, sinceCommit, hookTarget);
+  const { commits, loading: commitsLoading, refetch: refetchCommits } = useCommits(projectId, selectedBranch, undefined, hookTarget);
 
   useEffect(() => {
     refresh();
@@ -87,10 +96,11 @@ export function DiffPanel({ projectId, selectedBranch, onMergeRequest, project }
           )}
         </div>
         <div className="flex items-center gap-2">
-          {isHybrid && (
+          {diffTargets.length > 1 && (
             <ExecutionModeToggle
-              mode={diffTarget}
-              onModeChange={setDiffTarget}
+              targets={diffTargets}
+              activeTarget={diffTarget}
+              onTargetChange={setDiffTarget}
               disabled={loading}
             />
           )}

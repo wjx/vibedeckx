@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Terminal, FolderPlus } from "lucide-react";
+import { Plus, Terminal, FolderPlus, Monitor, Cloud } from "lucide-react";
 import { ExecutorItem } from "./executor-item";
 import { ExecutorForm } from "./executor-form";
 import { useExecutors } from "@/hooks/use-executors";
 import { useExecutorGroups } from "@/hooks/use-executor-groups";
-import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
+import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import type { Project, ExecutionMode } from "@/lib/api";
 import {
   DndContext,
@@ -100,6 +101,15 @@ const headerOnlyCollision: CollisionDetection = (args) => {
 
 export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorModeChange }: ExecutorPanelProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const { remotes } = useProjectRemotes(project?.id ?? undefined);
+
+  // Build execution mode targets from local path + project remotes
+  const executorTargets: ExecutionModeTarget[] = [];
+  if (project?.path) executorTargets.push({ id: "local", label: "Local", icon: Monitor });
+  for (const r of remotes) {
+    executorTargets.push({ id: r.remote_server_id, label: r.server_name, icon: Cloud });
+  }
+
   const { activeGroup, loading: groupLoading, createGroup } = useExecutorGroups(projectId, selectedBranch);
   const {
     executors,
@@ -157,10 +167,11 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
             <Terminal className="h-5 w-5" />
             {activeGroup ? activeGroup.name : "Executors"}
           </h2>
-          {project && project.path && project.remote_path && onExecutorModeChange && (
+          {executorTargets.length > 1 && onExecutorModeChange && (
             <ExecutionModeToggle
-              mode={project.executor_mode}
-              onModeChange={onExecutorModeChange}
+              targets={executorTargets}
+              activeTarget={project?.executor_mode ?? "local"}
+              onTargetChange={onExecutorModeChange}
             />
           )}
         </div>

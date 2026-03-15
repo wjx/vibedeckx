@@ -1,4 +1,4 @@
-import { spawn, execFileSync, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import type { WebSocket } from "@fastify/websocket";
@@ -6,10 +6,11 @@ import type { Storage } from "./storage/types.js";
 import type {
   AgentMessage,
   AgentSessionStatus,
-  ClaudeOutputMessage,
-  ClaudeUserInput,
-  ClaudeContentBlock,
+  AgentType,
+  ContentPart,
 } from "./agent-types.js";
+import { getProvider } from "./providers/index.js";
+import type { ParsedAgentEvent } from "./agent-provider.js";
 import { ConversationPatch, type Patch, type AgentWsMessage } from "./conversation-patch.js";
 import type { EventBus } from "./event-bus.js";
 import { EntryIndexProvider, EntryTracker } from "./entry-index-provider.js";
@@ -42,12 +43,12 @@ interface RunningSession {
   buffer: string; // Buffer for incomplete JSON lines
   skipDb: boolean; // Skip DB operations for remote path-based sessions
   permissionMode: "plan" | "edit"; // Claude Code permission mode
+  agentType: AgentType; // Which agent provider to use
 }
 
 export class AgentSessionManager {
   private sessions: Map<string, RunningSession> = new Map();
   private storage: Storage;
-  private claudeBinaryPath: string | null | undefined = undefined; // undefined = not yet checked
   private eventBus: EventBus | null = null;
 
   constructor(storage: Storage) {
@@ -58,25 +59,6 @@ export class AgentSessionManager {
     this.eventBus = eventBus;
   }
 
-  private detectClaudeBinary(): string | null {
-    if (this.claudeBinaryPath !== undefined) {
-      return this.claudeBinaryPath;
-    }
-    try {
-      const cmd = process.platform === "win32" ? "where" : "which";
-      const result = execFileSync(cmd, ["claude"], {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "ignore"],
-      }).trim();
-      this.claudeBinaryPath = result || null;
-      console.log(`[AgentSession] Native claude binary found: ${result}`);
-    } catch {
-      this.claudeBinaryPath = null;
-      console.log(`[AgentSession] Native claude binary not found, will use npx`);
-    }
-    return this.claudeBinaryPath;
-  }
-
   /**
    * Get or create an agent session for a branch
    */
@@ -85,7 +67,8 @@ export class AgentSessionManager {
     branch: string | null,
     projectPath: string,
     skipDb = false,
-    permissionMode: "plan" | "edit" = "edit"
+    permissionMode: "plan" | "edit" = "edit",
+    agentType: AgentType = "claude-code"
   ): string {
     // Check if session already exists in memory (including dormant)
     for (const [id, session] of this.sessions) {
@@ -154,6 +137,7 @@ export class AgentSessionManager {
         project_id: projectId,
         branch: branch ?? "",
         permission_mode: permissionMode,
+        // agent_type passed to storage after Phase 4 migration (task 4.2/4.3)
       });
     }
 
@@ -181,21 +165,26 @@ export class AgentSessionManager {
       buffer: "",
       skipDb,
       permissionMode,
+      agentType,
     };
 
     this.sessions.set(sessionId, runningSession);
 
+    // Notify provider of session creation (for per-session state init)
+    getProvider(agentType).onSessionCreated?.(sessionId);
+
     // Spawn Claude Code process
-    this.spawnClaudeCode(runningSession, absoluteWorktreePath);
+    this.spawnAgent(runningSession, absoluteWorktreePath);
 
     return sessionId;
   }
 
   /**
-   * Spawn Claude Code CLI process
+   * Spawn agent process using the provider for this session's agent type
    */
-  private spawnClaudeCode(session: RunningSession, cwd: string): void {
-    console.log(`[AgentSession] Spawning Claude Code in ${cwd}`);
+  private spawnAgent(session: RunningSession, cwd: string): void {
+    const provider = getProvider(session.agentType);
+    console.log(`[AgentSession] Spawning ${provider.getDisplayName()} in ${cwd}`);
 
     // Verify cwd exists
     if (!existsSync(cwd)) {
@@ -213,41 +202,26 @@ export class AgentSessionManager {
       return;
     }
 
-    const nativeBinary = this.detectClaudeBinary();
+    const config = provider.buildSpawnConfig(cwd, session.permissionMode);
 
-    const permissionFlag = session.permissionMode === "plan"
-      ? "--permission-mode=plan"
-      : "--dangerously-skip-permissions";
-
-    const claudeArgs = [
-      "-p",
-      "--output-format=stream-json",
-      "--input-format=stream-json",
-      permissionFlag,
-      "--verbose",
-    ];
-
-    let command: string;
-    let args: string[];
-
-    if (nativeBinary) {
-      command = nativeBinary;
-      args = claudeArgs;
-    } else {
-      command = "npx";
-      args = ["-y", "@anthropic-ai/claude-code", ...claudeArgs];
-    }
-
-    const childProcess = spawn(command, args, {
+    const childProcess = spawn(config.command, config.args, {
       cwd,
-      env: { ...process.env, FORCE_COLOR: "1" },
+      env: { ...process.env, FORCE_COLOR: "1", ...config.env },
       stdio: ["pipe", "pipe", "pipe"],
-      shell: true,
+      shell: config.shell ?? false,
     });
 
     session.process = childProcess;
 
     console.log(`[AgentSession] Process ${session.id} started, PID: ${childProcess.pid}`);
+
+    // Pre-initialize provider protocol (e.g. Codex needs initialize + thread/start handshake)
+    if (provider.getInitializationMessages) {
+      const initMsgs = provider.getInitializationMessages(session.id);
+      if (initMsgs) {
+        childProcess.stdin?.write(initMsgs);
+      }
+    }
 
     // Handle stdout (JSON messages from Claude)
     childProcess.stdout?.on("data", (data: Buffer) => {
@@ -295,7 +269,7 @@ export class AgentSessionManager {
   }
 
   /**
-   * Handle stdout data from Claude Code
+   * Handle stdout data from agent process
    */
   private handleStdout(session: RunningSession, data: string): void {
     // Add to buffer
@@ -305,144 +279,57 @@ export class AgentSessionManager {
     const lines = session.buffer.split("\n");
     session.buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
+    const provider = getProvider(session.agentType);
+
     for (const line of lines) {
       if (!line.trim()) continue;
 
-      try {
-        const json = JSON.parse(line) as ClaudeOutputMessage;
-        this.processClaudeMessage(session.id, json);
-      } catch (e) {
-        // Not JSON, might be debug output
-        console.log(`[AgentSession] Non-JSON stdout: ${line.substring(0, 100)}`);
+      const events = provider.parseStdoutLine(line, session.id);
+      for (const event of events) {
+        this.processAgentEvent(session.id, event);
       }
     }
   }
 
   /**
-   * Process a parsed Claude Code message
+   * Process a single parsed agent event (provider-agnostic).
+   * Routes each ParsedAgentEvent to the appropriate message store / broadcast action.
+   * Includes input_tokens/output_tokens in taskCompleted broadcast for token reporting.
    */
-  private processClaudeMessage(sessionId: string, msg: ClaudeOutputMessage): void {
+  private processAgentEvent(sessionId: string, event: ParsedAgentEvent): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
     const timestamp = Date.now();
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
 
-    if (msg.type === "assistant") {
-      const assistantMsg = msg as { type: "assistant"; message?: { content?: ClaudeContentBlock[] } };
-      const content = assistantMsg.message?.content;
-      if (!content) return;
-
-      for (const block of content) {
-        this.processContentBlock(sessionId, block, timestamp);
-      }
-      return;
-    }
-
-    if (msg.type === "user") {
-      // Echo of user message - we already added it when sending
-      return;
-    }
-
-    if (msg.type === "system") {
-      const systemMsg = msg as { type: "system"; message?: string };
-      if (systemMsg.message) {
-        // Clear current assistant key - system message breaks streaming
-        this.finalizeStreamingEntry(session);
-        session.store.currentAssistantIndex = null;
-        this.pushEntry(sessionId, {
-          type: "system",
-          content: systemMsg.message,
-          timestamp,
-        }, true);
-      }
-      return;
-    }
-
-    if (msg.type === "result") {
-      const resultMsg = msg as { type: "result"; subtype?: string; error?: string; duration_ms?: number; cost_usd?: number };
-      this.finalizeStreamingEntry(session);
-      session.store.currentAssistantIndex = null;
-
-      if (resultMsg.subtype === "error" && resultMsg.error) {
-        this.pushEntry(sessionId, {
-          type: "error",
-          message: resultMsg.error,
-          timestamp,
-        }, true);
-      }
-
-      if (resultMsg.subtype === "success") {
-        this.broadcastRaw(sessionId, {
-          taskCompleted: {
-            duration_ms: resultMsg.duration_ms,
-            cost_usd: resultMsg.cost_usd,
-          },
-        });
-
-        // Auto-update task status to "done" for the branch's assigned task
-        const tasks = this.storage.tasks.getByProjectId(session.projectId);
-        const branchKey = session.branch ?? "";
-        const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
-        if (assignedTask && assignedTask.status !== "done") {
-          this.storage.tasks.update(assignedTask.id, { status: "done" });
-          this.eventBus?.emit({
-            type: "task:updated",
-            projectId: session.projectId,
-            task: { ...assignedTask, status: "done" } as Record<string, unknown>,
-          });
-        }
-      }
-      return;
-    }
-
-    // Log unknown message types for debugging
-    console.log(`[AgentSession] Unknown message type: ${msg.type}`);
-  }
-
-  /**
-   * Process a content block from assistant message
-   */
-  private processContentBlock(
-    sessionId: string,
-    block: ClaudeContentBlock,
-    timestamp: number
-  ): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-
-    switch (block.type) {
+    switch (event.type) {
       case "text":
-        // For text blocks, use streaming update pattern
-        this.updateAssistantMessage(sessionId, block.text, timestamp);
+        this.updateAssistantMessage(sessionId, event.content, timestamp);
         break;
 
       case "tool_use": {
-        // Tool use breaks the assistant streaming — finalize before clearing
         this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
-        // Deduplicate by block ID — streaming can replay the same assistant message
-        const tuKey = `tool_use:${block.id}`;
+        const tuKey = `tool_use:${event.toolUseId}`;
         const { index: tuIndex, isNew: tuIsNew } = session.store.toolTracker.getOrCreate(tuKey);
         const tuMessage: AgentMessage = {
           type: "tool_use",
-          tool: block.name,
-          input: block.input,
-          toolUseId: block.id,
+          tool: event.tool,
+          input: event.input,
+          toolUseId: event.toolUseId,
           timestamp,
         };
         if (tuIsNew) {
-          // First time seeing this tool_use — add entry
           session.store.entries[tuIndex] = tuMessage;
           const patch = ConversationPatch.addEntry(tuIndex, tuMessage);
           session.store.patches.push(patch);
           this.broadcastPatch(sessionId, patch);
         } else {
-          // Already seen — replace (input may have been updated during streaming)
           session.store.entries[tuIndex] = tuMessage;
           const patch = ConversationPatch.replaceEntry(tuIndex, tuMessage);
           session.store.patches.push(patch);
           this.broadcastPatch(sessionId, patch);
         }
-        // Persist tool_use immediately
         if (!session.skipDb) {
           this.persistEntry(session, tuIndex, tuMessage);
         }
@@ -450,17 +337,15 @@ export class AgentSessionManager {
       }
 
       case "tool_result": {
-        // Tool result breaks the assistant streaming — finalize before clearing
         this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
-        // Deduplicate by tool_use_id
-        const trKey = `tool_result:${block.tool_use_id}`;
+        const trKey = `tool_result:${event.toolUseId}`;
         const { index: trIndex, isNew: trIsNew } = session.store.toolTracker.getOrCreate(trKey);
         const trMessage: AgentMessage = {
           type: "tool_result",
-          tool: "",
-          output: typeof block.content === "string" ? block.content : JSON.stringify(block.content),
-          toolUseId: block.tool_use_id,
+          tool: event.tool,
+          output: event.output,
+          toolUseId: event.toolUseId,
           timestamp,
         };
         if (trIsNew) {
@@ -474,7 +359,6 @@ export class AgentSessionManager {
           session.store.patches.push(patch);
           this.broadcastPatch(sessionId, patch);
         }
-        // Persist tool_result immediately
         if (!session.skipDb) {
           this.persistEntry(session, trIndex, trMessage);
         }
@@ -482,14 +366,98 @@ export class AgentSessionManager {
       }
 
       case "thinking":
-        // Thinking breaks the assistant streaming — finalize before clearing
         this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
         this.pushEntry(sessionId, {
           type: "thinking",
-          content: block.thinking,
+          content: event.content,
           timestamp,
         }, true);
+        break;
+
+      case "system":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        this.pushEntry(sessionId, {
+          type: "system",
+          content: event.content,
+          timestamp,
+        }, true);
+        break;
+
+      case "error":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        this.pushEntry(sessionId, {
+          type: "error",
+          message: event.message,
+          timestamp,
+        }, true);
+        break;
+
+      case "result":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+
+        if (event.subtype === "error" && event.error) {
+          this.pushEntry(sessionId, {
+            type: "error",
+            message: event.error,
+            timestamp,
+          }, true);
+        }
+
+        if (event.subtype === "success") {
+          this.broadcastRaw(sessionId, {
+            taskCompleted: {
+              duration_ms: event.duration_ms,
+              cost_usd: event.cost_usd,
+              input_tokens: event.input_tokens,
+              output_tokens: event.output_tokens,
+            },
+          });
+
+          // Auto-update task status to "done" for the branch's assigned task
+          const tasks = this.storage.tasks.getByProjectId(session.projectId);
+          const branchKey = session.branch ?? "";
+          const assignedTask = tasks.find(t => t.assigned_branch === branchKey);
+          if (assignedTask && assignedTask.status !== "done") {
+            this.storage.tasks.update(assignedTask.id, { status: "done" });
+            this.eventBus?.emit({
+              type: "task:updated",
+              projectId: session.projectId,
+              task: { ...assignedTask, status: "done" } as Record<string, unknown>,
+            });
+          }
+        }
+        break;
+
+      case "approval_request":
+        this.finalizeStreamingEntry(session);
+        session.store.currentAssistantIndex = null;
+        if (event.requestType === "command") {
+          this.pushEntry(sessionId, {
+            type: "approval_request",
+            requestType: "command",
+            requestId: event.requestId,
+            command: event.command,
+            cwd: event.cwd,
+            timestamp,
+          }, true);
+        } else {
+          this.pushEntry(sessionId, {
+            type: "approval_request",
+            requestType: "fileChange",
+            requestId: event.requestId,
+            changes: event.changes,
+            timestamp,
+          }, true);
+        }
+        break;
+
+      case "stdin_write":
+        // Provider needs to send deferred data to the agent's stdin
+        session.process?.stdin?.write(event.content);
         break;
     }
   }
@@ -594,7 +562,7 @@ export class AgentSessionManager {
   /**
    * Send a user message to the agent
    */
-  sendUserMessage(sessionId: string, content: string, projectPath?: string): boolean {
+  sendUserMessage(sessionId: string, content: string | ContentPart[], projectPath?: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
 
@@ -623,20 +591,38 @@ export class AgentSessionManager {
       timestamp: Date.now(),
     }, true);
 
-    // Send to Claude Code stdin
-    const input: ClaudeUserInput = {
-      type: "user",
-      message: {
-        role: "user",
-        content,
-      },
-    };
-
+    // Send to agent stdin via provider
     try {
-      session.process?.stdin?.write(JSON.stringify(input) + "\n");
+      const provider = getProvider(session.agentType);
+      const formatted = provider.formatUserInput(content, session.id);
+      session.process?.stdin?.write(formatted);
       return true;
     } catch (error) {
       console.error(`[AgentSession] Failed to send message:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Send an approval response to the agent process (for agents with approval flow).
+   * Returns false if session not found, not running, or provider doesn't support approvals.
+   */
+  sendApprovalResponse(sessionId: string, requestId: string, decision: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+
+    if (session.status !== "running" || !session.process?.stdin) {
+      return false;
+    }
+
+    try {
+      const provider = getProvider(session.agentType);
+      const formatted = provider.formatApprovalResponse?.(requestId, decision, session.id);
+      if (!formatted) return false;
+      session.process.stdin.write(formatted);
+      return true;
+    } catch (error) {
+      console.error(`[AgentSession] Failed to send approval response:`, error);
       return false;
     }
   }
@@ -748,6 +734,9 @@ export class AgentSessionManager {
    */
   deleteSession(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
+    if (session) {
+      getProvider(session.agentType).onSessionDestroyed?.(sessionId);
+    }
     this.stopSession(sessionId);
     this.sessions.delete(sessionId);
     if (!session?.skipDb) this.storage.agentSessions.delete(sessionId);
@@ -758,7 +747,7 @@ export class AgentSessionManager {
    * Restart a session (stop process, clear history, respawn)
    * Returns the same session ID with a fresh conversation
    */
-  restartSession(sessionId: string, projectPath: string): boolean {
+  restartSession(sessionId: string, projectPath: string, agentType?: AgentType): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return false;
@@ -797,10 +786,17 @@ export class AgentSessionManager {
     this.broadcastPatch(sessionId, ConversationPatch.updateStatus("running"));
     this.eventBus?.emit({ type: "session:status", projectId: session.projectId, branch: session.branch, sessionId: session.id, status: "running" });
 
-    // 6. Calculate absolute worktree path and respawn
+    // 6. Reset provider state and update agent type if specified
+    getProvider(session.agentType).onSessionDestroyed?.(sessionId);
+    if (agentType) {
+      session.agentType = agentType;
+    }
+    getProvider(session.agentType).onSessionCreated?.(sessionId);
+
+    // 7. Calculate absolute worktree path and respawn
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     return true;
   }
@@ -850,7 +846,7 @@ export class AgentSessionManager {
     // 5. Respawn Claude Code with new mode flags
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
 
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     // 6. Send initial message or conversation summary
     if (initialMessage) {
@@ -864,15 +860,10 @@ export class AgentSessionManager {
       if (context) {
         setTimeout(() => {
           // Send context without adding to visible messages
-          const input: ClaudeUserInput = {
-            type: "user",
-            message: {
-              role: "user",
-              content: context,
-            },
-          };
+          const provider = getProvider(session.agentType);
+          const formatted = provider.formatUserInput(context, session.id);
           try {
-            session.process?.stdin?.write(JSON.stringify(input) + "\n");
+            session.process?.stdin?.write(formatted);
           } catch (error) {
             console.error(`[AgentSession] Failed to send conversation context:`, error);
           }
@@ -905,9 +896,13 @@ export class AgentSessionManager {
       if (!entry) continue;
 
       switch (entry.type) {
-        case "user":
-          lines.push(`User: ${entry.content}`);
+        case "user": {
+          const text = typeof entry.content === "string"
+            ? entry.content
+            : entry.content.filter(p => p.type === "text").map(p => (p as { text: string }).text).join("\n");
+          lines.push(`User: ${text}`);
           break;
+        }
         case "assistant":
           lines.push(`Assistant: ${entry.content}`);
           break;
@@ -942,7 +937,7 @@ export class AgentSessionManager {
   /**
    * Wake a dormant session: spawn process, send full context + user message
    */
-  private wakeDormantSession(session: RunningSession, projectPath: string, userMessage: string): void {
+  private wakeDormantSession(session: RunningSession, projectPath: string, userMessage: string | ContentPart[]): void {
     console.log(`[AgentSession] Waking dormant session ${session.id}`);
 
     session.dormant = false;
@@ -953,7 +948,7 @@ export class AgentSessionManager {
 
     // Spawn Claude Code process
     const absoluteWorktreePath = resolveWorktreePath(projectPath, session.branch);
-    this.spawnClaudeCode(session, absoluteWorktreePath);
+    this.spawnAgent(session, absoluteWorktreePath);
 
     // Push user message to store (+ persist to DB)
     this.pushEntry(session.id, {
@@ -966,15 +961,10 @@ export class AgentSessionManager {
     setTimeout(() => {
       const context = this.buildFullConversationContext(session.store.entries);
       if (context) {
-        const input: ClaudeUserInput = {
-          type: "user",
-          message: {
-            role: "user",
-            content: context,
-          },
-        };
+        const provider = getProvider(session.agentType);
+        const formatted = provider.formatUserInput(context, session.id);
         try {
-          session.process?.stdin?.write(JSON.stringify(input) + "\n");
+          session.process?.stdin?.write(formatted);
         } catch (error) {
           console.error(`[AgentSession] Failed to send context to woken session:`, error);
         }
@@ -1050,6 +1040,7 @@ export class AgentSessionManager {
         buffer: "",
         skipDb: false,
         permissionMode,
+        agentType: ((dbSession as unknown as Record<string, unknown>).agent_type as AgentType) || "claude-code",
       };
 
       this.sessions.set(dbSession.id, runningSession);
@@ -1070,6 +1061,9 @@ export class AgentSessionManager {
    */
   shutdown(): void {
     for (const [id, session] of this.sessions) {
+      try {
+        getProvider(session.agentType).onSessionDestroyed?.(id);
+      } catch { /* ignore - provider cleanup is best-effort */ }
       try {
         session.process?.kill("SIGTERM");
       } catch { /* ignore - process may already be dead */ }

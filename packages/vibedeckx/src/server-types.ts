@@ -7,6 +7,7 @@ import type { ProxyManager } from "./utils/proxy-manager.js";
 import type { RemotePatchCache } from "./remote-patch-cache.js";
 
 export interface RemoteExecutorInfo {
+  remoteServerId: string;
   remoteUrl: string;
   remoteApiKey: string;
   remoteProcessId: string;
@@ -15,9 +16,11 @@ export interface RemoteExecutorInfo {
 }
 
 export interface RemoteSessionInfo {
+  remoteServerId: string;
   remoteUrl: string;
   remoteApiKey: string;
   remoteSessionId: string;
+  branch?: string | null;
 }
 
 declare module "fastify" {

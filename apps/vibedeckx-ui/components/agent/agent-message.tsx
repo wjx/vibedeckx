@@ -1,11 +1,13 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles, FilePlus2, Globe2 } from "lucide-react";
-import type { AgentMessage } from "@/hooks/use-agent-session";
+import { Bot, User, Wrench, Brain, AlertCircle, Info, HelpCircle, FileCheck, ListTodo, FileText, Terminal, Search, FolderSearch, Workflow, FilePenLine, Globe, Sparkles, FilePlus2, Globe2, ShieldAlert } from "lucide-react";
+import type { AgentMessage, ContentPart } from "@/hooks/use-agent-session";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { useAgentConversation } from "./agent-conversation";
 import { AskUserQuestion } from "./ask-user-question";
 import { ExitPlanModeUI } from "./exit-plan-mode";
+import { CommandApprovalUI, FileChangeApprovalUI } from "./approval-request";
 import {
   TodoWriteUI,
   TaskCreateUI,
@@ -24,6 +26,7 @@ import { WebFetchToolUseUI, WebFetchToolResultUI } from "./web-fetch-tools";
 import { WebSearchToolUseUI, WebSearchToolResultUI } from "./web-search-tools";
 import { SkillToolUseUI, SkillToolResultUI } from "./skill-tools";
 import { TaskOutputToolUseUI, TaskOutputToolResultUI } from "./task-output-tools";
+import { FileChangeToolUseUI, FileChangeToolResultUI } from "./file-change-tools";
 
 interface AgentMessageProps {
   message: AgentMessage;
@@ -53,12 +56,40 @@ export function AgentMessageItem({ message, messageIndex }: AgentMessageProps) {
     case "system":
       return <SystemMessage content={message.content} />;
 
+    case "approval_request":
+      return (
+        <div className="flex gap-3 py-3">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center">
+            <ShieldAlert className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <p className="text-sm font-medium text-amber-500 mb-1">
+              {message.requestType === "command" ? "Command Approval" : "File Change Approval"}
+            </p>
+            {message.requestType === "command" ? (
+              <CommandApprovalUI
+                requestId={message.requestId}
+                command={message.command}
+                cwd={message.cwd}
+                messageIndex={messageIndex}
+              />
+            ) : (
+              <FileChangeApprovalUI
+                requestId={message.requestId}
+                changes={message.changes}
+                messageIndex={messageIndex}
+              />
+            )}
+          </div>
+        </div>
+      );
+
     default:
       return null;
   }
 }
 
-function UserMessage({ content }: { content: string }) {
+function UserMessage({ content }: { content: string | ContentPart[] }) {
   return (
     <div className="flex gap-3 py-4">
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -67,23 +98,53 @@ function UserMessage({ content }: { content: string }) {
       <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-sm font-medium text-foreground mb-1">You</p>
         <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
-          <MessageResponse>{content}</MessageResponse>
+          {typeof content === "string" ? (
+            <MessageResponse>{content ?? ""}</MessageResponse>
+          ) : (
+            content.map((part, i) =>
+              part.type === "text" ? (
+                <MessageResponse key={i}>{part.text}</MessageResponse>
+              ) : (
+                <img
+                  key={i}
+                  src={`data:${part.mediaType};base64,${part.data}`}
+                  alt="Attached image"
+                  className="max-w-sm rounded-lg mt-2"
+                />
+              )
+            )
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+function useAgentType(): string {
+  try {
+    return useAgentConversation().agentType;
+  } catch {
+    return "claude-code";
+  }
+}
+
 function AssistantMessage({ content }: { content: string }) {
+  const agentType = useAgentType();
+  const isCodex = agentType === "codex";
+  const label = isCodex ? "Codex" : "Claude";
+  const iconBg = isCodex ? "bg-green-500/10" : "bg-violet-500/10";
+  const iconColor = isCodex ? "text-green-500" : "text-violet-500";
+  const textColor = isCodex ? "text-green-500" : "text-violet-500";
+
   return (
     <div className="flex gap-3 py-4">
-      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center">
-        <Bot className="w-4 h-4 text-violet-500" />
+      <div className={`flex-shrink-0 w-8 h-8 rounded-full ${iconBg} flex items-center justify-center`}>
+        <Bot className={`w-4 h-4 ${iconColor}`} />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <p className="text-sm font-medium text-violet-500 mb-1">Claude</p>
+        <p className={`text-sm font-medium ${textColor} mb-1`}>{label}</p>
         <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
-          <MessageResponse>{content}</MessageResponse>
+          <MessageResponse>{content ?? ""}</MessageResponse>
         </div>
       </div>
     </div>
@@ -297,6 +358,20 @@ function ToolUseMessage({ tool, input, messageIndex }: { tool: string; input: un
     );
   }
 
+  if (tool === "FileChange") {
+    return (
+      <div className="flex gap-3 py-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center">
+          <FilePenLine className="w-4 h-4 text-sky-500" />
+        </div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="text-sm font-medium text-sky-500 mb-1">File Changes</p>
+          <FileChangeToolUseUI input={input} />
+        </div>
+      </div>
+    );
+  }
+
   const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
@@ -453,6 +528,16 @@ function ToolResultMessage({ tool, output }: { tool: string; output: string }) {
     );
   }
 
+  if (tool === "FileChange") {
+    return (
+      <div className="flex gap-3 py-3 pl-11">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <FileChangeToolResultUI output={output} />
+        </div>
+      </div>
+    );
+  }
+
   const isLong = output.length > 200;
 
   return (
@@ -484,7 +569,7 @@ function ThinkingMessage({ content }: { content: string }) {
             Thinking...
           </summary>
           <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap break-words bg-blue-500/5 p-2 rounded overflow-hidden">
-            {content.length > 500 ? content.substring(0, 500) + "..." : content}
+            {(content ?? "").length > 500 ? (content ?? "").substring(0, 500) + "..." : content ?? ""}
           </div>
         </details>
       </div>
@@ -513,7 +598,7 @@ function SystemMessage({ content }: { content: string }) {
         <Info className="w-4 h-4 text-gray-500" />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <p className="text-xs text-muted-foreground break-words">{content}</p>
+        <p className="text-xs text-muted-foreground break-words">{content ?? ""}</p>
       </div>
     </div>
   );

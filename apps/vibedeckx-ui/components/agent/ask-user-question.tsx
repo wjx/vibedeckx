@@ -58,7 +58,8 @@ export function AskUserQuestion({ input, messageIndex }: AskUserQuestionProps) {
   // Determine if already answered: next message is a user message
   const nextMsg = messages[messageIndex + 1];
   const isAnswered = nextMsg?.type === "user";
-  const answeredText = isAnswered ? nextMsg.content : "";
+  const rawContent = isAnswered ? nextMsg.content : "";
+  const answeredText = typeof rawContent === "string" ? rawContent : rawContent.filter(p => p.type === "text").map(p => p.text).join("\n");
 
   if (!parsed) {
     // Fallback: render raw JSON
