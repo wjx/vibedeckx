@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ExecutorOutput } from "@/components/executor/executor-output";
 import { useTerminals } from "@/hooks/use-terminals";
 import { useExecutorLogs } from "@/hooks/use-executor-logs";
+import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { Project } from "@/lib/api";
 
@@ -53,15 +54,19 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
     removeTerminal,
   } = useTerminals(projectId, selectedBranch);
 
+  const { remotes } = useProjectRemotes(project?.id ?? undefined);
+
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const hasBothPaths = !!(project?.path && project?.remote_url);
-  const defaultLocation = hasBothPaths && project?.executor_mode === "remote" ? "remote" : "local";
+  const hasLocal = !!project?.path;
+  const hasRemotes = remotes.length > 0;
+  const hasMultipleTargets = hasLocal && hasRemotes;
+  const defaultLocation = hasMultipleTargets && project?.executor_mode !== "local" ? "remote" : "local";
 
   const handleCreateDefault = useCallback(() => {
-    createTerminal(hasBothPaths ? defaultLocation : undefined);
-  }, [createTerminal, hasBothPaths, defaultLocation]);
+    createTerminal(hasMultipleTargets ? defaultLocation as "local" | "remote" : undefined);
+  }, [createTerminal, hasMultipleTargets, defaultLocation]);
 
   const handleCreateAt = useCallback(
     (location: "local" | "remote") => {
@@ -106,7 +111,7 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
           <div className="flex items-center gap-1">
             {terminals.map((t) => {
               const isRemote = t.location === "remote" || t.id.startsWith("remote-");
-              const TabIcon = hasBothPaths
+              const TabIcon = hasMultipleTargets
                 ? isRemote
                   ? Cloud
                   : Monitor
@@ -142,7 +147,7 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
 
-        {hasBothPaths ? (
+        {hasMultipleTargets ? (
           <div className="relative shrink-0" ref={menuRef}>
             <div className="flex items-center">
               <Button
@@ -164,20 +169,25 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
             </div>
             {showLocationMenu && (
               <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md">
-                <button
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
-                  onClick={() => handleCreateAt("local")}
-                >
-                  <Monitor className="h-3.5 w-3.5" />
-                  Local Terminal
-                </button>
-                <button
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
-                  onClick={() => handleCreateAt("remote")}
-                >
-                  <Cloud className="h-3.5 w-3.5" />
-                  Remote Terminal
-                </button>
+                {hasLocal && (
+                  <button
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                    onClick={() => handleCreateAt("local")}
+                  >
+                    <Monitor className="h-3.5 w-3.5" />
+                    Local Terminal
+                  </button>
+                )}
+                {remotes.map((r) => (
+                  <button
+                    key={r.remote_server_id}
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                    onClick={() => handleCreateAt("remote")}
+                  >
+                    <Cloud className="h-3.5 w-3.5" />
+                    {r.server_name} Terminal
+                  </button>
+                ))}
               </div>
             )}
           </div>

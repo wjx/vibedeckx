@@ -4,17 +4,25 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { produce } from "immer";
 import { toast } from "sonner";
 import { getWebSocketUrl } from "@/lib/api";
+import type { AgentType } from "@/lib/api";
+
+// ============ Content Part Types (for image attachments) ============
+
+export type TextPart = { type: "text"; text: string };
+export type ImagePart = { type: "image"; mediaType: string; data: string }; // base64
+export type ContentPart = TextPart | ImagePart;
 
 // ============ Types ============
 
 export type AgentMessage =
-  | { type: "user"; content: string; timestamp: number }
+  | { type: "user"; content: string | ContentPart[]; timestamp: number }
   | { type: "assistant"; content: string; partial?: boolean; timestamp: number }
   | { type: "tool_use"; tool: string; input: unknown; toolUseId?: string; timestamp: number }
   | { type: "tool_result"; tool: string; output: string; toolUseId?: string; timestamp: number }
   | { type: "thinking"; content: string; timestamp: number }
   | { type: "error"; message: string; timestamp: number }
-  | { type: "system"; content: string; timestamp: number };
+  | { type: "system"; content: string; timestamp: number }
+  | { type: "approval_request"; requestType: "command" | "fileChange"; requestId: string; command?: string; cwd?: string; changes?: Array<{path: string; diff?: string; kind: string}>; timestamp: number };
 
 export type AgentSessionStatus = "running" | "stopped" | "error";
 
@@ -24,6 +32,7 @@ export interface AgentSession {
   branch: string | null;
   status: AgentSessionStatus;
   permissionMode?: "plan" | "edit";
+  agentType?: AgentType;
 }
 
 // ============ JSON Patch Types (RFC 6902) ============
@@ -52,7 +61,7 @@ type AgentWsMessage =
   | { Ready: true }
   | { finished: true }
   | { error: string }
-  | { taskCompleted: { duration_ms?: number; cost_usd?: number } }
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } }
   | { remoteStatus: RemoteConnectionStatus; attempt?: number };
 
 // Container for patch target
@@ -78,12 +87,13 @@ function getApiBase(): string {
 async function createOrGetSession(
   projectId: string,
   branch: string | null,
-  permissionMode?: "plan" | "edit"
+  permissionMode?: "plan" | "edit",
+  agentType?: AgentType
 ): Promise<{ session: AgentSession; messages: AgentMessage[] }> {
   const response = await fetch(`${getApiBase()}/api/projects/${projectId}/agent-sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, permissionMode }),
+    body: JSON.stringify({ branch, permissionMode, agentType }),
   });
 
   if (!response.ok) {
@@ -93,7 +103,7 @@ async function createOrGetSession(
   return response.json();
 }
 
-async function sendMessageToSession(sessionId: string, content: string): Promise<void> {
+async function sendMessageToSession(sessionId: string, content: string | ContentPart[]): Promise<void> {
   const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -117,13 +127,24 @@ async function sendMessageToSession(sessionId: string, content: string): Promise
   }
 }
 
-async function restartSessionApi(sessionId: string): Promise<void> {
+async function restartSessionApi(sessionId: string, agentType?: AgentType): Promise<void> {
   const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/restart`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agentType }),
   });
 
   if (!response.ok) {
     throw new Error("Failed to restart session");
+  }
+}
+
+async function stopSessionApi(sessionId: string): Promise<void> {
+  const response = await fetch(`${getApiBase()}/api/agent-sessions/${sessionId}/stop`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to stop session");
   }
 }
 
@@ -250,7 +271,7 @@ interface UseAgentSessionOptions {
   onSessionStarted?: () => void;
 }
 
-export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string, options?: UseAgentSessionOptions) {
+export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string, agentType?: AgentType, options?: UseAgentSessionOptions) {
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentSessionStatus>("stopped");
@@ -302,8 +323,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       return;
     }
 
-    // Reset state for new connection
-    containerRef.current = { entries: [], status: "running" };
+    // Only reset container if it has no existing data (preserve REST-provided messages)
+    if (containerRef.current.entries.filter(Boolean).length === 0) {
+      containerRef.current = { entries: [], status: "running" };
+    }
     finishedRef.current = false;
     isReplayingRef.current = true; // Buffer patches until Ready signal
 
@@ -372,7 +395,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
         // Handle task completed - show toast
         if ("taskCompleted" in msg) {
-          const { duration_ms, cost_usd } = msg.taskCompleted;
+          const { duration_ms, cost_usd, input_tokens, output_tokens } = msg.taskCompleted;
           const parts: string[] = [];
           if (duration_ms != null) {
             const secs = (duration_ms / 1000).toFixed(1);
@@ -380,6 +403,10 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           }
           if (cost_usd != null) {
             parts.push(`$${cost_usd.toFixed(4)}`);
+          } else if (input_tokens != null || output_tokens != null) {
+            const total = (input_tokens ?? 0) + (output_tokens ?? 0);
+            const formatted = total > 1000 ? `${(total / 1000).toFixed(1)}K` : String(total);
+            parts.push(`${formatted} tokens`);
           }
           toast.success("Task completed", {
             description: parts.length > 0 ? parts.join(" · ") : undefined,
@@ -513,7 +540,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
     try {
       const { session: newSession, messages: initialMessages } =
-        await createOrGetSession(projectId, branch, permissionMode);
+        await createOrGetSession(projectId, branch, permissionMode, agentType);
 
       // If branch/project changed while the API call was in flight, discard the result
       if (sessionGenerationRef.current !== generation) {
@@ -531,6 +558,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       // (WebSocket replay will update containerRef in the background and flush on Ready)
       if (initialMessages && initialMessages.length > 0) {
         setMessages(initialMessages);
+        containerRef.current = { entries: [...initialMessages], status: newSession.status };
       }
 
       // Connect WebSocket - it will receive history via patches
@@ -556,17 +584,21 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         setIsLoading(false);
       }
     }
-  }, [projectId, branch, connectWebSocket]);
+  }, [projectId, branch, agentType, connectWebSocket]);
 
   // Send user message - optionally accepts sessionId for immediate use after session creation
   const sendMessage = useCallback(
-    async (content: string, sessionId?: string) => {
+    async (content: string | ContentPart[], sessionId?: string) => {
       const targetSessionId = sessionId || session?.id;
-      if (!targetSessionId || !content.trim()) return;
+      if (!targetSessionId) return;
+      // Validate: non-empty string or non-empty array
+      if (typeof content === "string" && !content.trim()) return;
+      if (Array.isArray(content) && content.length === 0) return;
 
       try {
         // Send via REST API (more reliable than WebSocket for important actions)
-        await sendMessageToSession(targetSessionId, content.trim());
+        const trimmed = typeof content === "string" ? content.trim() : content;
+        await sendMessageToSession(targetSessionId, trimmed);
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : "Failed to send message";
         console.error("[AgentSession] Failed to send message:", errorMsg);
@@ -577,8 +609,21 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     [session?.id]
   );
 
+  // Stop session - sends stop signal to the running agent process
+  const stopSession = useCallback(async () => {
+    if (!session?.id) return;
+    try {
+      await stopSessionApi(session.id);
+      // Status update will come via WebSocket patches
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Failed to stop session";
+      console.error("[AgentSession] Failed to stop session:", e);
+      toast.error("Failed to stop session");
+    }
+  }, [session?.id]);
+
   // Restart session - clears conversation and respawns Claude Code process
-  const restartSession = useCallback(async () => {
+  const restartSession = useCallback(async (agentType?: AgentType) => {
     if (!session?.id) return;
 
     // Invalidate cache — session will get new state after restart
@@ -588,7 +633,11 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     setError(null);
 
     try {
-      await restartSessionApi(session.id);
+      await restartSessionApi(session.id, agentType);
+      // Update local session state with new agent type
+      if (agentType) {
+        setSession((prev) => prev ? { ...prev, agentType } : null);
+      }
       // The WebSocket will receive the clearAll patch and status update
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Failed to restart session";
@@ -697,7 +746,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
-  }, [projectId, branch, agentMode]);
+    // Invalidate session cache — agent type or branch changed, cached session is stale
+    if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
+  }, [projectId, branch, agentMode, agentType]);
 
   // Auto-start session after mount or worktree switch
   useEffect(() => {
@@ -706,6 +757,28 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       startSession();
     }
   }, [projectId, session, isLoading, startSession]);
+
+  // Reconnect when tab becomes visible again (browser may suspend timers when backgrounded)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && session?.id && !finishedRef.current) {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+          console.log("[AgentSession] Tab visible, WebSocket disconnected - reconnecting");
+          reconnectAttemptRef.current = 0;
+          shortLivedConnectionsRef.current = 0;
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+          connectWebSocket(session.id);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [session?.id, connectWebSocket]);
 
   // Reconnect when session changes
   useEffect(() => {
@@ -725,6 +798,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     remoteStatus,
     startSession,
     sendMessage,
+    stopSession,
     restartSession,
     switchMode,
     acceptPlan,

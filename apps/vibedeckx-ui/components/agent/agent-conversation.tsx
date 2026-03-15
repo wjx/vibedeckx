@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, createContext, useContext } from "react";
 import { useAgentSession } from "@/hooks/use-agent-session";
-import type { AgentMessage } from "@/hooks/use-agent-session";
+import type { AgentMessage, ContentPart } from "@/hooks/use-agent-session";
 import { AgentMessageItem } from "./agent-message";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
@@ -10,18 +10,44 @@ import {
   PromptInput,
   PromptInputTextarea,
   PromptInputSubmit,
+  PromptInputAttachments,
+  PromptInputAttachment,
+  PromptInputActionMenu,
+  PromptInputActionMenuTrigger,
+  PromptInputActionMenuContent,
+  PromptInputActionAddAttachments,
+  PromptInputHeader,
+  usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw } from "lucide-react";
-import { ExecutionModeToggle } from "@/components/ui/execution-mode-toggle";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud } from "lucide-react";
+import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
 import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
-import type { Project, ExecutionMode } from "@/lib/api";
+import { useProjectRemotes } from "@/hooks/use-project-remotes";
+import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
+import { getAgentProviders } from "@/lib/api";
+
+/** Only renders the attachment header when there are files attached */
+function AttachmentHeader() {
+  const attachments = usePromptInputAttachments();
+  if (attachments.files.length === 0) return null;
+  return (
+    <PromptInputHeader>
+      <PromptInputAttachments>
+        {(attachment) => <PromptInputAttachment data={attachment} />}
+      </PromptInputAttachments>
+    </PromptInputHeader>
+  );
+}
 
 interface AgentConversationContextValue {
-  sendMessage: (content: string, sessionId?: string) => Promise<void>;
+  sendMessage: (content: string | ContentPart[], sessionId?: string) => Promise<void>;
   messages: AgentMessage[];
   acceptPlan: (planContent: string) => Promise<void>;
   permissionMode: "plan" | "edit";
+  agentType: AgentType;
+  sessionId: string | null;
 }
 
 const AgentConversationContext = createContext<AgentConversationContextValue | null>(null);
@@ -50,6 +76,16 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   function AgentConversation({ projectId, branch, project, onAgentModeChange, onTaskCompleted, onSessionStarted, onStatusChange }, ref) {
   const [input, setInput] = useState("");
   const [permissionMode, setPermissionMode] = useState<"plan" | "edit">("edit");
+  const [agentType, setAgentType] = useState<AgentType>("claude-code");
+  const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const { remotes } = useProjectRemotes(project?.id ?? undefined);
+
+  // Build execution mode targets from local path + project remotes
+  const agentTargets: ExecutionModeTarget[] = [];
+  if (project?.path) agentTargets.push({ id: "local", label: "Local", icon: Monitor });
+  for (const r of remotes) {
+    agentTargets.push({ id: r.remote_server_id, label: r.server_name, icon: Cloud });
+  }
 
   const {
     session,
@@ -62,10 +98,16 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     remoteStatus,
     startSession,
     sendMessage,
+    stopSession,
     restartSession,
     switchMode,
     acceptPlan,
-  } = useAgentSession(projectId, branch, project?.agent_mode, { onTaskCompleted, onSessionStarted });
+  } = useAgentSession(projectId, branch, project?.agent_mode, agentType, { onTaskCompleted, onSessionStarted });
+
+  // Fetch available agent providers on mount
+  useEffect(() => {
+    getAgentProviders().then(setProviders).catch(() => {});
+  }, []);
 
   // Sync local permissionMode from session (e.g. after workspace switch restores cached session)
   useEffect(() => {
@@ -73,6 +115,13 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       setPermissionMode(session.permissionMode);
     }
   }, [session?.permissionMode]);
+
+  // Sync local agentType from session (e.g. after workspace switch restores cached session)
+  useEffect(() => {
+    if (session?.agentType) {
+      setAgentType(session.agentType);
+    }
+  }, [session?.agentType]);
 
   // Notify parent when agent starts working (status "running" + user has sent messages).
   // Skips auto-started idle sessions that have no messages yet.
@@ -113,18 +162,38 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     }
   }), [session, status, startSession, sendMessage, permissionMode]);
 
-  const handleSubmit = async () => {
-    if (!input.trim()) return;
+  const handleSubmit = async (message: PromptInputMessage) => {
+    const text = message.text.trim();
+    const hasFiles = message.files.length > 0;
+    if (!text && !hasFiles) return;
 
-    const content = input.trim();
     setInput("");
 
+    // Build content: plain string when no files, ContentPart[] when files are attached
+    let content: string | ContentPart[];
+    if (!hasFiles) {
+      content = text;
+    } else {
+      const parts: ContentPart[] = [];
+      if (text) {
+        parts.push({ type: "text", text });
+      }
+      for (const file of message.files) {
+        if (file.mediaType && file.url) {
+          // Extract base64 data from data URL (format: "data:mediaType;base64,DATA")
+          const base64Match = file.url.match(/^data:[^;]+;base64,(.+)$/);
+          if (base64Match) {
+            parts.push({ type: "image", mediaType: file.mediaType, data: base64Match[1] });
+          }
+        }
+      }
+      content = parts;
+    }
+
     if (!session || status !== "running") {
-      // Start session with first message, passing current permission mode
-      onStatusChange?.();  // Immediate visual feedback before async session start
+      onStatusChange?.();
       const newSession = await startSession(permissionMode);
       if (newSession) {
-        // Use returned session ID directly to avoid React state timing issues
         sendMessage(content, newSession.id);
       }
     } else {
@@ -138,7 +207,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       <div className="h-full flex items-center justify-center text-muted-foreground">
         <div className="text-center">
           <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>Select a project to start coding with Claude</p>
+          <p>Select a project to start coding</p>
         </div>
       </div>
     );
@@ -149,17 +218,41 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b bg-muted/30">
         <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-violet-500" />
-          <span className="text-sm font-medium">Claude Code</span>
+          <Bot className={`h-4 w-4 ${agentType === "codex" ? "text-green-500" : "text-violet-500"}`} />
+          {providers.length > 1 ? (
+            <select
+              className="text-sm font-medium bg-transparent border border-border rounded px-1.5 py-0.5 outline-none"
+              value={agentType}
+              onChange={(e) => {
+                const newType = e.target.value as AgentType;
+                setAgentType(newType);
+                if (session) {
+                  restartSession(newType);
+                }
+              }}
+              disabled={session !== null && messages.length > 0}
+            >
+              {providers.map((p) => (
+                <option key={p.type} value={p.type} disabled={!p.available}>
+                  {p.displayName}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-sm font-medium">
+              {agentType === "codex" ? "Codex" : "Claude Code"}
+            </span>
+          )}
           <PermissionModeToggle
             mode={permissionMode}
             onModeChange={handlePermissionModeChange}
             disabled={isLoading}
           />
-          {project && project.path && project.remote_path && onAgentModeChange && (
+          {agentTargets.length > 1 && onAgentModeChange && (
             <ExecutionModeToggle
-              mode={project.agent_mode}
-              onModeChange={onAgentModeChange}
+              targets={agentTargets}
+              activeTarget={project?.agent_mode ?? "local"}
+              onTargetChange={onAgentModeChange}
             />
           )}
           {session && (() => {
@@ -201,7 +294,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             <Button
               variant="ghost"
               size="icon"
-              onClick={restartSession}
+              onClick={() => restartSession()}
               disabled={isLoading}
               className="h-7 w-7"
               title="New Conversation"
@@ -212,9 +305,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  // TODO: Implement stop
-                }}
+                onClick={() => stopSession()}
                 className="h-7 text-xs"
               >
                 <Square className="h-3 w-3 mr-1" />
@@ -243,13 +334,13 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   <Bot className="h-16 w-16 mx-auto mb-4 text-violet-500/30" />
                   <h3 className="text-lg font-semibold mb-2">Start a conversation</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Ask Claude to help you with coding tasks in this worktree
+                    Ask the agent to help you with coding tasks in this worktree
                   </p>
                 </>
               )}
             </div>
           ) : (
-            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode }}>
+            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode: session?.permissionMode ?? permissionMode, agentType: session?.agentType ?? agentType, sessionId: session?.id ?? null }}>
               <div className="space-y-1">
                 {messages.map((msg, index) => (
                   <AgentMessageItem key={index} message={msg} messageIndex={index} />
@@ -257,7 +348,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 {isLoading && (
                   <div className="flex items-center gap-2 py-4 text-muted-foreground">
                     <Loader className="h-4 w-4" />
-                    <span className="text-sm">Claude is thinking...</span>
+                    <span className="text-sm">Connecting to agent...</span>
                   </div>
                 )}
               </div>
@@ -277,30 +368,36 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       {/* Input area */}
       <div className="flex-shrink-0 border-t p-4">
         <PromptInput
-          onSubmit={() => handleSubmit()}
+          onSubmit={handleSubmit}
+          accept="image/*"
           className="w-full"
         >
-          <PromptInputTextarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              session
-                ? "Ask Claude to help with your code..."
-                : "Type your first message to start..."
-            }
-            className="pr-12"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
+          {/* Attachment thumbnails — only rendered when images are attached */}
+          <AttachmentHeader />
+          {/* Single row: [+ button] [textarea] [submit button] */}
+          <div className="relative flex w-full items-start">
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger className="mt-2.5 ml-1" />
+              <PromptInputActionMenuContent>
+                <PromptInputActionAddAttachments label="Add images" />
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+            <PromptInputTextarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                session
+                  ? "Ask the agent to help with your code..."
+                  : "Type your first message to start..."
               }
-            }}
-          />
-          <PromptInputSubmit
-            className="absolute bottom-1 right-1"
-            disabled={!input.trim()}
-            status={isLoading ? "streaming" : "ready"}
-          />
+              className="pr-12"
+            />
+            <PromptInputSubmit
+              className="absolute bottom-1 right-1"
+              disabled={!input.trim() && !isLoading}
+              status={isLoading ? "streaming" : "ready"}
+            />
+          </div>
         </PromptInput>
       </div>
     </div>

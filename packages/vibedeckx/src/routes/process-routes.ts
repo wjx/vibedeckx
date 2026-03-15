@@ -53,20 +53,34 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     const branch = req.body?.branch;
 
-    const useRemoteExecutor = project.remote_url && project.remote_api_key && project.remote_path &&
-      (!project.path || project.executor_mode === 'remote');
+    const executorMode = project.executor_mode;
+    const useRemoteExecutor = executorMode !== 'local';
+
+    // When remote, resolve connection info from project_remotes table
+    const remoteConfig = useRemoteExecutor
+      ? fastify.storage.projectRemotes.getByProjectAndServer(project.id, executorMode)
+      : undefined;
+
+    // Fallback to legacy project fields if no project_remote found
+    const effectiveRemoteUrl = remoteConfig?.server_url ?? project.remote_url;
+    const effectiveRemoteApiKey = remoteConfig?.server_api_key ?? project.remote_api_key;
+    const effectiveRemotePath = remoteConfig?.remote_path ?? project.remote_path;
+
+    const hasRemoteConfig = !!(effectiveRemoteUrl && effectiveRemoteApiKey && effectiveRemotePath);
+    const shouldUseRemote = useRemoteExecutor && hasRemoteConfig;
 
     console.log(`[API] POST executors/${req.params.id}/start: ` +
-      `executor_mode=${project.executor_mode}, useRemoteExecutor=${useRemoteExecutor}`);
+      `executor_mode=${executorMode}, useRemoteExecutor=${shouldUseRemote}, ` +
+      `remoteConfig=${remoteConfig ? `url=${remoteConfig.server_url}, path=${remoteConfig.remote_path}` : 'legacy'}`);
 
-    if (useRemoteExecutor) {
+    if (shouldUseRemote) {
       const result = await proxyToRemote(
-        project.remote_url!,
-        project.remote_api_key!,
+        effectiveRemoteUrl!,
+        effectiveRemoteApiKey!,
         "POST",
         `/api/path/execute`,
         {
-          path: project.remote_path,
+          path: effectiveRemotePath,
           command: executor.command,
           branch: branch ?? undefined,
           cwd: executor.cwd || undefined,
@@ -77,8 +91,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const remoteData = result.data as { processId: string };
         const localProcessId = `remote-${executor.id}-${remoteData.processId}`;
         fastify.remoteExecutorMap.set(localProcessId, {
-          remoteUrl: project.remote_url!,
-          remoteApiKey: project.remote_api_key!,
+          remoteServerId: executorMode,
+          remoteUrl: effectiveRemoteUrl!,
+          remoteApiKey: effectiveRemoteApiKey!,
           remoteProcessId: remoteData.processId,
         });
         return reply.code(200).send({ processId: localProcessId });

@@ -18,6 +18,9 @@ import type { Storage } from "./storage/types.js";
 import type { ProcessManager, LogMessage } from "./process-manager.js";
 import type { AgentSessionManager } from "./agent-session-manager.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
+import { proxyToRemote } from "./utils/remote-proxy.js";
+import type { RemoteSessionInfo } from "./server-types.js";
+import type { RemotePatchCache } from "./remote-patch-cache.js";
 
 // ============ Types ============
 
@@ -64,15 +67,140 @@ export class ChatSessionManager {
   private storage: Storage;
   private processManager: ProcessManager;
   private agentSessionManager: AgentSessionManager;
+  private remoteSessionMap: Map<string, RemoteSessionInfo>;
+  private remotePatchCache: RemotePatchCache;
 
   private deepseek = createDeepSeek({
     apiKey: process.env.DEEPSEEK_API_KEY ?? "",
   });
 
-  constructor(storage: Storage, processManager: ProcessManager, agentSessionManager: AgentSessionManager) {
+  constructor(
+    storage: Storage,
+    processManager: ProcessManager,
+    agentSessionManager: AgentSessionManager,
+    remoteSessionMap: Map<string, RemoteSessionInfo>,
+    remotePatchCache: RemotePatchCache,
+  ) {
     this.storage = storage;
     this.processManager = processManager;
     this.agentSessionManager = agentSessionManager;
+    this.remoteSessionMap = remoteSessionMap;
+    this.remotePatchCache = remotePatchCache;
+  }
+
+  private findRemoteSessionForProject(projectId: string, branch?: string | null): { localSessionId: string; info: RemoteSessionInfo } | null {
+    // Session IDs use format: remote-{serverId}-{projectId}-{remoteSessionId}
+    // Match any session that contains the projectId segment
+    const projectSegment = `-${projectId}-`;
+    let fallback: { localSessionId: string; info: RemoteSessionInfo } | null = null;
+
+    for (const [key, info] of this.remoteSessionMap) {
+      if (key.startsWith("remote-") && key.includes(projectSegment)) {
+        // Exact branch match
+        if (info.branch === (branch ?? null)) {
+          return { localSessionId: key, info };
+        }
+        // Keep first match as fallback in case no branch match
+        if (!fallback) {
+          fallback = { localSessionId: key, info };
+        }
+      }
+    }
+
+    if (fallback) {
+      console.log(`[ChatSession] findRemoteSessionForProject: no exact branch match for branch=${branch ?? "null"}, using fallback session=${fallback.localSessionId} (branch=${fallback.info.branch ?? "null"})`);
+    }
+    return fallback;
+  }
+
+  /**
+   * Extract AgentMessage[] from the local remotePatchCache for a given session.
+   * Parses cached WS messages and collects ENTRY patch values into an ordered array.
+   */
+  private extractMessagesFromCache(sessionId: string): AgentMessage[] {
+    const cacheEntry = this.remotePatchCache.get(sessionId);
+    console.log(`[ChatSession] extractMessagesFromCache: sessionId=${sessionId}, cacheExists=${!!cacheEntry}, cachedMsgCount=${cacheEntry?.messages.length ?? 0}, patchCount=${cacheEntry?.patchCount ?? 0}, finished=${cacheEntry?.finished ?? "N/A"}, remoteWsState=${cacheEntry?.remoteWs?.readyState ?? "null"}, subscribers=${cacheEntry?.subscribers.size ?? 0}`);
+    if (!cacheEntry || cacheEntry.messages.length === 0) return [];
+
+    const result: AgentMessage[] = [];
+    // Track patch types for diagnostics
+    let entryCount = 0;
+    let statusCount = 0;
+    let readyCount = 0;
+    let finishedCount = 0;
+    let otherCount = 0;
+    let nonJsonPatchCount = 0;
+    let parseErrorCount = 0;
+
+    for (const raw of cacheEntry.messages) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed.JsonPatch || !Array.isArray(parsed.JsonPatch)) {
+          nonJsonPatchCount++;
+          continue;
+        }
+
+        for (const op of parsed.JsonPatch) {
+          if ((op.op === "add" || op.op === "replace") && op.value?.type === "ENTRY" && op.value.content) {
+            const match = op.path?.match(/^\/entries\/(\d+)$/);
+            if (match) {
+              const index = parseInt(match[1], 10);
+              result[index] = op.value.content as AgentMessage;
+              entryCount++;
+            }
+          } else if (op.path === "/status") {
+            statusCount++;
+          } else if (op.value?.type === "READY") {
+            readyCount++;
+          } else if (op.value?.type === "FINISHED") {
+            finishedCount++;
+          } else {
+            otherCount++;
+          }
+        }
+      } catch {
+        parseErrorCount++;
+      }
+    }
+
+    const filtered = result.filter(Boolean);
+    console.log(`[ChatSession] extractMessagesFromCache: extracted ${filtered.length} messages from ${cacheEntry.messages.length} cached raw messages. Patch breakdown: entry=${entryCount}, status=${statusCount}, ready=${readyCount}, finished=${finishedCount}, other=${otherCount}, nonJsonPatch=${nonJsonPatchCount}, parseErrors=${parseErrorCount}`);
+    return filtered;
+  }
+
+  private summarizeMessages(messages: AgentMessage[]) {
+    return messages.map((msg) => {
+      switch (msg.type) {
+        case "user":
+          return { type: "user", content: msg.content };
+        case "assistant":
+          return { type: "assistant", content: msg.content };
+        case "tool_use": {
+          const inputStr = typeof msg.input === "string"
+            ? msg.input
+            : JSON.stringify(msg.input);
+          return {
+            type: "tool_use",
+            tool: msg.tool,
+            input: inputStr.length > 500 ? inputStr.substring(0, 500) + "..." : inputStr,
+          };
+        }
+        case "tool_result":
+          return {
+            type: "tool_result",
+            tool: msg.tool,
+            output: msg.output.length > 500 ? msg.output.substring(0, 500) + "..." : msg.output,
+          };
+        case "error":
+          return { type: "error", message: msg.message };
+        case "system":
+          return { type: "system", content: msg.content };
+        case "thinking":
+          return { type: "thinking", content: msg.content };
+        default:
+          return { type: (msg as AgentMessage).type };
+      }
+    });
   }
 
   // ---- Session lifecycle ----
@@ -182,66 +310,109 @@ export class ChatSessionManager {
             .describe("Number of recent messages to return"),
         }),
         execute: async ({ tailMessages }) => {
-          // Try exact branch match first
+          // Collect local session
+          let localResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[] } | null = null;
           let agentSession = agentSessionManager.getSessionByBranch(projectId, branch);
-
-          // Fallback: find any session for this project (prefer running)
           if (!agentSession) {
             const projectSessions = agentSessionManager.getSessionsByProject(projectId);
             agentSession = projectSessions.find(s => s.status === "running")
               ?? projectSessions[0]
               ?? null;
-            if (agentSession) {
-              console.log(`[ChatSession] getAgentConversation: exact branch match failed (project=${projectId}, branch=${branch}), fell back to session ${agentSession.id} (branch=${agentSession.branch})`);
-            }
+          }
+          if (agentSession) {
+            const allMessages = agentSessionManager.getMessages(agentSession.id);
+            const recent = allMessages.slice(-tailMessages);
+            localResult = {
+              sessionId: agentSession.id,
+              status: agentSession.status,
+              totalMessages: allMessages.length,
+              messages: this.summarizeMessages(recent),
+            };
           }
 
-          if (!agentSession) {
-            return { messages: [], status: "no_session", message: "No coding agent session found for this workspace." };
-          }
+          // Collect remote session
+          let remoteResult: { sessionId: string; status: string; totalMessages: number; messages: unknown[]; note?: string } | null = null;
+          const remote = this.findRemoteSessionForProject(projectId, branch);
+          console.log(`[ChatSession] getAgentConversation: projectId=${projectId}, branch=${branch ?? "null"}, remote=${remote ? remote.localSessionId : "null"}, remoteBranch=${remote?.info.branch ?? "null"}`);
+          if (remote) {
+            try {
+              const result = await proxyToRemote(
+                remote.info.remoteUrl,
+                remote.info.remoteApiKey,
+                "GET",
+                `/api/agent-sessions/${remote.info.remoteSessionId}`,
+              );
+              console.log(`[ChatSession] getAgentConversation: remote proxy result ok=${result.ok}, status=${result.status}`);
+              if (result.ok) {
+                const data = result.data as { session: { status: string }; messages: AgentMessage[] };
+                let allMessages = data.messages ?? [];
+                console.log(`[ChatSession] getAgentConversation: remote returned ${allMessages.length} messages, session.status=${data.session?.status}`);
 
-          const allMessages = agentSessionManager.getMessages(agentSession.id);
-          const recent = allMessages.slice(-tailMessages);
+                // Fallback: if remote returned no messages, extract from local cache
+                if (allMessages.length === 0) {
+                  allMessages = this.extractMessagesFromCache(remote.localSessionId);
+                }
 
-          const summarized = recent.map((msg) => {
-            switch (msg.type) {
-              case "user":
-                return { type: "user", content: msg.content };
-              case "assistant":
-                return { type: "assistant", content: msg.content };
-              case "tool_use": {
-                const inputStr = typeof msg.input === "string"
-                  ? msg.input
-                  : JSON.stringify(msg.input);
-                return {
-                  type: "tool_use",
-                  tool: msg.tool,
-                  input: inputStr.length > 500 ? inputStr.substring(0, 500) + "..." : inputStr,
+                // If session is running but still no messages, poll cache briefly
+                // to allow time for ENTRY patches to arrive via WebSocket
+                if (allMessages.length === 0 && data.session?.status === "running") {
+                  const cacheState = this.remotePatchCache.get(remote.localSessionId);
+                  console.log(`[ChatSession] getAgentConversation: 0 messages for running session, starting retry. Cache state: wsState=${cacheState?.remoteWs?.readyState ?? "null"}, cachedMsgs=${cacheState?.messages.length ?? 0}, patchCount=${cacheState?.patchCount ?? 0}, finished=${cacheState?.finished ?? "N/A"}, reconnecting=${cacheState?.reconnecting ?? "N/A"}`);
+                  for (let attempt = 0; attempt < 3; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    allMessages = this.extractMessagesFromCache(remote.localSessionId);
+                    console.log(`[ChatSession] getAgentConversation: retry attempt ${attempt + 1}/3, extracted ${allMessages.length} messages`);
+                    if (allMessages.length > 0) break;
+                  }
+                  if (allMessages.length === 0) {
+                    const finalCache = this.remotePatchCache.get(remote.localSessionId);
+                    console.log(`[ChatSession] getAgentConversation: all retries exhausted, still 0 messages. Final cache: wsState=${finalCache?.remoteWs?.readyState ?? "null"}, cachedMsgs=${finalCache?.messages.length ?? 0}, patchCount=${finalCache?.patchCount ?? 0}`);
+                  }
+                }
+
+                const recent = allMessages.slice(-tailMessages);
+                remoteResult = {
+                  sessionId: remote.localSessionId,
+                  status: data.session?.status ?? "unknown",
+                  totalMessages: allMessages.length,
+                  messages: this.summarizeMessages(recent),
+                  ...(allMessages.length === 0 && data.session?.status === "running"
+                    ? { note: "Session just started, agent is still initializing. Try again in a few seconds." }
+                    : {}),
+                };
+              } else {
+                console.error(`[ChatSession] getAgentConversation: remote proxy failed status=${result.status}`);
+                // Try local cache even if remote returned non-ok status
+                const cachedMessages = this.extractMessagesFromCache(remote.localSessionId);
+                if (cachedMessages.length > 0) {
+                  remoteResult = {
+                    sessionId: remote.localSessionId,
+                    status: "running",
+                    totalMessages: cachedMessages.length,
+                    messages: this.summarizeMessages(cachedMessages.slice(-tailMessages)),
+                  };
+                }
+              }
+            } catch (err) {
+              console.error(`[ChatSession] getAgentConversation: remote proxy error:`, err);
+              // Try local cache even if remote is unreachable
+              const cachedMessages = this.extractMessagesFromCache(remote.localSessionId);
+              if (cachedMessages.length > 0) {
+                remoteResult = {
+                  sessionId: remote.localSessionId,
+                  status: "running",
+                  totalMessages: cachedMessages.length,
+                  messages: this.summarizeMessages(cachedMessages.slice(-tailMessages)),
                 };
               }
-              case "tool_result":
-                return {
-                  type: "tool_result",
-                  tool: msg.tool,
-                  output: msg.output.length > 500 ? msg.output.substring(0, 500) + "..." : msg.output,
-                };
-              case "error":
-                return { type: "error", message: msg.message };
-              case "system":
-                return { type: "system", content: msg.content };
-              case "thinking":
-                return { type: "thinking", content: msg.content };
-              default:
-                return { type: (msg as AgentMessage).type };
             }
-          });
+          }
 
-          return {
-            sessionId: agentSession.id,
-            status: agentSession.status,
-            totalMessages: allMessages.length,
-            messages: summarized,
-          };
+          if (!localResult && !remoteResult) {
+            return { local: null, remote: null, message: "No coding agent session found for this workspace." };
+          }
+
+          return { local: localResult, remote: remoteResult };
         },
       }),
 
@@ -430,7 +601,7 @@ export class ChatSessionManager {
       )
       .map((e) => ({
         role: e.type as "user" | "assistant",
-        content: e.content,
+        content: typeof e.content === "string" ? e.content : e.content.filter(p => p.type === "text").map(p => (p as { text: string }).text).join("\n"),
       }));
 
     // 4. Stream response

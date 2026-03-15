@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { api, type Project, type SyncButtonConfig } from "@/lib/api";
+import { api, type Project, type SyncButtonConfig, type ExecutionMode } from "@/lib/api";
 
 export function useProjects(initialProjectId?: string | null) {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -47,8 +47,8 @@ export function useProjects(initialProjectId?: string | null) {
     remotePath?: string | null;
     remoteUrl?: string | null;
     remoteApiKey?: string | null;
-    agentMode?: 'local' | 'remote';
-    executorMode?: 'local' | 'remote';
+    agentMode?: ExecutionMode;
+    executorMode?: ExecutionMode;
     syncUpConfig?: SyncButtonConfig | null;
     syncDownConfig?: SyncButtonConfig | null;
   }) => {

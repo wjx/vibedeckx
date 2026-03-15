@@ -11,6 +11,8 @@ import "../server-types.js";
 const REMOTE_RECONNECT_MAX_ATTEMPTS = 10;
 const REMOTE_RECONNECT_BASE_DELAY_MS = 1000;
 const REMOTE_RECONNECT_MAX_DELAY_MS = 30000;
+/** How long a connection must stay open before we consider it "stable" and reset the attempt counter. */
+const REMOTE_RECONNECT_STABILITY_MS = 10000;
 
 /** Build a WebSocket URL for a remote agent session. */
 function buildRemoteWsUrl(remoteInfo: RemoteSessionInfo): string {
@@ -79,9 +81,23 @@ function connectPersistentRemoteWs(
 
   remoteWs.on("open", () => {
     console.log(`[AgentWS] Persistent remote WS connected for ${sessionId} (sync=${hasCachedData})`);
-    cache.resetReconnectAttempt(sessionId);
     cache.broadcast(sessionId, JSON.stringify({ remoteStatus: "connected" }));
+    // Only reset the reconnect attempt counter after the connection has been
+    // stable for a minimum duration. This prevents an infinite ~1s reconnect
+    // loop when connections succeed but immediately close (e.g. remote closes
+    // after sync, idle timeout, etc.).
+    const stabilityTimer = setTimeout(() => {
+      cache.resetReconnectAttempt(sessionId);
+    }, REMOTE_RECONNECT_STABILITY_MS);
+    remoteWs.once("close", () => clearTimeout(stabilityTimer));
   });
+
+  // Ping/pong keepalive to prevent idle disconnections (e.g. Cloudflare 100s timeout)
+  const pingInterval = setInterval(() => {
+    if (remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.ping();
+    }
+  }, 30000);
 
   if (!hasCachedData) {
     // First connection ever — stream directly in live mode
@@ -161,11 +177,13 @@ function connectPersistentRemoteWs(
 
   remoteWs.on("error", (error) => {
     console.error(`[AgentWS] Persistent remote WS error for ${sessionId}:`, error);
+    clearInterval(pingInterval);
     // "close" event fires next and handles reconnection
   });
 
   remoteWs.on("close", () => {
     console.log(`[AgentWS] Persistent remote WS closed for ${sessionId}`);
+    clearInterval(pingInterval);
     cache.setRemoteWs(sessionId, null);
 
     // Don't reconnect if session is finished or cache entry was deleted
@@ -254,6 +272,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
             console.log(`[WebSocket] Connected to remote process ${remoteInfo.remoteProcessId}`);
           });
 
+          // Ping/pong keepalive to prevent idle disconnections when browser tab is backgrounded
+          const pingInterval = setInterval(() => {
+            if (remoteWs.readyState === WebSocket.OPEN) {
+              remoteWs.ping();
+            }
+          }, 30000);
+
           remoteWs.on("message", (data) => {
             try {
               socket.send(data.toString());
@@ -274,17 +299,20 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
           remoteWs.on("close", () => {
             console.log(`[WebSocket] Remote connection closed for process ${processId}`);
+            clearInterval(pingInterval);
             socket.close();
           });
 
           remoteWs.on("error", (error) => {
             console.error(`[WebSocket] Remote connection error:`, error);
+            clearInterval(pingInterval);
             socket.send(JSON.stringify({ type: "error", message: "Remote connection error" }));
             socket.close();
           });
 
           socket.on("close", () => {
             console.log(`[WebSocket] Client disconnected from remote process ${processId}`);
+            clearInterval(pingInterval);
             remoteWs.close();
           });
 
@@ -489,7 +517,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
           try {
             const message = JSON.parse(data.toString()) as AgentWsInput;
             if (message.type === "user_message") {
-              fastify.chatSessionManager.sendMessage(sessionId, message.content);
+              // Chat sessions only accept string content
+              const chatContent = typeof message.content === "string" ? message.content : message.content.filter(p => p.type === "text").map(p => p.text).join("\n");
+              fastify.chatSessionManager.sendMessage(sessionId, chatContent);
             }
           } catch (error) {
             console.error("[ChatWS] Failed to parse message:", error);

@@ -1,5 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
+import type { AgentMessage, AgentType, ContentPart } from "../agent-types.js";
+import { ConversationPatch } from "../conversation-patch.js";
+import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote } from "../utils/remote-proxy.js";
 import "../server-types.js";
 
@@ -17,11 +20,21 @@ function resolveProjectPath(
 }
 
 const routes: FastifyPluginAsync = async (fastify) => {
+  // List available agent providers
+  fastify.get("/api/agent-providers", async (_req, reply) => {
+    const providers = getAllProviders().map((provider) => ({
+      type: provider.getAgentType(),
+      displayName: provider.getDisplayName(),
+      available: provider.detectBinary() !== null,
+    }));
+    return reply.code(200).send({ providers });
+  });
+
   // Start agent session at a path (path-based, for remote execution)
   fastify.post<{
-    Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit" };
+    Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
   }>("/api/path/agent-sessions", async (req, reply) => {
-    const { path: projectPath, branch, permissionMode } = req.body;
+    const { path: projectPath, branch, permissionMode, agentType } = req.body;
     if (!projectPath) {
       return reply.code(400).send({ error: "Path is required" });
     }
@@ -45,7 +58,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
         branch ?? null,
         projectPath,
         false,
-        permissionMode || "edit"
+        permissionMode || "edit",
+        (agentType as AgentType) || "claude-code"
       );
 
       const session = fastify.agentSessionManager.getSession(sessionId);
@@ -58,6 +72,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           branch: branch ?? null,
           status: session?.status || "running",
           permissionMode: session?.permissionMode || "edit",
+          agentType: session?.agentType || "claude-code",
         },
         messages,
       });
@@ -99,31 +114,39 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 创建或获取 Agent Session
   fastify.post<{
     Params: { projectId: string };
-    Body: { branch?: string | null; permissionMode?: "plan" | "edit" };
+    Body: { branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
   }>("/api/projects/:projectId/agent-sessions", async (req, reply) => {
     const project = fastify.storage.projects.getById(req.params.projectId);
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { branch, permissionMode } = req.body;
+    const { branch, permissionMode, agentType } = req.body;
 
-    const useRemoteAgent = project.remote_url && project.remote_api_key && project.remote_path &&
-      (!project.path || project.agent_mode === 'remote');
+    const agentMode = project.agent_mode;
+    const useRemoteAgent = agentMode !== 'local';
+
+    // When remote, resolve connection info from project_remotes table
+    const remoteConfig = useRemoteAgent
+      ? fastify.storage.projectRemotes.getByProjectAndServer(project.id, agentMode)
+      : undefined;
 
     console.log(`[API] POST agent-sessions: projectId=${req.params.projectId}, ` +
-      `path=${project.path}, remote_url=${project.remote_url}, ` +
-      `remote_path=${project.remote_path}, agent_mode=${project.agent_mode}, ` +
-      `useRemoteAgent=${useRemoteAgent}`);
+      `path=${project.path}, agent_mode=${agentMode}, ` +
+      `useRemoteAgent=${useRemoteAgent}, remoteConfig=${remoteConfig ? `url=${remoteConfig.server_url}, path=${remoteConfig.remote_path}` : 'none'}`);
 
     if (useRemoteAgent) {
+      if (!remoteConfig) {
+        return reply.code(400).send({ error: `Remote server configuration not found for agent_mode="${agentMode}"` });
+      }
+
       try {
         const result = await proxyToRemote(
-          project.remote_url!,
-          project.remote_api_key!,
+          remoteConfig.server_url,
+          remoteConfig.server_api_key || "",
           "POST",
           `/api/path/agent-sessions`,
-          { path: project.remote_path, branch, permissionMode }
+          { path: remoteConfig.remote_path, branch, permissionMode, agentType }
         );
 
         console.log(`[API] Remote proxy result: ok=${result.ok}, status=${result.status}, ` +
@@ -131,12 +154,25 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
         if (result.ok) {
           const remoteData = result.data as { session: { id: string }; messages: unknown[] };
-          const localSessionId = `remote-${project.id}-${remoteData.session.id}`;
+          const localSessionId = `remote-${agentMode}-${project.id}-${remoteData.session.id}`;
           fastify.remoteSessionMap.set(localSessionId, {
-            remoteUrl: project.remote_url!,
-            remoteApiKey: project.remote_api_key!,
+            remoteServerId: agentMode,
+            remoteUrl: remoteConfig.server_url,
+            remoteApiKey: remoteConfig.server_api_key || "",
             remoteSessionId: remoteData.session.id,
+            branch: branch ?? null,
           });
+
+          // Seed remotePatchCache with REST messages so WS replay has data immediately
+          if (remoteData.messages && remoteData.messages.length > 0) {
+            const cacheEntry = fastify.remotePatchCache.getOrCreate(localSessionId);
+            if (cacheEntry.messages.length === 0) {
+              for (let i = 0; i < remoteData.messages.length; i++) {
+                const patch = ConversationPatch.addEntry(i, remoteData.messages[i] as AgentMessage);
+                fastify.remotePatchCache.appendMessage(localSessionId, JSON.stringify({ JsonPatch: patch }), true);
+              }
+            }
+          }
 
           return reply.code(200).send({
             session: {
@@ -166,7 +202,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
         branch ?? null,
         project.path,
         false,
-        permissionMode || "edit"
+        permissionMode || "edit",
+        (agentType as AgentType) || "claude-code"
       );
 
       const session = fastify.agentSessionManager.getSession(sessionId);
@@ -179,6 +216,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           branch: branch ?? null,
           status: session?.status || "running",
           permissionMode: session?.permissionMode || "edit",
+          agentType: session?.agentType || "claude-code",
         },
         messages,
       });
@@ -220,6 +258,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           branch: session.branch,
           status: session.status,
           permissionMode: session.permissionMode,
+          agentType: session.agentType || "claude-code",
         },
         messages,
       });
@@ -229,11 +268,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 发送消息到 Agent Session
   fastify.post<{
     Params: { sessionId: string };
-    Body: { content: string };
-  }>("/api/agent-sessions/:sessionId/message", async (req, reply) => {
+    Body: { content: string | ContentPart[] };
+  }>("/api/agent-sessions/:sessionId/message", { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
     const { content } = req.body;
 
-    if (!content || typeof content !== "string") {
+    // Validate: must be a non-empty string or non-empty array
+    const isValidString = typeof content === "string" && content.trim().length > 0;
+    const isValidArray = Array.isArray(content) && content.length > 0;
+    if (!isValidString && !isValidArray) {
       return reply.code(400).send({ error: "Content is required" });
     }
 
@@ -307,7 +349,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   );
 
   // 重启 Agent Session
-  fastify.post<{ Params: { sessionId: string } }>(
+  fastify.post<{ Params: { sessionId: string }; Body: { agentType?: string } }>(
     "/api/agent-sessions/:sessionId/restart",
     async (req, reply) => {
       if (req.params.sessionId.startsWith("remote-")) {
@@ -319,7 +361,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
           remoteInfo.remoteUrl,
           remoteInfo.remoteApiKey,
           "POST",
-          `/api/agent-sessions/${remoteInfo.remoteSessionId}/restart`
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/restart`,
+          req.body
         );
         fastify.remotePatchCache.replaceAll(req.params.sessionId, [], 0);
         return reply.code(result.status || 200).send(result.data);
@@ -335,7 +378,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: "Project not found or has no local path" });
       }
 
-      const restarted = fastify.agentSessionManager.restartSession(req.params.sessionId, projectPath);
+      const { agentType } = (req.body || {}) as { agentType?: string };
+      const restarted = fastify.agentSessionManager.restartSession(req.params.sessionId, projectPath, agentType as AgentType | undefined);
       if (!restarted) {
         return reply.code(500).send({ error: "Failed to restart session" });
       }
@@ -434,6 +478,53 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(500).send({ error: "Failed to accept plan" });
       }
       return reply.code(200).send({ success: true, permissionMode: "edit" });
+    }
+  );
+
+  // Approve or deny an agent action (Codex approval flow)
+  fastify.post<{
+    Params: { sessionId: string };
+    Body: { requestId: string; decision: string };
+  }>(
+    "/api/agent-sessions/:sessionId/approve",
+    async (req, reply) => {
+      const { requestId, decision } = req.body;
+      if (!requestId || typeof requestId !== "string") {
+        return reply.code(400).send({ error: "requestId is required" });
+      }
+      if (!decision || typeof decision !== "string") {
+        return reply.code(400).send({ error: "decision is required" });
+      }
+
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = fastify.remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyToRemote(
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/approve`,
+          { requestId, decision }
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
+      const session = fastify.agentSessionManager.getSession(req.params.sessionId);
+      if (!session) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const success = fastify.agentSessionManager.sendApprovalResponse(
+        req.params.sessionId,
+        requestId,
+        decision
+      );
+      if (!success) {
+        return reply.code(400).send({ error: "Provider does not support approvals or session is not running" });
+      }
+      return reply.code(200).send({ success: true });
     }
   );
 

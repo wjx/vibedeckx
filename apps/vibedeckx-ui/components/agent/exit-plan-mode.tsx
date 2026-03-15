@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useAgentConversation } from "./agent-conversation";
+import type { ContentPart } from "@/hooks/use-agent-session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -12,7 +13,7 @@ interface ExitPlanModeUIProps {
   messageIndex: number;
 }
 
-function extractPlanContent(input: unknown, messages: { type: string; content?: string; tool?: string; input?: unknown }[]): string {
+function extractPlanContent(input: unknown, messages: { type: string; content?: string | ContentPart[]; tool?: string; input?: unknown }[], agentType: string): string {
   // 1. Check ExitPlanMode tool input for plan field
   const inputObj = typeof input === "string" ? tryParse(input) : input;
   if (inputObj && typeof inputObj === "object" && "plan" in (inputObj as Record<string, unknown>)) {
@@ -20,15 +21,17 @@ function extractPlanContent(input: unknown, messages: { type: string; content?: 
     if (plan) return plan;
   }
 
-  // 2. Search backwards through messages for Write tool_use with .claude/plans/ path
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.type === "tool_use" && msg.tool === "Write") {
-      const writeInput = typeof msg.input === "string" ? tryParse(msg.input) : msg.input;
-      if (writeInput && typeof writeInput === "object") {
-        const wi = writeInput as Record<string, string>;
-        if (wi.file_path?.includes(".claude/plans/") && wi.content) {
-          return wi.content;
+  // 2. Search backwards through messages for Write tool_use with .claude/plans/ path (Claude Code only)
+  if (agentType === "claude-code") {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "tool_use" && msg.tool === "Write") {
+        const writeInput = typeof msg.input === "string" ? tryParse(msg.input) : msg.input;
+        if (writeInput && typeof writeInput === "object") {
+          const wi = writeInput as Record<string, string>;
+          if (wi.file_path?.includes(".claude/plans/") && wi.content) {
+            return wi.content;
+          }
         }
       }
     }
@@ -47,11 +50,11 @@ function tryParse(str: string): unknown {
 }
 
 export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
-  const { messages, acceptPlan, permissionMode } = useAgentConversation();
+  const { messages, acceptPlan, permissionMode, agentType } = useAgentConversation();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
 
-  const planContent = extractPlanContent(input, messages);
+  const planContent = extractPlanContent(input, messages, agentType);
 
   const handleAccept = useCallback(async () => {
     setIsAccepting(true);
@@ -75,7 +78,8 @@ export function ExitPlanModeUI({ input, messageIndex }: ExitPlanModeUIProps) {
     const msg = messages[i];
     if (msg?.type === "user") {
       isResponded = true;
-      respondedText = msg.content ?? "";
+      const rawContent = msg.content ?? "";
+      respondedText = typeof rawContent === "string" ? rawContent : rawContent.filter(p => p.type === "text").map(p => p.text).join("\n");
       break;
     }
   }
