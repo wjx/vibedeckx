@@ -236,7 +236,7 @@ vibedeckx --version              Show version
 Use `--data-dir` to specify a custom directory for the database file:
 
 ```bash
-vibedeckx start --data-dir /path/to/data
+vibedeckx --data-dir /path/to/data
 # Database will be stored at /path/to/data/data.sqlite
 ```
 
