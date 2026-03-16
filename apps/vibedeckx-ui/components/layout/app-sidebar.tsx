@@ -19,6 +19,7 @@ interface AppSidebarProps {
   onCreateWorktreeOpen?: () => void;
   onDeleteWorktree?: (worktree: Worktree) => void;
   workspaceStatuses?: Map<string, WorkspaceStatus>;
+  hasProject?: boolean;
 }
 
 function StatusDot({ status }: { status?: WorkspaceStatus }) {
@@ -45,6 +46,7 @@ export function AppSidebar({
   onCreateWorktreeOpen,
   onDeleteWorktree,
   workspaceStatuses,
+  hasProject = true,
 }: AppSidebarProps) {
   return (
     <nav className="w-52 border-r border-border/60 bg-sidebar flex flex-col p-3">
@@ -54,15 +56,19 @@ export function AppSidebar({
         {/* Tasks */}
         <button
           onClick={() => {
+            if (!hasProject) return;
             onBranchChange?.(null);
             onViewChange("tasks");
           }}
+          disabled={!hasProject}
           className={cn(
             "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
-            "hover:bg-accent/80 hover:text-accent-foreground",
-            activeView === "tasks"
+            !hasProject
+              ? "text-muted-foreground/40 cursor-not-allowed"
+              : "hover:bg-accent/80 hover:text-accent-foreground",
+            activeView === "tasks" && hasProject
               ? "bg-primary/10 text-primary shadow-sm"
-              : "text-muted-foreground"
+              : !hasProject ? "" : "text-muted-foreground"
           )}
         >
           <ListTodo className="h-4 w-4 shrink-0" />
@@ -71,13 +77,16 @@ export function AppSidebar({
 
         {/* Files */}
         <button
-          onClick={() => onViewChange("files")}
+          onClick={() => { if (!hasProject) return; onViewChange("files"); }}
+          disabled={!hasProject}
           className={cn(
             "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
-            "hover:bg-accent/80 hover:text-accent-foreground",
-            activeView === "files"
+            !hasProject
+              ? "text-muted-foreground/40 cursor-not-allowed"
+              : "hover:bg-accent/80 hover:text-accent-foreground",
+            activeView === "files" && hasProject
               ? "bg-primary/10 text-primary shadow-sm"
-              : "text-muted-foreground"
+              : !hasProject ? "" : "text-muted-foreground"
           )}
         >
           <FolderOpen className="h-4 w-4 shrink-0" />

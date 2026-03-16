@@ -35,6 +35,14 @@ export function parseUrlState(): UrlState {
   // New path format: /p/:projectId/:tab?branch=...
   const segments = pathname.split("/").filter(Boolean);
 
+  // Project-independent views: /remote-servers, /settings
+  if (segments.length === 1 && VALID_TABS.has(segments[0] as ActiveView)) {
+    const viewTab = segments[0] as ActiveView;
+    if (viewTab === "remote-servers" || viewTab === "settings") {
+      return { projectId: null, tab: viewTab, branch: null };
+    }
+  }
+
   let projectId: string | null = null;
   let tab: ActiveView = DEFAULT_TAB;
 
@@ -56,7 +64,10 @@ export function parseUrlState(): UrlState {
 export function buildUrl(state: { projectId?: string | null; tab?: ActiveView; branch?: string | null }): string {
   const { projectId, tab, branch } = state;
 
-  if (!projectId) return "/";
+  if (!projectId) {
+    if (tab === "remote-servers" || tab === "settings") return `/${tab}`;
+    return "/";
+  }
 
   let path = `/p/${projectId}`;
   if (tab && tab !== DEFAULT_TAB) {

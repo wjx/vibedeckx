@@ -217,30 +217,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
     }
   }, [currentProject, updateProject]);
 
-  if (!projectsLoading && projects.length === 0) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-6">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Plus className="h-8 w-8 text-primary" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome to VibeDeckX</h1>
-          <p className="text-muted-foreground max-w-sm mx-auto leading-relaxed">
-            Create your first project to get started with AI-powered development.
-          </p>
-          <Button size="lg" onClick={() => setCreateDialogOpen(true)} className="shadow-md">
-            <Plus className="h-5 w-5 mr-2" />
-            Create Project
-          </Button>
-          <CreateProjectDialog
-            open={createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
-            onProjectCreated={createProject}
-          />
-        </div>
-      </div>
-    );
-  }
+  const needsProject = !currentProject;
 
   return (
     <div className="h-screen flex flex-col w-full">
@@ -275,10 +252,34 @@ Please proceed step by step and let me know if there are any issues or conflicts
               setDeleteWorktreeDialogOpen(true);
             }}
             workspaceStatuses={workspaceStatuses}
+            hasProject={!needsProject}
           />
 
+          {/* Welcome state — shown for project-dependent views when no project exists */}
+          <div className={
+            needsProject && (activeView === 'workspace' || activeView === 'tasks' || activeView === 'files')
+              ? 'flex-1 overflow-hidden'
+              : 'hidden'
+          }>
+            <div className="h-full flex items-center justify-center bg-background">
+              <div className="text-center space-y-6">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <Plus className="h-8 w-8 text-primary" />
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome to VibeDeckX</h1>
+                <p className="text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  Create your first project to get started with AI-powered development.
+                </p>
+                <Button size="lg" onClick={() => setCreateDialogOpen(true)} className="shadow-md">
+                  <Plus className="h-5 w-5 mr-2" />
+                  Create Project
+                </Button>
+              </div>
+            </div>
+          </div>
+
           {/* Workspace View — kept mounted, hidden via CSS to preserve WebSocket */}
-          <div className={activeView !== 'workspace' ? 'hidden' : 'contents'}>
+          <div className={(activeView !== 'workspace' || needsProject) ? 'hidden' : 'contents'}>
             {/* Left Panel: Project Card + Main Chat */}
             <div className="w-1/2 flex flex-col border-r border-border/60 overflow-hidden">
               {currentProject && (
@@ -326,7 +327,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
           </div>
 
           {/* Tasks View — kept mounted, hidden via CSS */}
-          <div className={activeView !== 'tasks' ? 'hidden' : 'flex-1 overflow-hidden'}>
+          <div className={(activeView !== 'tasks' || needsProject) ? 'hidden' : 'flex-1 overflow-hidden'}>
             <TasksView
               projectId={currentProject?.id ?? null}
               tasks={tasks}
@@ -339,7 +340,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
           </div>
 
           {/* Files View — kept mounted, hidden via CSS */}
-          <div className={activeView !== 'files' ? 'hidden' : 'flex-1 overflow-hidden'}>
+          <div className={(activeView !== 'files' || needsProject) ? 'hidden' : 'flex-1 overflow-hidden'}>
             <FilesView
               projectId={currentProject?.id ?? null}
               project={currentProject}
@@ -374,6 +375,13 @@ Please proceed step by step and let me know if there are any issues or conflicts
             open={createWorktreeDialogOpen}
             onOpenChange={setCreateWorktreeDialogOpen}
             onWorktreeCreated={handleWorktreeCreated}
+          />
+        )}
+        {needsProject && (
+          <CreateProjectDialog
+            open={createDialogOpen}
+            onOpenChange={setCreateDialogOpen}
+            onProjectCreated={createProject}
           />
         )}
         {currentProject && (
