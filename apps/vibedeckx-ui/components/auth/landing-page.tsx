@@ -136,7 +136,7 @@ export function LandingPage({ onSignIn }: { onSignIn: () => void }) {
       <header className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto w-full">
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-[10px] font-bold text-primary-foreground tracking-tighter">VD</span>
+            <span className="text-[10px] font-bold text-primary-foreground tracking-tighter">VDX</span>
           </div>
           <span className="text-sm font-semibold tracking-tight text-foreground">VibeDeckX</span>
         </div>

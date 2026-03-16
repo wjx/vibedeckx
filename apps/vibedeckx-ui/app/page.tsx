@@ -225,7 +225,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
         <div className="border-b border-border/60 bg-card/80 backdrop-blur-sm px-4 h-12 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-2">
             <div className="h-6 w-6 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-[10px] font-bold text-primary-foreground tracking-tighter">VD</span>
+              <span className="text-[10px] font-bold text-primary-foreground tracking-tighter">VDX</span>
             </div>
             <h1 className="text-sm font-semibold tracking-tight text-foreground">VibeDeckX</h1>
           </div>
