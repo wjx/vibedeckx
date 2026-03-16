@@ -68,6 +68,11 @@ export function useProjects(initialProjectId?: string | null) {
     }
   };
 
+  const addProject = (project: Project) => {
+    setProjects((prev) => [project, ...prev]);
+    setCurrentProject(project);
+  };
+
   const selectProject = (project: Project) => {
     setCurrentProject(project);
   };
@@ -76,6 +81,7 @@ export function useProjects(initialProjectId?: string | null) {
     projects,
     currentProject,
     loading,
+    addProject,
     createProject,
     updateProject,
     deleteProject,

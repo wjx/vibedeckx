@@ -17,13 +17,7 @@ interface ProjectSelectorProps {
   projects: Project[];
   currentProject: Project | null;
   onSelectProject: (project: Project) => void;
-  onCreateProject: (opts: {
-    name: string;
-    path?: string;
-    remotePath?: string;
-    remoteUrl?: string;
-    remoteApiKey?: string;
-  }) => Promise<void> | Promise<unknown>;
+  onCreateProject: (project: Project) => void;
 }
 
 export function ProjectSelector({

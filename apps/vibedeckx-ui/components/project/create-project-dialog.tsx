@@ -17,13 +17,7 @@ import { RemoteDirectoryBrowser } from "./remote-directory-browser";
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onProjectCreated: (opts: {
-    name: string;
-    path?: string;
-    remotePath?: string;
-    remoteUrl?: string;
-    remoteApiKey?: string;
-  }) => Promise<void> | Promise<unknown>;
+  onProjectCreated: (project: Project) => void;
 }
 
 type ConnectionStatus = "idle" | "testing" | "success" | "error";
@@ -213,26 +207,31 @@ export function CreateProjectDialog({
     setLoading(true);
     setError("");
     try {
-      // Call the parent callback which creates the project and returns it
-      const result = await onProjectCreated({
+      // Step 1: Create project in DB (does NOT touch React state)
+      const project = await api.createProject({
         name: name.trim(),
         ...(hasLocalPath ? { path: path.trim() } : {}),
       });
 
-      // If we have remotes to add, we need the project ID
-      if (hasRemotes && result && typeof result === "object" && "id" in result) {
-        const project = result as Project;
-        for (const remote of pendingRemotes) {
-          await api.addProjectRemote(project.id, {
-            remoteServerId: remote.serverId,
-            remotePath: remote.remotePath,
-          });
-        }
-        // Auto-set agent_mode to first remote when no local path
-        if (!hasLocalPath) {
-          await api.updateProject(project.id, { agentMode: pendingRemotes[0].serverId });
-        }
+      // Step 2: Add all pending remotes to DB
+      for (const remote of pendingRemotes) {
+        await api.addProjectRemote(project.id, {
+          remoteServerId: remote.serverId,
+          remotePath: remote.remotePath,
+        });
       }
+
+      // Step 3: Set agent_mode to first remote when remote-only
+      let finalProject = project;
+      if (hasRemotes && !hasLocalPath) {
+        finalProject = await api.updateProject(project.id, {
+          agentMode: pendingRemotes[0].serverId,
+        });
+      }
+
+      // Step 4: NOW notify parent — DB is fully configured
+      // This triggers setCurrentProject → re-render → auto-start
+      onProjectCreated(finalProject);
 
       resetForm();
       onOpenChange(false);

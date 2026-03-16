@@ -61,6 +61,7 @@ export default function Home() {
     projects,
     currentProject,
     loading: projectsLoading,
+    addProject,
     createProject,
     updateProject,
     deleteProject,
@@ -233,7 +234,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
             projects={projects}
             currentProject={currentProject}
             onSelectProject={selectProject}
-            onCreateProject={createProject}
+            onCreateProject={addProject}
           />
         </div>
 
@@ -381,7 +382,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
           <CreateProjectDialog
             open={createDialogOpen}
             onOpenChange={setCreateDialogOpen}
-            onProjectCreated={createProject}
+            onProjectCreated={addProject}
           />
         )}
         {currentProject && (
