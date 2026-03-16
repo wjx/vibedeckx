@@ -31,7 +31,7 @@ type ConnectionStatus = "idle" | "testing" | "success" | "error";
 interface PendingRemote {
   serverId: string;
   serverName: string;
-  serverUrl: string;
+  serverUrl: string | null;
   remotePath: string;
 }
 

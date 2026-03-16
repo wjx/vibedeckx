@@ -230,7 +230,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: "Remote not linked to project" });
       }
       syncConfig = syncType === 'up' ? pr.sync_up_config : pr.sync_down_config;
-      remoteUrl = pr.server_url;
+      remoteUrl = pr.server_url ?? undefined;
       remoteApiKey = pr.server_api_key;
       remotePath = pr.remote_path;
     } else {

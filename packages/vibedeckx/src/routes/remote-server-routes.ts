@@ -36,7 +36,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     try {
       const server = fastify.storage.remoteServers.create({
         name,
-        url: url || "",
+        url: url || null,
         api_key: apiKey,
         connection_mode: connectionMode,
       }, userId);
@@ -105,7 +105,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       try {
         const result = await proxyToRemote(
-          server.url,
+          server.url!,
           server.api_key ?? "",
           "GET",
           "/api/projects"
@@ -163,7 +163,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const queryPath = browsePath ? `?path=${encodeURIComponent(browsePath)}` : "";
         const result = await proxyToRemoteAuto(
           id,
-          server.url,
+          server.url ?? "",
           server.api_key ?? "",
           "GET",
           `/api/browse${queryPath}`,

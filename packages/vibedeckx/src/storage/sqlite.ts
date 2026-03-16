@@ -87,7 +87,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
     CREATE TABLE IF NOT EXISTS remote_servers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      url TEXT NOT NULL UNIQUE,
+      url TEXT UNIQUE,
       api_key TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -322,7 +322,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       CREATE TABLE remote_servers_new (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        url TEXT NOT NULL,
+        url TEXT,
         api_key TEXT,
         connection_mode TEXT NOT NULL DEFAULT 'outbound',
         connect_token TEXT,
@@ -343,6 +343,41 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       CREATE INDEX IF NOT EXISTS idx_remote_servers_user_id ON remote_servers(user_id);
       COMMIT;
     `);
+  }
+
+  // Migration: make url nullable in remote_servers (allows multiple inbound servers with NULL url)
+  {
+    const rsInfo = db.prepare("PRAGMA table_info(remote_servers)").all() as { name: string; notnull: number }[];
+    const urlCol = rsInfo.find(col => col.name === "url");
+    if (urlCol && urlCol.notnull === 1) {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE remote_servers_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          url TEXT,
+          api_key TEXT,
+          connection_mode TEXT NOT NULL DEFAULT 'outbound',
+          connect_token TEXT,
+          connect_token_created_at TEXT,
+          status TEXT NOT NULL DEFAULT 'unknown',
+          last_connected_at TEXT,
+          user_id TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(url, user_id)
+        );
+        INSERT INTO remote_servers_new SELECT
+          id, name, url, api_key, connection_mode, connect_token, connect_token_created_at,
+          status, last_connected_at, user_id, created_at, updated_at
+        FROM remote_servers;
+        DROP TABLE remote_servers;
+        ALTER TABLE remote_servers_new RENAME TO remote_servers;
+        UPDATE remote_servers SET url = NULL WHERE url = '';
+        CREATE INDEX IF NOT EXISTS idx_remote_servers_user_id ON remote_servers(user_id);
+        COMMIT;
+      `);
+    }
   }
 
   return db;
@@ -387,7 +422,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
   type RemoteServerRow = {
     id: string;
     name: string;
-    url: string;
+    url: string | null;
     api_key: string | null;
     connection_mode: string;
     connect_token: string | null;
@@ -544,7 +579,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
     },
 
     remoteServers: {
-      create: (server: { name: string; url: string; api_key?: string; connection_mode?: RemoteServerConnectionMode }, userId?: string): RemoteServer => {
+      create: (server: { name: string; url: string | null; api_key?: string; connection_mode?: RemoteServerConnectionMode }, userId?: string): RemoteServer => {
         const id = crypto.randomUUID();
         const connectionMode = server.connection_mode ?? 'outbound';
         db.prepare(

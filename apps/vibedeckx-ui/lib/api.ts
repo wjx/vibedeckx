@@ -111,7 +111,7 @@ export type RemoteServerStatus = 'unknown' | 'online' | 'offline';
 export interface RemoteServer {
   id: string;
   name: string;
-  url: string;
+  url: string | null;
   connection_mode: RemoteServerConnectionMode;
   status: RemoteServerStatus;
   last_connected_at?: string;
@@ -975,7 +975,7 @@ export const api = {
     return data;
   },
 
-  async createRemoteServer(opts: { name: string; url: string; apiKey?: string; connectionMode?: RemoteServerConnectionMode }): Promise<RemoteServer> {
+  async createRemoteServer(opts: { name: string; url?: string; apiKey?: string; connectionMode?: RemoteServerConnectionMode }): Promise<RemoteServer> {
     const res = await authFetch(`${getApiBase()}/api/remote-servers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

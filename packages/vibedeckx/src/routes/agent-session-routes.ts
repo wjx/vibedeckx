@@ -162,7 +162,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       try {
         const result = await proxyAuto(
           agentMode,
-          remoteConfig.server_url,
+          remoteConfig.server_url ?? "",
           remoteConfig.server_api_key || "",
           "POST",
           `/api/path/agent-sessions`,
@@ -177,7 +177,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           const localSessionId = `remote-${agentMode}-${project.id}-${remoteData.session.id}`;
           fastify.remoteSessionMap.set(localSessionId, {
             remoteServerId: agentMode,
-            remoteUrl: remoteConfig.server_url,
+            remoteUrl: remoteConfig.server_url ?? "",
             remoteApiKey: remoteConfig.server_api_key || "",
             remoteSessionId: remoteData.session.id,
             branch: branch ?? null,

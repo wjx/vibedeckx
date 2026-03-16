@@ -14,7 +14,7 @@ export type RemoteServerStatus = 'unknown' | 'online' | 'offline';
 export interface RemoteServer {
   id: string;
   name: string;
-  url: string;
+  url: string | null;
   api_key?: string;
   connection_mode: RemoteServerConnectionMode;
   connect_token?: string;
@@ -37,7 +37,7 @@ export interface ProjectRemote {
 
 export interface ProjectRemoteWithServer extends ProjectRemote {
   server_name: string;
-  server_url: string;
+  server_url: string | null;
   server_api_key?: string;
 }
 
@@ -147,7 +147,7 @@ export interface Storage {
     delete: (id: string, userId?: string) => void;
   };
   remoteServers: {
-    create(server: { name: string; url: string; api_key?: string; connection_mode?: RemoteServerConnectionMode }, userId?: string): RemoteServer;
+    create(server: { name: string; url: string | null; api_key?: string; connection_mode?: RemoteServerConnectionMode }, userId?: string): RemoteServer;
     getAll(userId?: string): RemoteServer[];
     getById(id: string, userId?: string): RemoteServer | undefined;
     getByUrl(url: string): RemoteServer | undefined;

@@ -109,7 +109,7 @@ export function RemoteServersSettings() {
 
   const openEditDialog = (server: RemoteServer) => {
     setEditingServer(server);
-    setForm({ name: server.name, url: server.url, apiKey: '', connectionMode: server.connection_mode });
+    setForm({ name: server.name, url: server.url || '', apiKey: '', connectionMode: server.connection_mode });
     setFormError('');
     setIsFormOpen(true);
   };
@@ -130,7 +130,7 @@ export function RemoteServersSettings() {
       if (editingServer) {
         const opts: { name?: string; url?: string; apiKey?: string } = {};
         if (form.name.trim() !== editingServer.name) opts.name = form.name.trim();
-        if (form.url.trim() !== editingServer.url) opts.url = form.url.trim();
+        if (form.url.trim() !== (editingServer.url || '')) opts.url = form.url.trim();
         if (form.apiKey.trim()) opts.apiKey = form.apiKey.trim();
         await api.updateRemoteServer(editingServer.id, opts);
       } else {
