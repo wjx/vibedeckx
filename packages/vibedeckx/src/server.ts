@@ -74,7 +74,9 @@ export const createServer = async (opts: { storage: Storage; authEnabled?: boole
     "./ui"
   );
 
-  const server = fastify();
+  // maxParamLength: remote session IDs are ~117 chars (remote-{serverId}-{projectId}-{sessionId}),
+  // which exceeds find-my-way's default limit of 100, causing silent 404s on route matching.
+  const server = fastify({ maxParamLength: 500 });
 
   // Diagnostic: log raw HTTP upgrade events to confirm they reach the server
   // This fires at the Node.js level, before @fastify/websocket or any Fastify routing
