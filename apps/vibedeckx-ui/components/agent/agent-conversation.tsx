@@ -377,7 +377,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       </Conversation>
 
       {/* Input area */}
-      <div className="flex-shrink-0 border-t p-4">
+      <div className="flex-shrink-0 border-t border-border/60 p-3">
         <PromptInput
           onSubmit={handleSubmit}
           accept="image/*"
