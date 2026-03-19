@@ -647,8 +647,9 @@ export class AgentSessionManager {
     // Send Ready signal to indicate history is complete
     ws.send(JSON.stringify({ Ready: true }));
 
-    // Send current status
-    const statusPatch = ConversationPatch.updateStatus(session.status);
+    // Send current status (dormant sessions report "running" since they wake on first message)
+    const effectiveStatus = session.dormant ? "running" : session.status;
+    const statusPatch = ConversationPatch.updateStatus(effectiveStatus);
     ws.send(JSON.stringify({ JsonPatch: statusPatch }));
 
     // Return unsubscribe function

@@ -382,6 +382,11 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           if (!isReplayingRef.current) {
             setMessages([...containerRef.current.entries.filter(Boolean)]);
             setStatus(containerRef.current.status);
+
+            // Invalidate cache when session becomes stopped/error so next startSession does a fresh REST call
+            if (containerRef.current.status === "stopped" || containerRef.current.status === "error") {
+              if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
+            }
           }
           return;
         }
@@ -397,10 +402,11 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           return;
         }
 
-        // Handle finished signal - don't reconnect
+        // Handle finished signal - don't reconnect, invalidate cache so next startSession does a fresh REST call
         if ("finished" in msg) {
-          console.log("[AgentSession] Received finished signal");
+          console.log("[AgentSession] Received finished signal, invalidating cache");
           finishedRef.current = true;
+          if (projectId) sessionCache.delete(getCacheKey(projectId, branch));
           ws.close(1000, "finished");
           return;
         }
