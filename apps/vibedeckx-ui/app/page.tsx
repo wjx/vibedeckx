@@ -280,7 +280,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
           </div>
 
           {/* Workspace View — kept mounted, hidden via CSS to preserve WebSocket */}
-          <div className={(activeView !== 'workspace' || needsProject) ? 'hidden' : 'contents'}>
+          <div className={(activeView !== 'workspace' || needsProject) ? 'hidden' : 'flex-1 overflow-hidden flex'}>
             {/* Left Panel: Project Card + Main Chat */}
             <div className="w-1/2 flex flex-col border-r border-border/60 overflow-hidden">
               {currentProject && (
