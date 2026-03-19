@@ -356,8 +356,10 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 <h2 className="text-sm font-semibold text-foreground">Remote Servers</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">Manage your remote server connections</p>
               </div>
-              <div className="flex-1 px-6 py-5">
+              <div className="flex-1 px-6 py-5 flex justify-center">
+                <div className="w-full max-w-2xl">
                 <RemoteServersSettings />
+                </div>
               </div>
             </div>
           </div>

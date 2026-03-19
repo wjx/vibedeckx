@@ -73,7 +73,8 @@ export function SettingsView() {
         <p className="text-xs text-muted-foreground mt-0.5">Configure proxy and network settings</p>
       </div>
 
-      <div className="flex-1 px-6 py-5 max-w-lg">
+      <div className="flex-1 px-6 py-5 flex justify-center">
+        <div className="w-full max-w-2xl">
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -187,6 +188,7 @@ export function SettingsView() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
