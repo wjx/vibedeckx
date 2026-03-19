@@ -388,7 +388,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
           {/* Single row: [+ button] [textarea] [submit button] */}
           <div className="relative flex w-full items-start">
             <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger className="mt-2.5 ml-1" />
+              <PromptInputActionMenuTrigger className="mt-1.5 ml-1" />
               <PromptInputActionMenuContent>
                 <PromptInputActionAddAttachments label="Add images" />
               </PromptInputActionMenuContent>
