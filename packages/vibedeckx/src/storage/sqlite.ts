@@ -8,6 +8,9 @@ import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcess
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  // Disable FK enforcement during schema creation/migration to avoid errors
+  // when DROP TABLE + recreate migrations run on existing databases with FK references
+  db.pragma("foreign_keys = OFF");
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -379,6 +382,9 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       `);
     }
   }
+
+  // Re-enable FK enforcement for runtime operations
+  db.pragma("foreign_keys = ON");
 
   return db;
 };
