@@ -87,6 +87,14 @@ export const createServer = async (opts: { storage: Storage; authEnabled?: boole
     done();
   });
 
+  // Log WebSocket upgrade requests (catches rejections before route handler, e.g. by Clerk)
+  server.addHook("onRequest", (req, reply, done) => {
+    if (req.headers.upgrade?.toLowerCase() === "websocket") {
+      console.log(`[WS] Upgrade request: ${req.method} ${req.url}`);
+    }
+    done();
+  });
+
   // API Key authentication middleware
   server.addHook("onRequest", (req, reply, done) => {
     if (!API_KEY) return done();

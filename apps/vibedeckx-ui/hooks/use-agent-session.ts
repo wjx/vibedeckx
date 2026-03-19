@@ -306,6 +306,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const isReplayingRef = useRef(false); // True during history replay (before Ready signal)
   const sessionGenerationRef = useRef(0); // Incremented on branch/project change to discard stale API responses
   const lastStartFailedRef = useRef(false); // Prevents auto-restart loop after session creation failure
+  const startingRef = useRef(false); // Reentrancy guard for startSession
   const onTaskCompletedRef = useRef(options?.onTaskCompleted);
   const onSessionStartedRef = useRef(options?.onSessionStarted);
 
@@ -534,8 +535,9 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       reconnectAttemptRef.current++;
 
       reconnectTimeoutRef.current = setTimeout(() => {
-        if (session?.id && !finishedRef.current) {
-          connectWebSocket(session.id);
+        const currentSessionId = wsSessionIdRef.current;
+        if (currentSessionId && !finishedRef.current) {
+          connectWebSocket(currentSessionId);
         }
       }, delay);
     };
@@ -543,11 +545,17 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     ws.onerror = (error) => {
       console.error("[AgentSession] WebSocket error:", error);
     };
-  }, [session?.id]);
+  }, []);
 
   // Start or get existing session - returns the session for immediate use
   const startSession = useCallback(async (permissionMode?: "plan" | "edit"): Promise<AgentSession | null> => {
     if (!projectId) return null;
+
+    if (startingRef.current) {
+      console.log("[AgentSession] startSession already in progress, skipping");
+      return null;
+    }
+    startingRef.current = true;
 
     // Capture generation at call time to detect stale responses
     const generation = sessionGenerationRef.current;
@@ -566,6 +574,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       setStatus(cached.status);
       connectWebSocket(cached.id);
       onSessionStartedRef.current?.();
+      startingRef.current = false;
       return cached;
     }
 
@@ -613,6 +622,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       console.error("[AgentSession] Failed to start session:", e);
       return null;
     } finally {
+      startingRef.current = false;
       // Only clear loading if this is still the current generation
       if (sessionGenerationRef.current === generation) {
         setIsLoading(false);
@@ -793,6 +803,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     connectionStartTimeRef.current = null;
     shortLivedConnectionsRef.current = 0;
     lastStartFailedRef.current = false;
+    startingRef.current = false;
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
