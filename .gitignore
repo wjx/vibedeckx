@@ -21,6 +21,7 @@ node_modules/
 
 # build output
 **/dist/
+**/dist-out/
 *.tgz
 
 # production
