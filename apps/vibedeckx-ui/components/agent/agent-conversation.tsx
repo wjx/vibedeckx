@@ -420,23 +420,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         >
           {/* Attachment thumbnails — only rendered when images are attached */}
           <AttachmentHeader />
-          {translateEnabled && (
-            <div className="flex items-center px-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setTranslateEnabled(false)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 text-xs font-medium hover:bg-blue-500/20 transition-colors"
-              >
-                <Languages className="size-3" />
-                Translate to English
-                <X className="size-3" />
-              </button>
-            </div>
-          )}
-          {/* Single row: [+ button] [textarea] [submit button] */}
-          <div className="relative flex w-full items-start">
+          {/* Single row: [+ button] [translate badge] [textarea] [submit button] */}
+          <div className="relative flex w-full items-center">
             <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger className="mt-1.5 ml-1" />
+              <PromptInputActionMenuTrigger className="ml-1" />
+
               <PromptInputActionMenuContent>
                 <PromptInputActionAddAttachments label="Add images" />
                 <PromptInputActionMenuItem
@@ -446,10 +434,21 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   }}
                 >
                   <Languages className="mr-2 size-4" />
-                  {translateEnabled ? "Disable translation" : "Translate to English"}
+                  {translateEnabled ? "Disable translation" : "Translate"}
                 </PromptInputActionMenuItem>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
+            {translateEnabled && (
+              <button
+                type="button"
+                onClick={() => setTranslateEnabled(false)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 text-xs font-medium hover:bg-blue-500/20 transition-colors"
+              >
+                <Languages className="size-3" />
+                Translate
+                <X className="size-3" />
+              </button>
+            )}
             <PromptInputTextarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
