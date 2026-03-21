@@ -91,6 +91,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           status: effectiveStatus,
           permissionMode: session?.permissionMode || "edit",
           agentType: session?.agentType || "claude-code",
+          eventListeningEnabled: session?.eventListeningEnabled ?? false,
         },
         messages,
       });
@@ -267,6 +268,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           status: effectiveStatus,
           permissionMode: session?.permissionMode || "edit",
           agentType: session?.agentType || "claude-code",
+          eventListeningEnabled: session?.eventListeningEnabled ?? false,
         },
         messages,
       });
@@ -310,6 +312,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           status: session.status,
           permissionMode: session.permissionMode,
           agentType: session.agentType || "claude-code",
+          eventListeningEnabled: session.eventListeningEnabled ?? false,
         },
         messages,
       });
@@ -585,6 +588,42 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: "Provider does not support approvals or session is not running" });
       }
       return reply.code(200).send({ success: true });
+    }
+  );
+
+  // Toggle event listening for an agent session
+  fastify.post<{
+    Params: { sessionId: string };
+    Body: { enabled: boolean };
+  }>(
+    "/api/agent-sessions/:sessionId/event-listening",
+    async (req, reply) => {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") {
+        return reply.code(400).send({ error: "enabled must be a boolean" });
+      }
+
+      if (req.params.sessionId.startsWith("remote-")) {
+        const remoteInfo = fastify.remoteSessionMap.get(req.params.sessionId);
+        if (!remoteInfo) {
+          return reply.code(404).send({ error: "Remote session not found" });
+        }
+        const result = await proxyAuto(
+          remoteInfo.remoteServerId,
+          remoteInfo.remoteUrl,
+          remoteInfo.remoteApiKey,
+          "POST",
+          `/api/agent-sessions/${remoteInfo.remoteSessionId}/event-listening`,
+          { enabled }
+        );
+        return reply.code(result.status || 200).send(result.data);
+      }
+
+      const success = fastify.agentSessionManager.setEventListening(req.params.sessionId, enabled);
+      if (!success) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+      return reply.code(200).send({ enabled });
     }
   );
 

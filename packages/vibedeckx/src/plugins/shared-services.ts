@@ -59,6 +59,7 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   fastify.decorate("remotePatchCache", remotePatchCache);
   fastify.decorate("reverseConnectManager", reverseConnectManager);
   agentSessionManager.setEventBus(eventBus);
+  agentSessionManager.setProcessManager(processManager);
   processManager.setEventBus(eventBus);
 
   // Graceful shutdown: kill child processes and clear timers when server closes

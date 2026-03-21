@@ -944,6 +944,18 @@ export const api = {
     });
   },
 
+  // Agent Session Event Listening
+  async setEventListening(sessionId: string, enabled: boolean): Promise<boolean> {
+    const res = await authFetch(`${getApiBase()}/api/agent-sessions/${sessionId}/event-listening`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error("Failed to toggle event listening");
+    const data = await res.json();
+    return data.enabled;
+  },
+
   // Settings API
   async getProxySettings(): Promise<ProxyConfig> {
     const res = await authFetch(`${getApiBase()}/api/settings/proxy`);
