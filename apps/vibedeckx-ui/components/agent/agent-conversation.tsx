@@ -22,7 +22,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud, Languages, X } from "lucide-react";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud, Languages, X, Loader2 } from "lucide-react";
 import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
 import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
 import { useInputHistory } from "@/hooks/use-input-history";
@@ -432,7 +432,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   onClick={() => setTranslateEnabled(false)}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 text-xs font-medium hover:bg-blue-500/20 transition-colors"
                 >
-                  <Languages className="size-3" />
+                  {isTranslating ? <Loader2 className="size-3 animate-spin" /> : <Languages className="size-3" />}
                   Translate
                   <X className="size-3" />
                 </button>
