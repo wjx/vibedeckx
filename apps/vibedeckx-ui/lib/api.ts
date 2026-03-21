@@ -300,6 +300,13 @@ export interface ProxyConfig {
   port: number;
 }
 
+export interface ChatProviderConfig {
+  provider: 'deepseek' | 'openrouter';
+  deepseekApiKey: string;
+  openrouterApiKey: string;
+  openrouterModel: string;
+}
+
 // ============ Agent Provider Types ============
 
 export type AgentType = "claude-code" | "codex";
@@ -981,6 +988,28 @@ export const api = {
   async testProxyConnection(config: ProxyConfig): Promise<{ success: boolean; message?: string }> {
     const res = await authFetch(`${getApiBase()}/api/settings/proxy/test`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    return res.json();
+  },
+
+  // Chat Provider Settings
+  async getChatProviderSettings(): Promise<ChatProviderConfig> {
+    const res = await authFetch(`${getApiBase()}/api/settings/chat-provider`);
+    if (!res.ok) {
+      return { provider: 'deepseek', deepseekApiKey: '', openrouterApiKey: '', openrouterModel: '' };
+    }
+    return res.json();
+  },
+
+  async updateChatProviderSettings(config: Partial<ChatProviderConfig>): Promise<ChatProviderConfig> {
+    const res = await authFetch(`${getApiBase()}/api/settings/chat-provider`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });

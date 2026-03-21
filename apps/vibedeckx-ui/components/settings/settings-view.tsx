@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api, type ProxyConfig } from '@/lib/api';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { ChatProviderSettings } from './chat-provider-settings';
 
 type ProxyType = ProxyConfig['type'];
 
@@ -80,7 +81,13 @@ export function SettingsView() {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">AI Chat</h3>
+              <ChatProviderSettings />
+            </div>
+
+            <div className="space-y-4">
             <h3 className="text-sm font-semibold">Proxy</h3>
             <div>
               <label className="text-sm font-medium mb-2 block">Proxy Type</label>
@@ -185,6 +192,7 @@ export function SettingsView() {
                 {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
                 Save
               </Button>
+            </div>
             </div>
           </div>
         )}

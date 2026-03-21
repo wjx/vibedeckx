@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { ProxyConfig } from "../utils/proxy-manager.js";
+import { getChatProviderConfig, type ChatProviderConfig } from "../utils/chat-model.js";
 import "../server-types.js";
 
 const DEFAULT_PROXY_CONFIG: ProxyConfig = { type: "none", host: "", port: 0 };
@@ -105,6 +106,52 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const msg = error instanceof Error ? error.message : "Unknown error";
       return reply.code(200).send({ success: false, message: `Failed to create proxy: ${msg}` });
     }
+  });
+
+  // ---- Chat Provider Settings ----
+
+  function maskApiKey(key: string): string {
+    if (!key || key.length <= 4) return key ? "****" : "";
+    return "****" + key.slice(-4);
+  }
+
+  fastify.get("/api/settings/chat-provider", async (_req, reply) => {
+    const config = getChatProviderConfig(fastify.storage);
+    return reply.code(200).send({
+      provider: config.provider,
+      deepseekApiKey: maskApiKey(config.deepseekApiKey),
+      openrouterApiKey: maskApiKey(config.openrouterApiKey),
+      openrouterModel: config.openrouterModel,
+    });
+  });
+
+  fastify.put<{
+    Body: Partial<ChatProviderConfig>;
+  }>("/api/settings/chat-provider", async (req, reply) => {
+    const { provider, deepseekApiKey, openrouterApiKey, openrouterModel } = req.body;
+
+    if (provider && provider !== "deepseek" && provider !== "openrouter") {
+      return reply.code(400).send({ error: "provider must be 'deepseek' or 'openrouter'" });
+    }
+
+    // Merge with existing config so omitted fields are preserved
+    const existing = getChatProviderConfig(fastify.storage);
+    const updated: ChatProviderConfig = {
+      provider: provider ?? existing.provider,
+      deepseekApiKey: deepseekApiKey !== undefined ? deepseekApiKey : existing.deepseekApiKey,
+      openrouterApiKey: openrouterApiKey !== undefined ? openrouterApiKey : existing.openrouterApiKey,
+      openrouterModel: openrouterModel !== undefined ? openrouterModel : existing.openrouterModel,
+    };
+
+    fastify.storage.settings.set("chat_provider", JSON.stringify(updated));
+    console.log(`[Settings] Chat provider updated: ${updated.provider}`);
+
+    return reply.code(200).send({
+      provider: updated.provider,
+      deepseekApiKey: maskApiKey(updated.deepseekApiKey),
+      openrouterApiKey: maskApiKey(updated.openrouterApiKey),
+      openrouterModel: updated.openrouterModel,
+    });
   });
 };
 

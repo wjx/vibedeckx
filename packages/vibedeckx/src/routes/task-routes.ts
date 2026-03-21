@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { randomUUID } from "crypto";
 import { generateText } from "ai";
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { resolveChatModel } from "../utils/chat-model.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 
@@ -43,9 +43,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
     let title = providedTitle;
     if (!title) {
       try {
-        const deepseek = createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY ?? "" });
         const { text } = await generateText({
-          model: deepseek("deepseek-chat"),
+          model: resolveChatModel(fastify.storage),
           prompt: `Generate a concise task title (under 10 words) that captures the essence of this task description. Return only the title text, nothing else.\n\nDescription: ${description}`,
         });
         title = text.trim();

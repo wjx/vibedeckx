@@ -8,8 +8,8 @@
 
 import { randomUUID } from "crypto";
 import { streamText, tool, stepCountIs } from "ai";
-import { createDeepSeek } from "@ai-sdk/deepseek";
 import { z } from "zod";
+import { resolveChatModel } from "./utils/chat-model.js";
 import type WebSocket from "ws";
 import type { AgentMessage, AgentSessionStatus } from "./agent-types.js";
 import { ConversationPatch } from "./conversation-patch.js";
@@ -72,10 +72,6 @@ export class ChatSessionManager {
   private agentSessionManager: AgentSessionManager;
   private remoteSessionMap: Map<string, RemoteSessionInfo>;
   private remotePatchCache: RemotePatchCache;
-
-  private deepseek = createDeepSeek({
-    apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-  });
 
   constructor(
     storage: Storage,
@@ -697,7 +693,7 @@ export class ChatSessionManager {
 
     try {
       const result = streamText({
-        model: this.deepseek("deepseek-chat"),
+        model: resolveChatModel(this.storage),
         system: this.getSystemPrompt(session.projectId, session.branch),
         messages,
         tools: this.createTools(session.projectId, session.branch),
