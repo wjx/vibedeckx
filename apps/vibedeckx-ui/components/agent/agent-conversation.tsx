@@ -443,8 +443,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 <PromptInputActionMenuContent>
                   <PromptInputActionAddAttachments label="Add images" />
                   <PromptInputActionMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
+                    onSelect={() => {
                       setTranslateEnabled(!translateEnabled);
                     }}
                   >
