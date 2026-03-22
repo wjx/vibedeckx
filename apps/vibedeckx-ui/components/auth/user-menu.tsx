@@ -9,7 +9,7 @@ export function UserMenu() {
   if (!config?.authEnabled) return null;
 
   return (
-    <div className="flex items-center justify-center pt-2">
+    <div className="flex items-center">
       <UserButton
         appearance={{
           elements: {

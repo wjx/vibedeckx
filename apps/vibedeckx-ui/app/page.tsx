@@ -13,6 +13,7 @@ import { SettingsView } from '@/components/settings/settings-view';
 import { RemoteServersSettings } from '@/components/settings/remote-servers-settings';
 import { CreateWorktreeDialog } from '@/components/project/create-worktree-dialog';
 import { DeleteWorktreeDialog } from '@/components/project/delete-worktree-dialog';
+import { UserMenu } from '@/components/auth/user-menu';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
 import { MainConversation } from '@/components/conversation';
@@ -230,6 +231,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
             </div>
             <h1 className="text-sm font-semibold tracking-tight text-foreground">VibeDeckX</h1>
           </div>
+          <UserMenu />
         </div>
 
         <div className="flex-1 flex overflow-hidden">
