@@ -55,14 +55,17 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      const pseudoProjectId = `path:${projectPath}`;
+      let pseudoProjectId = `path:${projectPath}`;
       console.log(`[API] POST /api/path/agent-sessions: path=${projectPath}, branch=${branch}, pseudoProjectId=${pseudoProjectId}`);
 
       // Ensure a project row exists for the pseudo project ID so the FK constraint is satisfied
       if (!fastify.storage.projects.getById(pseudoProjectId)) {
         // Check if a project with this path already exists (avoids UNIQUE constraint on path)
         const existingByPath = fastify.storage.projects.getByPath(projectPath);
-        if (!existingByPath) {
+        if (existingByPath) {
+          // Reuse the existing project's ID for FK references
+          pseudoProjectId = existingByPath.id;
+        } else {
           const name = projectPath.split("/").filter(Boolean).pop() || projectPath;
           try {
             fastify.storage.projects.create({
