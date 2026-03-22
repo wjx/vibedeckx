@@ -87,7 +87,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "platform" ]; then
   # Install production deps and rebuild native modules
   echo "    Installing production dependencies..."
   cd "$STAGING"
-  npm install --omit=dev --ignore-scripts 2>&1 | tail -3
+  npm install --omit=dev --ignore-scripts --legacy-peer-deps 2>&1 | tail -3
   echo "    Rebuilding native modules (better-sqlite3, node-pty)..."
   npm rebuild better-sqlite3 node-pty 2>&1 | tail -5
 
