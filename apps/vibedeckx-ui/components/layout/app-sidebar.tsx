@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, Trash2, Globe, Settings } from "lucide-react";
+import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, Trash2, Globe, Settings, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserMenu } from "@/components/auth/user-menu";
@@ -105,7 +105,8 @@ export function AppSidebar({
                         )}
                       >
                         <ProjectStatusDot project={project} />
-                        <span className="truncate">{project.name}</span>
+                        <span className="truncate flex-1">{project.name}</span>
+                        {isSelected && <ChevronRight className="h-3 w-3 shrink-0 text-primary" />}
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right">{project.name}</TooltipContent>
