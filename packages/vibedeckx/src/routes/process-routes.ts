@@ -4,6 +4,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
+import type { ExecutorType } from "../storage/types.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 
@@ -26,7 +27,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       group_id: "",
       name: "remote-command",
       command,
-      executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as const,
+      executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as ExecutorType,
       cwd: resolvedCwd,
       pty: pty !== false,
       position: 0,

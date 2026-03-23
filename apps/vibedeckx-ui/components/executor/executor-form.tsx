@@ -10,14 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Executor } from "@/lib/api";
+import type { Executor, ExecutorType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface ExecutorFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   executor?: Executor;
-  onSubmit: (data: { name: string; command: string; cwd?: string; pty?: boolean }) => Promise<void>;
+  onSubmit: (data: { name: string; command: string; executor_type?: ExecutorType; cwd?: string; pty?: boolean }) => Promise<void>;
 }
 
 export function ExecutorForm({
@@ -27,6 +27,7 @@ export function ExecutorForm({
   onSubmit,
 }: ExecutorFormProps) {
   const [name, setName] = useState(executor?.name ?? "");
+  const [executorType, setExecutorType] = useState<ExecutorType>(executor?.executor_type ?? "command");
   const [command, setCommand] = useState(executor?.command ?? "");
   const [cwd, setCwd] = useState(executor?.cwd ?? "");
   const [pty, setPty] = useState(executor?.pty ?? true);
@@ -38,6 +39,7 @@ export function ExecutorForm({
   useEffect(() => {
     if (open && executor) {
       setName(executor.name);
+      setExecutorType(executor.executor_type ?? "command");
       setCommand(executor.command);
       setCwd(executor.cwd ?? "");
       setPty(executor.pty);
@@ -53,12 +55,14 @@ export function ExecutorForm({
       await onSubmit({
         name: name.trim(),
         command: command.trim(),
+        executor_type: executorType,
         cwd: cwd.trim() || undefined,
-        pty,
+        pty: executorType === "prompt" ? true : pty,
       });
       onOpenChange(false);
       if (!isEdit) {
         setName("");
+        setExecutorType("command");
         setCommand("");
         setCwd("");
         setPty(true);
@@ -85,13 +89,54 @@ export function ExecutorForm({
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Command</label>
-            <Input
-              placeholder="e.g., npm run dev"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              required
-            />
+            <label className="text-sm font-medium">Type</label>
+            <div className="flex rounded-md border border-input overflow-hidden">
+              <button
+                type="button"
+                className={cn(
+                  "flex-1 px-3 py-1.5 text-sm font-medium transition-colors",
+                  executorType === "command"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted"
+                )}
+                onClick={() => setExecutorType("command")}
+              >
+                Command
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex-1 px-3 py-1.5 text-sm font-medium transition-colors border-l border-input",
+                  executorType === "prompt"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted"
+                )}
+                onClick={() => setExecutorType("prompt")}
+              >
+                Prompt
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              {executorType === "prompt" ? "Prompt" : "Command"}
+            </label>
+            {executorType === "prompt" ? (
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                placeholder="e.g., Review the code and suggest improvements"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                required
+              />
+            ) : (
+              <Input
+                placeholder="e.g., npm run dev"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                required
+              />
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">
@@ -104,32 +149,34 @@ export function ExecutorForm({
               onChange={(e) => setCwd(e.target.value)}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium">Terminal Mode (PTY)</label>
-              <p className="text-xs text-muted-foreground">
-                Enable for interactive commands like top, vim, htop
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={pty}
-              onClick={() => setPty(!pty)}
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                pty ? "bg-primary" : "bg-input"
-              )}
-            >
-              <span
+          {executorType === "command" && (
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <label className="text-sm font-medium">Terminal Mode (PTY)</label>
+                <p className="text-xs text-muted-foreground">
+                  Enable for interactive commands like top, vim, htop
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={pty}
+                onClick={() => setPty(!pty)}
                 className={cn(
-                  "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-lg ring-0 transition-transform",
-                  pty ? "translate-x-5" : "translate-x-0"
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  pty ? "bg-primary" : "bg-input"
                 )}
-              />
-            </button>
-          </div>
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-lg ring-0 transition-transform",
+                    pty ? "translate-x-5" : "translate-x-0"
+                  )}
+                />
+              </button>
+            </div>
+          )}
           <DialogFooter>
             <Button
               type="button"

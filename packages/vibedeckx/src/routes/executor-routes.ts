@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { randomUUID } from "crypto";
+import type { ExecutorType } from "../storage/types.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 
@@ -70,7 +71,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const { executor_type, ...rest } = req.body;
     const updateOpts = {
       ...rest,
-      ...(executor_type !== undefined ? { executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as const } : {}),
+      ...(executor_type !== undefined ? { executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as ExecutorType } : {}),
     };
     const executor = fastify.storage.executors.update(req.params.id, updateOpts);
     return reply.code(200).send({ executor });
