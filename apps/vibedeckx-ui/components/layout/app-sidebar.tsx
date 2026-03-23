@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, ListTodo, FolderOpen, GitBranch, Plus, Trash2, Globe, Settings } from "lucide-react";
+import { Columns3, ListTodo, FolderOpen, Plus, Trash2, Globe, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -201,7 +201,6 @@ export function AppSidebar({
                         )}
                       >
                         <StatusDot status={workspaceStatuses?.get(wt.branch === null ? "" : wt.branch)} />
-                        <GitBranch className="h-3 w-3 shrink-0" />
                         <span className="truncate">{wt.branch ?? "main"}</span>
                       </button>
                     </TooltipTrigger>
