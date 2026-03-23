@@ -254,6 +254,32 @@ vibedeckx --data-dir /path/to/data
 # Database will be stored at /path/to/data/data.sqlite
 ```
 
+## Troubleshooting
+
+### `ENOTEMPTY` error when running with npx
+
+If you see an error like:
+
+```
+npm error code ENOTEMPTY
+npm error syscall rename
+npm error path /home/user/.npm/_npx/...
+npm error dest /home/user/.npm/_npx/...
+npm error ENOTEMPTY: directory not empty, rename ...
+```
+
+This is caused by npm cache corruption. Fix it by clearing the npx cache:
+
+```bash
+rm -rf ~/.npm/_npx/
+```
+
+Then retry:
+
+```bash
+npx vibedeckx-0.1.0.tgz
+```
+
 ## Data Storage
 
 - **Global config**: `~/.vibedeckx/`
