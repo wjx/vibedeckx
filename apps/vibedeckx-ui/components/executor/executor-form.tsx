@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Executor, ExecutorType, PromptProvider } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -122,33 +129,29 @@ export function ExecutorForm({
             </div>
           </div>
           {executorType === "prompt" && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Provider</label>
-              <div className="flex rounded-md border border-input overflow-hidden">
-                <button
-                  type="button"
-                  className={cn(
-                    "flex-1 px-3 py-1.5 text-sm font-medium transition-colors",
-                    promptProvider === "claude"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  )}
-                  onClick={() => setPromptProvider("claude")}
-                >
-                  Claude
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    "flex-1 px-3 py-1.5 text-sm font-medium transition-colors border-l border-input",
-                    promptProvider === "codex"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  )}
-                  onClick={() => setPromptProvider("codex")}
-                >
-                  Codex
-                </button>
+            <div className="flex gap-3">
+              <div className="w-1/2 space-y-2">
+                <label className="text-sm font-medium">Provider</label>
+                <Select value={promptProvider} onValueChange={(v) => setPromptProvider(v as PromptProvider)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="claude">Claude</SelectItem>
+                    <SelectItem value="codex">Codex</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium">
+                  Working Directory{" "}
+                  <span className="text-muted-foreground">(optional)</span>
+                </label>
+                <Input
+                  placeholder="Relative to worktree root"
+                  value={cwd}
+                  onChange={(e) => setCwd(e.target.value)}
+                />
               </div>
             </div>
           )}
@@ -173,17 +176,19 @@ export function ExecutorForm({
               />
             )}
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Working Directory{" "}
-              <span className="text-muted-foreground">(optional)</span>
-            </label>
-            <Input
-              placeholder="Relative to worktree root (leave empty for root)"
-              value={cwd}
-              onChange={(e) => setCwd(e.target.value)}
-            />
-          </div>
+          {executorType === "command" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Working Directory{" "}
+                <span className="text-muted-foreground">(optional)</span>
+              </label>
+              <Input
+                placeholder="Relative to worktree root (leave empty for root)"
+                value={cwd}
+                onChange={(e) => setCwd(e.target.value)}
+              />
+            </div>
+          )}
           {executorType === "command" && (
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
