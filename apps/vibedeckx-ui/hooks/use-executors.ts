@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { api, type Executor, type ExecutorProcess } from "@/lib/api";
+import { api, type Executor, type ExecutorType, type ExecutorProcess } from "@/lib/api";
 
 function getApiBase(): string {
   if (typeof window === "undefined") return "";
@@ -113,7 +113,7 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
 
   // Create executor in the active group
   const createExecutor = useCallback(
-    async (opts: { name: string; command: string; cwd?: string; pty?: boolean }) => {
+    async (opts: { name: string; command: string; executor_type?: ExecutorType; cwd?: string; pty?: boolean }) => {
       if (!projectId || !groupId) return null;
 
       try {

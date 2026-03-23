@@ -10,9 +10,9 @@ import "../server-types.js";
 const routes: FastifyPluginAsync = async (fastify) => {
   // Execute command at a path (for remote executor)
   fastify.post<{
-    Body: { path: string; command: string; cwd?: string; branch?: string | null; pty?: boolean };
+    Body: { path: string; command: string; executor_type?: string; cwd?: string; branch?: string | null; pty?: boolean };
   }>("/api/path/execute", async (req, reply) => {
-    const { path: projectPath, command, cwd, branch, pty } = req.body;
+    const { path: projectPath, command, executor_type, cwd, branch, pty } = req.body;
     if (!projectPath || !command) {
       return reply.code(400).send({ error: "Path and command are required" });
     }
@@ -26,6 +26,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       group_id: "",
       name: "remote-command",
       command,
+      executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as const,
       cwd: resolvedCwd,
       pty: pty !== false,
       position: 0,
@@ -87,6 +88,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         {
           path: effectiveRemotePath,
           command: executor.command,
+          executor_type: executor.executor_type,
           branch: branch ?? undefined,
           cwd: executor.cwd || undefined,
           pty: executor.pty,

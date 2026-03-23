@@ -64,12 +64,15 @@ export interface ExecutorGroup {
   created_at: string;
 }
 
+export type ExecutorType = 'command' | 'prompt';
+
 export interface Executor {
   id: string;
   project_id: string;
   group_id: string;
   name: string;
   command: string;
+  executor_type: ExecutorType;
   cwd: string | null;
   pty: boolean;
   position: number;
@@ -186,11 +189,11 @@ export interface Storage {
     delete: (id: string) => void;
   };
   executors: {
-    create: (opts: { id: string; project_id: string; group_id: string; name: string; command: string; cwd?: string; pty?: boolean }) => Executor;
+    create: (opts: { id: string; project_id: string; group_id: string; name: string; command: string; executor_type?: ExecutorType; cwd?: string; pty?: boolean }) => Executor;
     getByProjectId: (projectId: string) => Executor[];
     getByGroupId: (groupId: string) => Executor[];
     getById: (id: string) => Executor | undefined;
-    update: (id: string, opts: { name?: string; command?: string; cwd?: string | null; pty?: boolean }) => Executor | undefined;
+    update: (id: string, opts: { name?: string; command?: string; executor_type?: ExecutorType; cwd?: string | null; pty?: boolean }) => Executor | undefined;
     delete: (id: string) => void;
     reorder: (groupId: string, orderedIds: string[]) => void;
   };

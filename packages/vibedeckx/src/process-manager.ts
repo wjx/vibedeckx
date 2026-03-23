@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execFileSync, type ChildProcess } from "child_process";
 import * as pty from "node-pty";
 import type { IPty } from "node-pty";
 import type { Executor, ExecutorProcessStatus, Storage } from "./storage/types.js";
@@ -46,9 +46,46 @@ export class ProcessManager {
   private storage: Storage;
   private eventBus: EventBus | null = null;
   private terminalCounter = 0;
+  private claudeBinaryPath: string | null | undefined = undefined;
 
   constructor(storage: Storage) {
     this.storage = storage;
+  }
+
+  /**
+   * Detect the claude CLI binary, caching the result.
+   */
+  private detectClaudeBinary(): string | null {
+    if (this.claudeBinaryPath !== undefined) {
+      return this.claudeBinaryPath;
+    }
+    try {
+      const cmd = process.platform === "win32" ? "where" : "which";
+      const result = execFileSync(cmd, ["claude"], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "ignore"],
+      }).trim();
+      this.claudeBinaryPath = result || null;
+      console.log(`[ProcessManager] Claude binary found: ${result}`);
+    } catch {
+      this.claudeBinaryPath = null;
+      console.log(`[ProcessManager] Claude binary not found, will use npx`);
+    }
+    return this.claudeBinaryPath;
+  }
+
+  /**
+   * Build the shell command string for a prompt executor.
+   * Runs `claude -p "prompt" --dangerously-skip-permissions` in the project directory.
+   */
+  private buildPromptCommand(prompt: string): string {
+    const binary = this.detectClaudeBinary();
+    // Escape single quotes in the prompt for safe shell embedding
+    const escapedPrompt = prompt.replace(/'/g, "'\\''");
+    if (binary) {
+      return `${binary} -p '${escapedPrompt}' --dangerously-skip-permissions`;
+    }
+    return `npx -y @anthropic-ai/claude-code -p '${escapedPrompt}' --dangerously-skip-permissions`;
   }
 
   setEventBus(eventBus: EventBus): void {
@@ -75,19 +112,25 @@ export class ProcessManager {
     // Determine working directory
     const cwd = executor.cwd || projectPath;
 
+    // For prompt executors, build the claude -p command
+    const effectiveExecutor = executor.executor_type === 'prompt'
+      ? { ...executor, command: this.buildPromptCommand(executor.command) }
+      : executor;
+
     console.log(`[ProcessManager] Starting process ${processId}`);
-    console.log(`[ProcessManager] Command: ${executor.command}`);
+    console.log(`[ProcessManager] Type: ${executor.executor_type || 'command'}`);
+    console.log(`[ProcessManager] Command: ${effectiveExecutor.command}`);
     console.log(`[ProcessManager] CWD: ${cwd}`);
     console.log(`[ProcessManager] Forcing PTY mode for ANSI color support`);
 
     // Always use PTY mode for proper ANSI color support
     try {
-      this.startPtyProcess(processId, executor, cwd, skipDb);
+      this.startPtyProcess(processId, effectiveExecutor, cwd, skipDb);
       console.log(`[ProcessManager] PTY mode started successfully`);
     } catch (error) {
       // PTY failed (e.g., native module not compiled), fallback to regular process
       console.warn(`[ProcessManager] PTY spawn failed, falling back to regular process: ${error}`);
-      this.startRegularProcess(processId, executor, cwd, skipDb);
+      this.startRegularProcess(processId, effectiveExecutor, cwd, skipDb);
     }
 
     // Store PID in database for recovery after server restart

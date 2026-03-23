@@ -27,7 +27,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // Create Executor
   fastify.post<{
     Params: { projectId: string };
-    Body: { name: string; command: string; cwd?: string; pty?: boolean; group_id: string };
+    Body: { name: string; command: string; executor_type?: string; cwd?: string; pty?: boolean; group_id: string };
   }>("/api/projects/:projectId/executors", async (req, reply) => {
     const userId = requireAuth(req, reply);
     if (userId === null) return;
@@ -37,7 +37,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const { name, command, cwd, pty, group_id } = req.body;
+    const { name, command, executor_type, cwd, pty, group_id } = req.body;
     if (!group_id) {
       return reply.code(400).send({ error: "group_id is required" });
     }
@@ -49,6 +49,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       group_id,
       name,
       command,
+      executor_type: (executor_type === 'prompt' ? 'prompt' : 'command'),
       cwd,
       pty,
     });
@@ -59,14 +60,19 @@ const routes: FastifyPluginAsync = async (fastify) => {
   // 更新 Executor
   fastify.put<{
     Params: { id: string };
-    Body: { name?: string; command?: string; cwd?: string | null; pty?: boolean };
+    Body: { name?: string; command?: string; executor_type?: string; cwd?: string | null; pty?: boolean };
   }>("/api/executors/:id", async (req, reply) => {
     const existing = fastify.storage.executors.getById(req.params.id);
     if (!existing) {
       return reply.code(404).send({ error: "Executor not found" });
     }
 
-    const executor = fastify.storage.executors.update(req.params.id, req.body);
+    const { executor_type, ...rest } = req.body;
+    const updateOpts = {
+      ...rest,
+      ...(executor_type !== undefined ? { executor_type: (executor_type === 'prompt' ? 'prompt' : 'command') as const } : {}),
+    };
+    const executor = fastify.storage.executors.update(req.params.id, updateOpts);
     return reply.code(200).send({ executor });
   });
 
