@@ -22,7 +22,7 @@ export function useExecutorGroups(projectId: string | null, selectedBranch: stri
     try {
       const [allGroups, branchGroup] = await Promise.all([
         api.getExecutorGroups(projectId),
-        branch ? api.getExecutorGroupByBranch(projectId, branch) : Promise.resolve(null),
+        api.getExecutorGroupByBranch(projectId, branch),
       ]);
       setGroups(allGroups);
       setActiveGroup(branchGroup);
