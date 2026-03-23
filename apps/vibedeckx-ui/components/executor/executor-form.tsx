@@ -130,7 +130,7 @@ export function ExecutorForm({
           </div>
           {executorType === "prompt" && (
             <div className="flex gap-3">
-              <div className="w-1/2 space-y-2">
+              <div className="w-[140px] shrink-0 space-y-2">
                 <label className="text-sm font-medium">Provider</label>
                 <Select value={promptProvider} onValueChange={(v) => setPromptProvider(v as PromptProvider)}>
                   <SelectTrigger className="w-full">
