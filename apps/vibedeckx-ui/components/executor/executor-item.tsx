@@ -192,7 +192,9 @@ export function ExecutorItem({
           <CollapsibleContent>
             <div className="px-3 pb-3">
               <div className="text-xs text-muted-foreground mb-2 font-mono">
-                $ {executor.command}
+                {executor.executor_type === 'prompt'
+                  ? `${executor.prompt_provider ?? 'claude'} → ${executor.command}`
+                  : `$ ${executor.command}`}
               </div>
               <ExecutorOutput
                 logs={logs}
