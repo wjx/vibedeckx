@@ -850,12 +850,13 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [session?.id, connectWebSocket]);
 
-  // Reconnect when session changes
+  // Connect WebSocket when session ID becomes available (initial connection only).
+  // Reconnection after disconnect is handled by onclose with exponential backoff.
   useEffect(() => {
-    if (session?.id && !isConnected && !finishedRef.current) {
+    if (session?.id && !finishedRef.current) {
       connectWebSocket(session.id);
     }
-  }, [session?.id, isConnected, connectWebSocket]);
+  }, [session?.id, connectWebSocket]);
 
   return {
     session,
