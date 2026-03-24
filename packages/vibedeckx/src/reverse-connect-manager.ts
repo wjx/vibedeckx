@@ -24,10 +24,10 @@ interface ReverseConnection {
 
 export class ReverseConnectManager {
   private connections = new Map<string, ReverseConnection>();
-  private onStatusChange?: (remoteServerId: string, status: "online" | "offline") => void;
+  private statusChangeHandlers: Array<(remoteServerId: string, status: "online" | "offline") => void> = [];
 
   setStatusChangeHandler(handler: (remoteServerId: string, status: "online" | "offline") => void): void {
-    this.onStatusChange = handler;
+    this.statusChangeHandlers.push(handler);
   }
 
   registerConnection(remoteServerId: string, ws: WebSocket): void {
@@ -64,7 +64,7 @@ export class ReverseConnectManager {
       if (c && c.ws === ws) {
         this.cleanupConnection(remoteServerId, c);
         this.connections.delete(remoteServerId);
-        this.onStatusChange?.(remoteServerId, "offline");
+        for (const h of this.statusChangeHandlers) h(remoteServerId, "offline");
       }
     });
 
@@ -73,7 +73,7 @@ export class ReverseConnectManager {
     });
 
     console.log(`[ReverseConnect] Registered connection for ${remoteServerId}`);
-    this.onStatusChange?.(remoteServerId, "online");
+    for (const h of this.statusChangeHandlers) h(remoteServerId, "online");
   }
 
   unregisterConnection(remoteServerId: string): void {

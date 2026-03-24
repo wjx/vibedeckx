@@ -295,6 +295,27 @@ function scheduleRemoteReconnect(
 }
 
 const routes: FastifyPluginAsync = async (fastify) => {
+  // When a reverse-connect tunnel comes back online, re-establish persistent
+  // remote WS connections for any cached sessions that belong to that server.
+  fastify.reverseConnectManager.setStatusChangeHandler((remoteServerId, status) => {
+    if (status !== "online") return;
+
+    const cache = fastify.remotePatchCache;
+    const wsOptions = fastify.proxyManager.getWsOptions() as Record<string, unknown>;
+
+    for (const [sessionId, remoteInfo] of fastify.remoteSessionMap) {
+      if (remoteInfo.remoteServerId !== remoteServerId) continue;
+
+      const entry = cache.get(sessionId);
+      if (!entry || entry.finished) continue;
+      if (cache.getRemoteWs(sessionId) || cache.isReconnecting(sessionId)) continue;
+
+      console.log(`[AgentWS] Reverse-connect restored for ${remoteServerId}, re-establishing WS for ${sessionId}`);
+      cache.resetReconnectAttempt(sessionId);
+      connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, fastify.reverseConnectManager);
+    }
+  });
+
   // WebSocket routes must be registered after the websocket plugin is ready
   fastify.after(() => {
     // Executor process logs WebSocket
