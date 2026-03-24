@@ -98,6 +98,7 @@ export interface Project {
   remote_path?: string;
   is_remote: boolean;
   remote_url?: string;
+  has_remote_api_key?: boolean;
   agent_mode: ExecutionMode;
   executor_mode: ExecutionMode;
   sync_up_config?: SyncButtonConfig;
