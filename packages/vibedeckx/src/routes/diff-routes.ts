@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path from "path";
 import { parseDiffOutput } from "../utils/diff-parser.js";
-import { proxyToRemote } from "../utils/remote-proxy.js";
+import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -14,6 +14,7 @@ function getRemoteConfig(fastify: FastifyInstance, project: Project) {
   if (remotes.length > 0) {
     const primary = remotes[0]; // sorted by sort_order
     return {
+      serverId: primary.remote_server_id,
       url: primary.server_url ?? "",
       apiKey: primary.server_api_key ?? "",
       remotePath: primary.remote_path,
@@ -22,6 +23,7 @@ function getRemoteConfig(fastify: FastifyInstance, project: Project) {
   // Fallback to legacy project fields
   if (project.remote_url && project.remote_api_key && project.remote_path) {
     return {
+      serverId: "",
       url: project.remote_url,
       apiKey: project.remote_api_key,
       remotePath: project.remote_path,
@@ -161,11 +163,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const params = [`path=${encodeURIComponent(remoteConfig.remotePath)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       if (since) params.push(`since=${encodeURIComponent(since)}`);
-      const result = await proxyToRemote(
+      const result = await proxyToRemoteAuto(
+        remoteConfig.serverId,
         remoteConfig.url,
         remoteConfig.apiKey,
         "GET",
-        `/api/path/diff?${params.join("&")}`
+        `/api/path/diff?${params.join("&")}`,
+        undefined,
+        { reverseConnectManager: fastify.reverseConnectManager }
       );
       return reply.code(result.status || 200).send(result.data);
     }
@@ -229,11 +234,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const params = [`path=${encodeURIComponent(remoteConfig.remotePath)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       params.push(`limit=${limit}`);
-      const result = await proxyToRemote(
+      const result = await proxyToRemoteAuto(
+        remoteConfig.serverId,
         remoteConfig.url,
         remoteConfig.apiKey,
         "GET",
-        `/api/path/commits?${params.join("&")}`
+        `/api/path/commits?${params.join("&")}`,
+        undefined,
+        { reverseConnectManager: fastify.reverseConnectManager }
       );
       return reply.code(result.status || 200).send(result.data);
     }
