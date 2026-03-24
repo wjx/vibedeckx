@@ -62,11 +62,13 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
   const hasLocal = !!project?.path;
   const hasRemotes = remotes.length > 0;
   const hasMultipleTargets = hasLocal && hasRemotes;
-  const defaultLocation = hasMultipleTargets && project?.executor_mode !== "local" ? "remote" : "local";
+  const defaultLocation: "local" | "remote" =
+    !hasLocal && hasRemotes ? "remote" :
+    hasMultipleTargets && project?.executor_mode !== "local" ? "remote" : "local";
 
   const handleCreateDefault = useCallback(() => {
-    createTerminal(hasMultipleTargets ? defaultLocation as "local" | "remote" : undefined);
-  }, [createTerminal, hasMultipleTargets, defaultLocation]);
+    createTerminal(defaultLocation);
+  }, [createTerminal, defaultLocation]);
 
   const handleCreateAt = useCallback(
     (location: "local" | "remote") => {

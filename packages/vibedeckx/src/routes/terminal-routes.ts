@@ -90,9 +90,18 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const executorMode = project.executor_mode;
 
     // When remote, resolve connection info from project_remotes table
-    const remoteConfig = executorMode !== 'local'
+    let remoteConfig = executorMode !== 'local'
       ? fastify.storage.projectRemotes.getByProjectAndServer(project.id, executorMode)
       : undefined;
+
+    // Fallback: if executor_mode is 'local' but remote is needed (explicit or no local path),
+    // try to find any available project remote
+    if (!remoteConfig && (explicitLocation === "remote" || !project.path)) {
+      const allRemotes = fastify.storage.projectRemotes.getByProject(project.id);
+      if (allRemotes.length > 0) {
+        remoteConfig = allRemotes[0];
+      }
+    }
 
     // Fallback to legacy project fields if no project_remote found
     const effectiveRemoteUrl = remoteConfig?.server_url ?? project.remote_url;
@@ -132,7 +141,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const localId = `remote-terminal-${remoteId}`;
 
         fastify.remoteExecutorMap.set(localId, {
-          remoteServerId: executorMode,
+          remoteServerId: remoteConfig?.remote_server_id ?? executorMode,
           remoteUrl: effectiveRemoteUrl!,
           remoteApiKey: effectiveRemoteApiKey!,
           remoteProcessId: remoteId,
