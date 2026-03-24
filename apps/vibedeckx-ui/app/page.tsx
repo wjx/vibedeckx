@@ -283,7 +283,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
           <div className={(activeView !== 'workspace' || needsProject) ? 'hidden' : 'flex-1 overflow-hidden flex'}>
             <ResizablePanelGroup direction="horizontal" autoSaveId="workspace-panels">
               {/* Left Panel: Project Card + Main Chat */}
-              <ResizablePanel defaultSize={50} minSize={25}>
+              <ResizablePanel defaultSize={33} minSize={25}>
                 <div className="h-full flex flex-col overflow-hidden">
                   {currentProject && (
                     <div className="px-4 py-3 border-b border-border/60 flex-shrink-0">
@@ -309,7 +309,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
               <ResizableHandle withHandle />
 
               {/* Right Panel: Agent/Executors/Diff/Terminal as tabs */}
-              <ResizablePanel defaultSize={50} minSize={25}>
+              <ResizablePanel defaultSize={67} minSize={25}>
                 <div className="h-full flex flex-col overflow-hidden">
                   <RightPanel
                     projectId={currentProject?.id ?? null}
