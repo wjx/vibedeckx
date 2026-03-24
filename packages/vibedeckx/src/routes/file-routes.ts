@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path from "path";
 import fs from "fs/promises";
@@ -8,6 +8,29 @@ import { proxyToRemote, proxyToRemoteRaw } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
+import type { Project } from "../storage/types.js";
+
+function getRemoteConfig(fastify: FastifyInstance, project: Project) {
+  // Check project_remotes table first (new approach)
+  const remotes = fastify.storage.projectRemotes.getByProject(project.id);
+  if (remotes.length > 0) {
+    const primary = remotes[0]; // sorted by sort_order
+    return {
+      url: primary.server_url ?? "",
+      apiKey: primary.server_api_key ?? "",
+      remotePath: primary.remote_path,
+    };
+  }
+  // Fallback to legacy project fields
+  if (project.remote_url && project.remote_api_key && project.remote_path) {
+    return {
+      url: project.remote_url,
+      apiKey: project.remote_api_key,
+      remotePath: project.remote_path,
+    };
+  }
+  return null;
+}
 
 interface BrowseEntry {
   name: string;
@@ -181,20 +204,21 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const target = req.query.target;
 
     const useRemote = target === "remote"
-      || (!target && !project.path && project.remote_url && project.remote_api_key && project.remote_path);
+      || (!target && !project.path);
 
     if (useRemote) {
-      if (!project.remote_url || !project.remote_api_key || !project.remote_path) {
+      const remoteConfig = getRemoteConfig(fastify, project);
+      if (!remoteConfig) {
         return reply.code(400).send({ error: "Project has no remote configuration" });
       }
       const remotePath = relativePath
-        ? path.posix.join(project.remote_path, relativePath)
-        : project.remote_path;
+        ? path.posix.join(remoteConfig.remotePath, relativePath)
+        : remoteConfig.remotePath;
       const params = [`path=${encodeURIComponent(remotePath)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        remoteConfig.url,
+        remoteConfig.apiKey,
         "GET",
         `/api/path/browse?${params.join("&")}`
       );
@@ -242,20 +266,21 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const target = req.query.target;
 
     const useRemote = target === "remote"
-      || (!target && !project.path && project.remote_url && project.remote_api_key && project.remote_path);
+      || (!target && !project.path);
 
     if (useRemote) {
-      if (!project.remote_url || !project.remote_api_key || !project.remote_path) {
+      const remoteConfig = getRemoteConfig(fastify, project);
+      if (!remoteConfig) {
         return reply.code(400).send({ error: "Project has no remote configuration" });
       }
       const params = [
-        `path=${encodeURIComponent(project.remote_path)}`,
+        `path=${encodeURIComponent(remoteConfig.remotePath)}`,
         `filePath=${encodeURIComponent(filePath)}`,
       ];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       const result = await proxyToRemote(
-        project.remote_url,
-        project.remote_api_key,
+        remoteConfig.url,
+        remoteConfig.apiKey,
         "GET",
         `/api/path/file-content?${params.join("&")}`
       );
@@ -315,20 +340,21 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const target = req.query.target;
 
     const useRemote = target === "remote"
-      || (!target && !project.path && project.remote_url && project.remote_api_key && project.remote_path);
+      || (!target && !project.path);
 
     if (useRemote) {
-      if (!project.remote_url || !project.remote_api_key || !project.remote_path) {
+      const remoteConfig = getRemoteConfig(fastify, project);
+      if (!remoteConfig) {
         return reply.code(400).send({ error: "Project has no remote configuration" });
       }
       const params = [
-        `path=${encodeURIComponent(project.remote_path)}`,
+        `path=${encodeURIComponent(remoteConfig.remotePath)}`,
         `filePath=${encodeURIComponent(filePath)}`,
       ];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
       const result = await proxyToRemoteRaw(
-        project.remote_url,
-        project.remote_api_key,
+        remoteConfig.url,
+        remoteConfig.apiKey,
         `/api/path/file-download?${params.join("&")}`
       );
 

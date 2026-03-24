@@ -16,10 +16,8 @@ interface FilesViewProps {
 }
 
 export function FilesView({ projectId, project, selectedBranch }: FilesViewProps) {
-  // Determine target based on project config
-  const target = project
-    ? (!project.path && project.remote_url ? "remote" as const : undefined)
-    : undefined;
+  // Determine target based on project config — if no local path, try remote
+  const target = project && !project.path ? "remote" as const : undefined;
 
   const {
     rootEntries,
