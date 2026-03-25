@@ -1,9 +1,34 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
-import { proxyToRemote } from "../utils/remote-proxy.js";
+import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
+import type { Project } from "../storage/types.js";
+
+function getRemoteConfig(fastify: FastifyInstance, project: Project) {
+  // Check project_remotes table first (new approach)
+  const remotes = fastify.storage.projectRemotes.getByProject(project.id);
+  if (remotes.length > 0) {
+    const primary = remotes[0]; // sorted by sort_order
+    return {
+      serverId: primary.remote_server_id,
+      url: primary.server_url ?? "",
+      apiKey: primary.server_api_key ?? "",
+      remotePath: primary.remote_path,
+    };
+  }
+  // Fallback to legacy project fields
+  if (project.remote_url && project.remote_api_key && project.remote_path) {
+    return {
+      serverId: "",
+      url: project.remote_url,
+      apiKey: project.remote_api_key,
+      remotePath: project.remote_path,
+    };
+  }
+  return null;
+}
 
 const routes: FastifyPluginAsync = async (fastify) => {
   // Remote-side endpoint: spawn a terminal at a given path
@@ -88,49 +113,32 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const explicitLocation = req.body?.location;
 
     const executorMode = project.executor_mode;
+    const remoteConfig = getRemoteConfig(fastify, project);
 
-    // When remote, resolve connection info from project_remotes table
-    let remoteConfig = executorMode !== 'local'
-      ? fastify.storage.projectRemotes.getByProjectAndServer(project.id, executorMode)
-      : undefined;
-
-    // Fallback: if executor_mode is 'local' but remote is needed (explicit or no local path),
-    // try to find any available project remote
-    if (!remoteConfig && (explicitLocation === "remote" || !project.path)) {
-      const allRemotes = fastify.storage.projectRemotes.getByProject(project.id);
-      if (allRemotes.length > 0) {
-        remoteConfig = allRemotes[0];
-      }
-    }
-
-    // Fallback to legacy project fields if no project_remote found
-    const effectiveRemoteUrl = remoteConfig?.server_url ?? project.remote_url;
-    const effectiveRemoteApiKey = remoteConfig?.server_api_key ?? project.remote_api_key;
-    const effectiveRemotePath = remoteConfig?.remote_path ?? project.remote_path;
-
-    const hasRemoteConfig = !!(effectiveRemoteUrl && effectiveRemoteApiKey && effectiveRemotePath);
     const useRemote =
       explicitLocation === "remote" ||
       (explicitLocation === undefined &&
-        hasRemoteConfig &&
+        remoteConfig &&
         (!project.path || executorMode !== "local"));
 
     if (useRemote) {
-      if (!hasRemoteConfig) {
+      if (!remoteConfig) {
         return reply
           .code(400)
           .send({ error: "Project has no remote configuration" });
       }
 
-      const result = await proxyToRemote(
-        effectiveRemoteUrl!,
-        effectiveRemoteApiKey!,
+      const result = await proxyToRemoteAuto(
+        remoteConfig.serverId,
+        remoteConfig.url,
+        remoteConfig.apiKey,
         "POST",
         "/api/path/terminals",
         {
-          path: effectiveRemotePath,
+          path: remoteConfig.remotePath,
           branch: branch ?? undefined,
-        }
+        },
+        { reverseConnectManager: fastify.reverseConnectManager }
       );
 
       if (result.ok) {
@@ -141,9 +149,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const localId = `remote-terminal-${remoteId}`;
 
         fastify.remoteExecutorMap.set(localId, {
-          remoteServerId: remoteConfig?.remote_server_id ?? executorMode,
-          remoteUrl: effectiveRemoteUrl!,
-          remoteApiKey: effectiveRemoteApiKey!,
+          remoteServerId: remoteConfig.serverId,
+          remoteUrl: remoteConfig.url,
+          remoteApiKey: remoteConfig.apiKey,
           remoteProcessId: remoteId,
           projectId: req.params.projectId,
           branch: branch ?? null,
@@ -191,11 +199,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
           return reply.code(404).send({ error: "Remote terminal not found" });
         }
 
-        const result = await proxyToRemote(
+        const result = await proxyToRemoteAuto(
+          remoteInfo.remoteServerId,
           remoteInfo.remoteUrl,
           remoteInfo.remoteApiKey,
           "POST",
-          `/api/executor-processes/${remoteInfo.remoteProcessId}/stop`
+          `/api/executor-processes/${remoteInfo.remoteProcessId}/stop`,
+          undefined,
+          { reverseConnectManager: fastify.reverseConnectManager }
         );
 
         fastify.remoteExecutorMap.delete(terminalId);
