@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { FileTree } from "./file-tree";
 import { FilePreview } from "./file-preview";
 import { useFileBrowser } from "@/hooks/use-file-browser";
@@ -72,36 +73,42 @@ export function FilesView({ projectId, project, selectedBranch }: FilesViewProps
       </div>
 
       {/* Split content */}
-      <div className="flex-1 flex overflow-hidden">
+      <ResizablePanelGroup direction="horizontal" autoSaveId="files-panels" className="flex-1">
         {/* File tree (left) */}
-        <ScrollArea className="w-2/5 border-r border-border/60">
-          {rootLoading && rootEntries.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-              Loading files...
-            </div>
-          ) : (
-            <FileTree
-              entries={rootEntries}
-              expandedDirs={expandedDirs}
-              directoryContents={directoryContents}
-              loadingDirs={loadingDirs}
-              selectedFile={selectedFile}
-              onToggleDirectory={toggleDirectory}
-              onSelectFile={selectFile}
-            />
-          )}
-        </ScrollArea>
+        <ResizablePanel defaultSize={35} minSize={20}>
+          <ScrollArea className="h-full">
+            {rootLoading && rootEntries.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+                Loading files...
+              </div>
+            ) : (
+              <FileTree
+                entries={rootEntries}
+                expandedDirs={expandedDirs}
+                directoryContents={directoryContents}
+                loadingDirs={loadingDirs}
+                selectedFile={selectedFile}
+                onToggleDirectory={toggleDirectory}
+                onSelectFile={selectFile}
+              />
+            )}
+          </ScrollArea>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* File preview (right) */}
-        <div className="w-3/5 overflow-hidden">
-          <FilePreview
-            filePath={selectedFile}
-            fileContent={fileContent}
-            loading={fileLoading}
-            downloadUrl={downloadUrl}
-          />
-        </div>
-      </div>
+        <ResizablePanel defaultSize={65} minSize={25}>
+          <div className="h-full overflow-hidden">
+            <FilePreview
+              filePath={selectedFile}
+              fileContent={fileContent}
+              loading={fileLoading}
+              downloadUrl={downloadUrl}
+            />
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
