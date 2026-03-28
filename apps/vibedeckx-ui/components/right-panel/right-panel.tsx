@@ -2,10 +2,11 @@
 
 import { type ReactNode, useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Terminal, GitBranch, SquareTerminal, Bot } from 'lucide-react';
+import { Terminal, GitBranch, SquareTerminal, Bot, Globe } from 'lucide-react';
 import { ExecutorPanel } from '@/components/executor';
 import { DiffPanel } from '@/components/diff';
 import { TerminalPanel } from '@/components/terminal';
+import { PreviewPanel } from '@/components/preview';
 import type { Project, ExecutionMode } from '@/lib/api';
 
 interface RightPanelProps {
@@ -17,7 +18,7 @@ interface RightPanelProps {
   agentSlot?: ReactNode;
 }
 
-type TabType = 'agent' | 'executors' | 'diff' | 'terminal';
+type TabType = 'agent' | 'executors' | 'diff' | 'terminal' | 'preview';
 
 function usePersistedTab(projectId: string | null, branch: string | null | undefined): [TabType, (tab: TabType) => void] {
   const key = `vibedeckx:activeTab:${projectId ?? 'none'}:${branch ?? 'main'}`;
@@ -94,6 +95,18 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
           <SquareTerminal className="h-3.5 w-3.5" />
           Terminal
         </button>
+        <button
+          onClick={() => setActiveTab('preview')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
+            activeTab === 'preview'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+          )}
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Preview
+        </button>
       </div>
 
       {/* Tab Content — CSS show/hide to keep all panels mounted */}
@@ -118,6 +131,13 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
       </div>
       <div className={cn("flex-1 overflow-hidden", activeTab !== 'terminal' && 'hidden')}>
         <TerminalPanel
+          projectId={projectId}
+          selectedBranch={selectedBranch}
+          project={project}
+        />
+      </div>
+      <div className={cn("flex-1 overflow-hidden", activeTab !== 'preview' && 'hidden')}>
+        <PreviewPanel
           projectId={projectId}
           selectedBranch={selectedBranch}
           project={project}
