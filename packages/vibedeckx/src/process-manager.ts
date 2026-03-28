@@ -790,6 +790,11 @@ export class ProcessManager {
         }
       });
 
+      if (!unsubscribe) {
+        resolve({ exitCode: -1, output: "", timedOut: false });
+        return;
+      }
+
       // Timeout
       const timer = setTimeout(() => {
         finish(-1, outputBuffer, true);
