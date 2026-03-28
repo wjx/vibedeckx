@@ -367,6 +367,10 @@ export class ChatSessionManager {
       "You can view the coding agent's conversation history using the getAgentConversation tool.",
       "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
       "When you receive an [Executor Event] message, respond in 1-2 sentences only. State what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
+      "You can list active terminal sessions using the listTerminals tool.",
+      "You can run commands in a terminal using the runInTerminal tool. The command runs visibly in the user's terminal.",
+      "When the user asks to run a command, check something in the terminal, or interact with a shell, use these tools.",
+      "If no terminals are open, suggest the user open one in the Terminal tab first.",
       `Current workspace: project=${projectId}, branch=${branch ?? "default"}.`,
     ].join("\n");
   }
@@ -656,6 +660,65 @@ export class ChatSessionManager {
               ? `Stopped "${executor.name}" (processId=${running.processId}).`
               : `Failed to stop "${executor.name}".`,
           };
+        },
+      }),
+
+      listTerminals: tool({
+        description:
+          "List all active terminal sessions in the current workspace. " +
+          "Use this to discover available terminals before running commands with runInTerminal.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const terminals = processManager.getTerminals(projectId, branch);
+          if (terminals.length === 0) {
+            return {
+              terminals: [],
+              message: "No active terminals. The user should open a terminal in the Terminal tab first.",
+            };
+          }
+          return {
+            terminals: terminals.map((t) => ({
+              id: t.id,
+              name: t.name,
+              cwd: t.cwd,
+              branch: t.branch,
+            })),
+          };
+        },
+      }),
+
+      runInTerminal: tool({
+        description:
+          "Run a shell command in an active terminal session. The command executes visibly in the user's terminal. " +
+          "Use listTerminals first to get available terminal IDs. " +
+          "Use this when the user asks to run a command, check something, or interact with their shell.",
+        inputSchema: z.object({
+          terminalId: z.string().describe("ID of the terminal to run the command in (from listTerminals)"),
+          command: z.string().describe("The shell command to execute"),
+          timeout: z
+            .number()
+            .min(1)
+            .max(120)
+            .default(30)
+            .describe("Max seconds to wait for command to finish"),
+        }),
+        execute: async ({ terminalId, command, timeout }) => {
+          try {
+            const result = await processManager.executeInTerminal(terminalId, command, timeout);
+            return {
+              success: !result.timedOut,
+              exitCode: result.exitCode,
+              output: result.output,
+              timedOut: result.timedOut,
+            };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            return {
+              success: false,
+              output: "",
+              message: msg,
+            };
+          }
         },
       }),
     };
