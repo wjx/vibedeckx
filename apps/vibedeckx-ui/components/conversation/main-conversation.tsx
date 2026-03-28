@@ -28,6 +28,10 @@ function getToolLabel(tool: string): string {
       return "Checking executor status...";
     case "getAgentConversation":
       return "Checking agent conversation...";
+    case "listTerminals":
+      return "Listing terminals...";
+    case "runInTerminal":
+      return "Running command in terminal...";
     default:
       return `Running ${tool}...`;
   }
