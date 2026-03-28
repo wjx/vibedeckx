@@ -669,7 +669,7 @@ export class ChatSessionManager {
           "Use this to discover available terminals before running commands with runInTerminal.",
         inputSchema: z.object({}),
         execute: async () => {
-          const terminals = processManager.getTerminals(projectId, branch);
+          const terminals = processManager.getTerminals(projectId);
           if (terminals.length === 0) {
             return {
               terminals: [],
