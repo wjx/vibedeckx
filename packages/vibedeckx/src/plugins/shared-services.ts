@@ -24,7 +24,6 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   const remoteExecutorMap = new Map<string, RemoteExecutorInfo>();
   const remoteSessionMap = new Map<string, RemoteSessionInfo>();
   const remotePatchCache = new RemotePatchCache();
-  const chatSessionManager = new ChatSessionManager(opts.storage, processManager, agentSessionManager, remoteSessionMap, remoteExecutorMap, remotePatchCache);
   const eventBus = new EventBus();
 
   // Initialize proxy manager from stored settings
@@ -44,6 +43,7 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   setGlobalProxyManager(proxyManager);
 
   const reverseConnectManager = new ReverseConnectManager();
+  const chatSessionManager = new ChatSessionManager(opts.storage, processManager, agentSessionManager, remoteSessionMap, remoteExecutorMap, remotePatchCache, reverseConnectManager);
   reverseConnectManager.setStatusChangeHandler((remoteServerId, status) => {
     opts.storage.remoteServers.updateStatus(remoteServerId, status);
   });

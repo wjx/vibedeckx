@@ -19,9 +19,10 @@ import type { EventBus, GlobalEvent } from "./event-bus.js";
 import type { ProcessManager, LogMessage } from "./process-manager.js";
 import type { AgentSessionManager } from "./agent-session-manager.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
-import { proxyToRemote } from "./utils/remote-proxy.js";
+import { proxyToRemote, proxyToRemoteAuto } from "./utils/remote-proxy.js";
 import type { RemoteExecutorInfo, RemoteSessionInfo } from "./server-types.js";
 import type { RemotePatchCache } from "./remote-patch-cache.js";
+import type { ReverseConnectManager } from "./reverse-connect-manager.js";
 
 // ============ Types ============
 
@@ -73,6 +74,7 @@ export class ChatSessionManager {
   private remoteSessionMap: Map<string, RemoteSessionInfo>;
   private remoteExecutorMap: Map<string, RemoteExecutorInfo>;
   private remotePatchCache: RemotePatchCache;
+  private reverseConnectManager: ReverseConnectManager | null = null;
 
   constructor(
     storage: Storage,
@@ -81,6 +83,7 @@ export class ChatSessionManager {
     remoteSessionMap: Map<string, RemoteSessionInfo>,
     remoteExecutorMap: Map<string, RemoteExecutorInfo>,
     remotePatchCache: RemotePatchCache,
+    reverseConnectManager?: ReverseConnectManager,
   ) {
     this.storage = storage;
     this.processManager = processManager;
@@ -88,6 +91,7 @@ export class ChatSessionManager {
     this.remoteSessionMap = remoteSessionMap;
     this.remoteExecutorMap = remoteExecutorMap;
     this.remotePatchCache = remotePatchCache;
+    this.reverseConnectManager = reverseConnectManager ?? null;
   }
 
   setEventBus(eventBus: EventBus): void {
@@ -383,6 +387,7 @@ export class ChatSessionManager {
     const processManager = this.processManager;
     const agentSessionManager = this.agentSessionManager;
     const remoteExecutorMap = this.remoteExecutorMap;
+    const reverseConnectManager = this.reverseConnectManager;
 
     return {
       getAgentConversation: tool({
@@ -732,16 +737,18 @@ export class ChatSessionManager {
             // Remote terminal — proxy to remote server
             if (terminalId.startsWith("remote-terminal-")) {
               const remoteInfo = remoteExecutorMap.get(terminalId);
+              console.log(`[runInTerminal] terminalId=${terminalId}, remoteProcessId=${remoteInfo?.remoteProcessId}, serverId=${remoteInfo?.remoteServerId}`);
               if (!remoteInfo) {
                 return { success: false, output: "", message: `Remote terminal ${terminalId} not found.` };
               }
-              const result = await proxyToRemote(
+              const result = await proxyToRemoteAuto(
+                remoteInfo.remoteServerId,
                 remoteInfo.remoteUrl,
                 remoteInfo.remoteApiKey,
                 "POST",
                 `/api/path/terminals/${remoteInfo.remoteProcessId}/execute`,
                 { command, timeout },
-                { timeoutMs: (timeout + 5) * 1000 },
+                { timeoutMs: (timeout + 5) * 1000, reverseConnectManager: reverseConnectManager ?? undefined },
               );
               if (!result.ok) {
                 return { success: false, output: "", message: `Remote execution failed: ${JSON.stringify(result.data)}` };
