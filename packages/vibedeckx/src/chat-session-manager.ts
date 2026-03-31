@@ -444,15 +444,18 @@ export class ChatSessionManager {
     };
 
     const flush = () => {
-      if (!state.outputBuffer.trim()) {
+      const buffered = state.outputBuffer;
+      state.outputBuffer = ""; // Clear immediately to prevent double-flush
+
+      if (!buffered.trim()) {
         console.log(`[ChatSession] remote terminal watcher flush: empty buffer, skipping (terminal=${terminalId})`);
         return;
       }
 
-      console.log(`[ChatSession] remote terminal watcher flush: ${state.outputBuffer.length} bytes (terminal=${terminalId})`);
+      console.log(`[ChatSession] remote terminal watcher flush: ${buffered.length} bytes (terminal=${terminalId})`);
 
       // Strip ANSI codes
-      let output = state.outputBuffer.replace(
+      let output = buffered.replace(
         /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g,
         "",
       );
