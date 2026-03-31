@@ -70,11 +70,16 @@ export class ChatSessionManager {
   /** terminalId → watcher state for active terminal output watchers */
   private terminalWatchers = new Map<string, {
     unsubscribe: () => void;
-    debounceTimer: ReturnType<typeof setTimeout> | null;
-    idleTimer: ReturnType<typeof setTimeout>;
-    outputBuffer: string;
+    state: {
+      debounceTimer: ReturnType<typeof setTimeout> | null;
+      idleTimer: ReturnType<typeof setTimeout>;
+      outputBuffer: string;
+    };
     sessionId: string;
   }>();
+
+  /** sessionId → queued messages waiting to be sent after current stream finishes */
+  private messageQueue = new Map<string, string[]>();
 
   private storage: Storage;
   private eventBus: EventBus | null = null;
@@ -175,9 +180,7 @@ export class ChatSessionManager {
       ].join("\n");
 
       // Send as a user message into the main chat — triggers DeepSeek AI response
-      this.sendMessage(sessionId, message).catch((err) => {
-        console.error(`[ChatSession] handleExecutorFinished sendMessage error:`, err);
-      });
+      this.enqueueOrSend(sessionId, message);
     } catch (error) {
       console.error(`[ChatSession] handleExecutorFinished error:`, error);
     }
@@ -309,16 +312,21 @@ export class ChatSessionManager {
     const MAX_LINES = 100;
     const MAX_BYTES = 8192;
 
+    // Mutable state shared between subscriber callback and flush — kept as a single
+    // object so the terminalWatchers map always has a live reference to current timers.
     const state = {
-      unsubscribe: null as (() => void) | null,
       debounceTimer: null as ReturnType<typeof setTimeout> | null,
       idleTimer: setTimeout(() => this.stopTerminalWatcher(terminalId), IDLE_TIMEOUT_MS),
       outputBuffer: "",
-      sessionId,
     };
 
     const flush = () => {
-      if (!state.outputBuffer.trim()) return;
+      if (!state.outputBuffer.trim()) {
+        console.log(`[ChatSession] terminal watcher flush: empty buffer, skipping (terminal=${terminalId})`);
+        return;
+      }
+
+      console.log(`[ChatSession] terminal watcher flush: ${state.outputBuffer.length} bytes (terminal=${terminalId})`);
 
       // Strip ANSI codes
       let output = state.outputBuffer.replace(
@@ -347,19 +355,18 @@ export class ChatSessionManager {
         `Summarize what happened in 1-2 sentences.`,
       ].join("\n");
 
-      // Inject into chat session
-      this.sendMessage(sessionId, message).catch((err) => {
-        console.error(`[ChatSession] terminal watcher sendMessage error:`, err);
-      });
-
-      // Clean up after firing
+      // Clean up watcher before sending (prevents duplicate flushes)
       this.stopTerminalWatcher(terminalId);
+
+      // Inject into chat session (queued if a stream is already active)
+      this.enqueueOrSend(sessionId, message);
     };
 
     const unsubscribe = this.processManager.subscribe(terminalId, (msg) => {
       if (msg.type === "finished") {
         // Terminal exited — flush what we have
         if (state.debounceTimer) clearTimeout(state.debounceTimer);
+        state.debounceTimer = null;
         flush();
         return;
       }
@@ -378,17 +385,14 @@ export class ChatSessionManager {
     });
 
     if (!unsubscribe) {
+      console.log(`[ChatSession] Cannot watch terminal ${terminalId} — not found in processManager`);
       clearTimeout(state.idleTimer);
       return;
     }
 
-    state.unsubscribe = unsubscribe;
-
     this.terminalWatchers.set(terminalId, {
       unsubscribe,
-      debounceTimer: state.debounceTimer,
-      idleTimer: state.idleTimer,
-      outputBuffer: state.outputBuffer,
+      state, // live reference — timer IDs stay current
       sessionId,
     });
 
@@ -400,8 +404,8 @@ export class ChatSessionManager {
     if (!watcher) return;
 
     watcher.unsubscribe();
-    if (watcher.debounceTimer) clearTimeout(watcher.debounceTimer);
-    clearTimeout(watcher.idleTimer);
+    if (watcher.state.debounceTimer) clearTimeout(watcher.state.debounceTimer);
+    clearTimeout(watcher.state.idleTimer);
     this.terminalWatchers.delete(terminalId);
     console.log(`[ChatSession] Stopped terminal watcher for terminal=${terminalId}`);
   }
@@ -889,6 +893,49 @@ export class ChatSessionManager {
     };
   }
 
+  // ---- Message queue (prevents concurrent streams on the same session) ----
+
+  private enqueueOrSend(sessionId: string, content: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      console.log(`[ChatSession] enqueueOrSend: session ${sessionId} not found, dropping message`);
+      return;
+    }
+
+    if (session.abortController) {
+      // A stream is already active — queue the message
+      let queue = this.messageQueue.get(sessionId);
+      if (!queue) {
+        queue = [];
+        this.messageQueue.set(sessionId, queue);
+      }
+      queue.push(content);
+      console.log(`[ChatSession] Queued message for session ${sessionId} (queue length: ${queue.length})`);
+      return;
+    }
+
+    // No active stream — send immediately
+    this.sendMessage(sessionId, content).catch((err) => {
+      console.error(`[ChatSession] enqueueOrSend sendMessage error:`, err);
+    });
+  }
+
+  private drainQueue(sessionId: string): void {
+    const queue = this.messageQueue.get(sessionId);
+    if (!queue || queue.length === 0) {
+      this.messageQueue.delete(sessionId);
+      return;
+    }
+
+    const next = queue.shift()!;
+    if (queue.length === 0) this.messageQueue.delete(sessionId);
+
+    console.log(`[ChatSession] Draining queued message for session ${sessionId}`);
+    this.sendMessage(sessionId, next).catch((err) => {
+      console.error(`[ChatSession] drainQueue sendMessage error:`, err);
+    });
+  }
+
   // ---- Send message & stream AI response ----
 
   async sendMessage(sessionId: string, content: string): Promise<boolean> {
@@ -1056,6 +1103,9 @@ export class ChatSessionManager {
       session.abortController = null;
       session.status = "stopped";
       this.broadcastPatch(session, ConversationPatch.updateStatus("stopped"));
+
+      // Process any queued messages (e.g. [Terminal Event] that arrived during this stream)
+      this.drainQueue(sessionId);
     }
 
     return true;
