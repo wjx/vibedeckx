@@ -50,25 +50,21 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // Remote-side endpoint: execute a command in a terminal
+  // Remote-side endpoint: send a command to a terminal (fire-and-forget)
   fastify.post<{
     Params: { terminalId: string };
-    Body: { command: string; timeout?: number };
-  }>("/api/path/terminals/:terminalId/execute", async (req, reply) => {
+    Body: { command: string };
+  }>("/api/path/terminals/:terminalId/send", async (req, reply) => {
     const { terminalId } = req.params;
-    const { command, timeout } = req.body;
+    const { command } = req.body;
 
     if (!command) {
       return reply.code(400).send({ error: "Command is required" });
     }
 
     try {
-      const result = await fastify.processManager.executeInTerminal(
-        terminalId,
-        command,
-        timeout ?? 30,
-      );
-      return reply.send(result);
+      fastify.processManager.sendToTerminal(terminalId, command);
+      return reply.send({ sent: true });
     } catch (error) {
       return reply.code(404).send({ error: String(error) });
     }

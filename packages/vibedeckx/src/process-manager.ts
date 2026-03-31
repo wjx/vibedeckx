@@ -716,15 +716,10 @@ export class ProcessManager {
   }
 
   /**
-   * Execute a command in a running terminal session using marker-based completion detection.
-   * Writes the command to the PTY, waits for a unique marker in the output to detect completion,
-   * and returns the captured output with exit code.
+   * Send a command to a running terminal session (fire-and-forget).
+   * Writes the command + newline to the PTY. Does not wait for output.
    */
-  async executeInTerminal(
-    processId: string,
-    command: string,
-    timeoutSeconds: number = 30,
-  ): Promise<{ exitCode: number; output: string; timedOut: boolean }> {
+  sendToTerminal(processId: string, command: string): void {
     const runningProcess = this.processes.get(processId);
     if (!runningProcess) {
       throw new Error(`Terminal ${processId} not found`);
@@ -732,78 +727,34 @@ export class ProcessManager {
     if (!runningProcess.isPty || !runningProcess.isTerminal) {
       throw new Error(`Process ${processId} is not an interactive terminal`);
     }
-    // Check that terminal is still alive
     const lastLog = runningProcess.logs[runningProcess.logs.length - 1];
     if (lastLog?.type === "finished") {
       throw new Error(`Terminal ${processId} has already exited`);
     }
 
-    const marker = `__VDX_${crypto.randomUUID().slice(0, 8)}__`;
-    const markerPattern = new RegExp(`${marker}_(\\d+)_`);
+    const ptyProcess = runningProcess.process as IPty;
+    ptyProcess.write(`${command}\n`);
+  }
 
-    return new Promise<{ exitCode: number; output: string; timedOut: boolean }>((resolve) => {
-      let outputBuffer = "";
-      let resolved = false;
+  /**
+   * Get recent output lines from a terminal's log buffer.
+   * Returns stripped ANSI text from the last N lines.
+   */
+  getRecentOutput(processId: string, maxLines = 50): string {
+    const runningProcess = this.processes.get(processId);
+    if (!runningProcess) return "";
 
-      const cleanup = () => {
-        if (unsubscribe) unsubscribe();
-        clearTimeout(timer);
-      };
-
-      const finish = (exitCode: number, output: string, timedOut: boolean) => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        // Strip ANSI escape codes
-        const stripped = output.replace(
-          /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g,
-          "",
-        );
-        // Remove the echo command line and marker line from output
-        const lines = stripped.split("\n");
-        const filtered = lines.filter(
-          (line) => !line.includes(marker) && !line.includes(`echo "${marker}`)
-        );
-        resolve({ exitCode, output: filtered.join("\n").trim(), timedOut });
-      };
-
-      // Subscribe to live output
-      const unsubscribe = this.subscribe(processId, (msg) => {
-        if (resolved) return;
-
-        if (msg.type === "finished") {
-          // Terminal exited before marker — return what we have
-          finish(msg.exitCode, outputBuffer, false);
-          return;
-        }
-
-        if (msg.type === "pty" || msg.type === "stdout") {
-          outputBuffer += msg.data;
-          const match = markerPattern.exec(outputBuffer);
-          if (match) {
-            const exitCode = parseInt(match[1], 10);
-            // Trim everything from the marker onward
-            const markerIdx = outputBuffer.indexOf(match[0]);
-            const captured = outputBuffer.slice(0, markerIdx);
-            finish(exitCode, captured, false);
-          }
-        }
-      });
-
-      if (!unsubscribe) {
-        resolve({ exitCode: -1, output: "", timedOut: false });
-        return;
-      }
-
-      // Timeout
-      const timer = setTimeout(() => {
-        finish(-1, outputBuffer, true);
-      }, timeoutSeconds * 1000);
-
-      // Write the wrapped command to PTY
-      const ptyProcess = runningProcess.process as IPty;
-      ptyProcess.write(`${command} ; echo "${marker}_$?_"\n`);
-    });
+    const textLogs = runningProcess.logs
+      .filter((l): l is Exclude<LogMessage, { type: "finished" }> => l.type !== "finished")
+      .map((l) => l.data);
+    const joined = textLogs.join("");
+    const lines = joined.split("\n");
+    const tail = lines.slice(-maxLines).join("\n");
+    // Strip ANSI escape codes
+    return tail.replace(
+      /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g,
+      "",
+    );
   }
 
   /**

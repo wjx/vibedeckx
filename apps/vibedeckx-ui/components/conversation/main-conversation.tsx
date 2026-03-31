@@ -31,7 +31,7 @@ function getToolLabel(tool: string): string {
     case "listTerminals":
       return "Listing terminals...";
     case "runInTerminal":
-      return "Running command in terminal...";
+      return "Sending command to terminal...";
     default:
       return `Running ${tool}...`;
   }

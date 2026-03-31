@@ -67,6 +67,15 @@ export class ChatSessionManager {
   /** projectId:branch → sessionId (one session per project+branch) */
   private sessionIndex = new Map<string, string>();
 
+  /** terminalId → watcher state for active terminal output watchers */
+  private terminalWatchers = new Map<string, {
+    unsubscribe: () => void;
+    debounceTimer: ReturnType<typeof setTimeout> | null;
+    idleTimer: ReturnType<typeof setTimeout>;
+    outputBuffer: string;
+    sessionId: string;
+  }>();
+
   private storage: Storage;
   private eventBus: EventBus | null = null;
   private processManager: ProcessManager;
@@ -289,6 +298,114 @@ export class ChatSessionManager {
     });
   }
 
+  // ---- Terminal watcher ----
+
+  private startTerminalWatcher(sessionId: string, terminalId: string): void {
+    // Clean up any existing watcher for this terminal
+    this.stopTerminalWatcher(terminalId);
+
+    const DEBOUNCE_MS = 3000;
+    const IDLE_TIMEOUT_MS = 60000;
+    const MAX_LINES = 100;
+    const MAX_BYTES = 8192;
+
+    const state = {
+      unsubscribe: null as (() => void) | null,
+      debounceTimer: null as ReturnType<typeof setTimeout> | null,
+      idleTimer: setTimeout(() => this.stopTerminalWatcher(terminalId), IDLE_TIMEOUT_MS),
+      outputBuffer: "",
+      sessionId,
+    };
+
+    const flush = () => {
+      if (!state.outputBuffer.trim()) return;
+
+      // Strip ANSI codes
+      let output = state.outputBuffer.replace(
+        /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g,
+        "",
+      );
+
+      // Cap at MAX_LINES / MAX_BYTES
+      const lines = output.split("\n");
+      if (lines.length > MAX_LINES) {
+        output = lines.slice(-MAX_LINES).join("\n");
+      }
+      if (output.length > MAX_BYTES) {
+        output = output.slice(-MAX_BYTES);
+      }
+
+      const message = [
+        `[Terminal Event: Output]`,
+        `Terminal: ${terminalId}`,
+        ``,
+        `Output:`,
+        `---`,
+        output,
+        `---`,
+        ``,
+        `Summarize what happened in 1-2 sentences.`,
+      ].join("\n");
+
+      // Inject into chat session
+      this.sendMessage(sessionId, message).catch((err) => {
+        console.error(`[ChatSession] terminal watcher sendMessage error:`, err);
+      });
+
+      // Clean up after firing
+      this.stopTerminalWatcher(terminalId);
+    };
+
+    const unsubscribe = this.processManager.subscribe(terminalId, (msg) => {
+      if (msg.type === "finished") {
+        // Terminal exited — flush what we have
+        if (state.debounceTimer) clearTimeout(state.debounceTimer);
+        flush();
+        return;
+      }
+
+      if (msg.type === "pty" || msg.type === "stdout" || msg.type === "stderr") {
+        state.outputBuffer += msg.data;
+
+        // Reset debounce timer
+        if (state.debounceTimer) clearTimeout(state.debounceTimer);
+        state.debounceTimer = setTimeout(flush, DEBOUNCE_MS);
+
+        // Reset idle timer
+        clearTimeout(state.idleTimer);
+        state.idleTimer = setTimeout(() => this.stopTerminalWatcher(terminalId), IDLE_TIMEOUT_MS);
+      }
+    });
+
+    if (!unsubscribe) {
+      clearTimeout(state.idleTimer);
+      return;
+    }
+
+    state.unsubscribe = unsubscribe;
+
+    this.terminalWatchers.set(terminalId, {
+      unsubscribe,
+      debounceTimer: state.debounceTimer,
+      idleTimer: state.idleTimer,
+      outputBuffer: state.outputBuffer,
+      sessionId,
+    });
+
+    console.log(`[ChatSession] Started terminal watcher for terminal=${terminalId} session=${sessionId}`);
+  }
+
+  private stopTerminalWatcher(terminalId: string): void {
+    const watcher = this.terminalWatchers.get(terminalId);
+    if (!watcher) return;
+
+    watcher.unsubscribe();
+    if (watcher.debounceTimer) clearTimeout(watcher.debounceTimer);
+    clearTimeout(watcher.idleTimer);
+    this.terminalWatchers.delete(terminalId);
+    console.log(`[ChatSession] Stopped terminal watcher for terminal=${terminalId}`);
+  }
+
   // ---- Session lifecycle ----
 
   getOrCreateSession(projectId: string, branch: string | null): string {
@@ -375,7 +492,8 @@ export class ChatSessionManager {
       "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
       "When you receive an [Executor Event] message, respond in 1-2 sentences only. State what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
       "You can list active terminal sessions using the listTerminals tool.",
-      "You can run commands in a terminal using the runInTerminal tool. The command runs visibly in the user's terminal.",
+      "You can send commands to a terminal using the runInTerminal tool. The command runs visibly in the user's terminal and returns immediately.",
+      "After sending a command, terminal output will arrive as a [Terminal Event] message once the command finishes. Wait for it before commenting on results.",
       "When the user asks to run a command, check something in the terminal, or interact with a shell, use these tools.",
       "If no terminals are open, suggest the user open one in the Terminal tab first.",
       `Current workspace: project=${projectId}, branch=${branch ?? "default"}.`,
@@ -719,64 +837,52 @@ export class ChatSessionManager {
 
       runInTerminal: tool({
         description:
-          "Run a shell command in an active terminal session. The command executes visibly in the user's terminal. " +
+          "Send a shell command to an active terminal session. The command runs visibly in the user's terminal. " +
+          "Returns immediately — terminal output will arrive as a [Terminal Event] message once the command finishes. " +
           "Use listTerminals first to get available terminal IDs. " +
           "Use this when the user asks to run a command, check something, or interact with their shell.",
         inputSchema: z.object({
           terminalId: z.string().describe("ID of the terminal to run the command in (from listTerminals)"),
           command: z.string().describe("The shell command to execute"),
-          timeout: z
-            .number()
-            .min(1)
-            .max(120)
-            .default(30)
-            .describe("Max seconds to wait for command to finish"),
         }),
-        execute: async ({ terminalId, command, timeout }) => {
+        execute: async ({ terminalId, command }) => {
           try {
-            // Remote terminal — proxy to remote server
+            // Remote terminal — proxy to remote server (fire-and-forget)
             if (terminalId.startsWith("remote-terminal-")) {
               const remoteInfo = remoteExecutorMap.get(terminalId);
               console.log(`[runInTerminal] terminalId=${terminalId}, remoteProcessId=${remoteInfo?.remoteProcessId}, serverId=${remoteInfo?.remoteServerId}`);
               if (!remoteInfo) {
-                return { success: false, output: "", message: `Remote terminal ${terminalId} not found.` };
+                return { sent: false, message: `Remote terminal ${terminalId} not found.` };
               }
               const result = await proxyToRemoteAuto(
                 remoteInfo.remoteServerId,
                 remoteInfo.remoteUrl,
                 remoteInfo.remoteApiKey,
                 "POST",
-                `/api/path/terminals/${remoteInfo.remoteProcessId}/execute`,
-                { command, timeout },
-                { timeoutMs: (timeout + 5) * 1000, reverseConnectManager: reverseConnectManager ?? undefined },
+                `/api/path/terminals/${remoteInfo.remoteProcessId}/send`,
+                { command },
+                { reverseConnectManager: reverseConnectManager ?? undefined },
               );
               if (!result.ok) {
-                return { success: false, output: "", message: `Remote execution failed: ${JSON.stringify(result.data)}` };
+                return { sent: false, message: `Remote send failed: ${JSON.stringify(result.data)}` };
               }
-              const data = result.data as { exitCode: number; output: string; timedOut: boolean };
-              return {
-                success: !data.timedOut,
-                exitCode: data.exitCode,
-                output: data.output,
-                timedOut: data.timedOut,
-              };
+              return { sent: true, message: `Command sent to remote terminal. Output will appear in the terminal.` };
             }
 
-            // Local terminal
-            const result = await processManager.executeInTerminal(terminalId, command, timeout);
-            return {
-              success: !result.timedOut,
-              exitCode: result.exitCode,
-              output: result.output,
-              timedOut: result.timedOut,
-            };
+            // Local terminal — send command and start watcher
+            processManager.sendToTerminal(terminalId, command);
+
+            // Find the chat session that called this tool so we can inject the [Terminal Event] later
+            const sessionKey = `${projectId}:${branch ?? ""}`;
+            const chatSessionId = this.sessionIndex.get(sessionKey);
+            if (chatSessionId) {
+              this.startTerminalWatcher(chatSessionId, terminalId);
+            }
+
+            return { sent: true, message: "Command sent to terminal. Output will arrive as a [Terminal Event]." };
           } catch (err) {
             const msg = err instanceof Error ? err.message : "Unknown error";
-            return {
-              success: false,
-              output: "",
-              message: msg,
-            };
+            return { sent: false, message: msg };
           }
         },
       }),
