@@ -443,13 +443,6 @@ export class ChatSessionManager {
       outputBuffer: "",
     };
 
-    // Track whether the initial history replay is done.
-    // The remote side sends all historical logs synchronously on connect,
-    // then subscribes for live updates. We skip historical output so we
-    // only capture output from the command we just sent.
-    let historyDone = false;
-    let historyTimer: ReturnType<typeof setTimeout> | null = null;
-
     const flush = () => {
       if (!state.outputBuffer.trim()) {
         console.log(`[ChatSession] remote terminal watcher flush: empty buffer, skipping (terminal=${terminalId})`);
@@ -538,16 +531,6 @@ export class ChatSessionManager {
       // Skip non-log messages (init, error, etc.)
       if (msg.type !== "pty" && msg.type !== "stdout" && msg.type !== "stderr" && msg.type !== "finished") return;
 
-      // Mark history as done after a short gap — the remote side sends
-      // all historical logs synchronously, then subscribes for live updates.
-      // Any messages arriving after the gap are live.
-      if (!historyDone && !historyTimer) {
-        historyTimer = setTimeout(() => {
-          historyDone = true;
-          historyTimer = null;
-        }, 100);
-      }
-
       if (msg.type === "finished") {
         if (state.debounceTimer) clearTimeout(state.debounceTimer);
         state.debounceTimer = null;
@@ -555,9 +538,6 @@ export class ChatSessionManager {
         closeWs();
         return;
       }
-
-      // Only accumulate live output (after history replay)
-      if (!historyDone) return;
 
       if (msg.type === "pty" || msg.type === "stdout" || msg.type === "stderr") {
         state.outputBuffer += msg.data ?? "";
@@ -592,7 +572,6 @@ export class ChatSessionManager {
 
     const unsubscribe = () => {
       closeWs();
-      if (historyTimer) clearTimeout(historyTimer);
     };
 
     this.terminalWatchers.set(terminalId, {
