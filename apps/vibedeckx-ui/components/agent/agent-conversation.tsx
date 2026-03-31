@@ -30,6 +30,7 @@ import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
 import { getAgentProviders, translateText } from "@/lib/api";
 import { toast } from "sonner";
+import { UserInputMarkers } from "./user-input-markers";
 
 /** Only renders the attachment header when there are files attached */
 function AttachmentHeader() {
@@ -83,6 +84,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [isTranslating, setIsTranslating] = useState(false);
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const inputHistory = useInputHistory(setInput);
   const { remotes } = useProjectRemotes(project?.id ?? undefined);
 
@@ -364,55 +366,64 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       </div>
 
       {/* Messages area */}
-      <Conversation className="flex-1 min-h-0" initial="instant">
-        <ConversationContent className="gap-1 p-4">
-          {!session && messages.length === 0 ? (
-            <div className="text-center py-16">
-              {isLoading || (projectId && !isInitialized) ? (
-                <>
-                  <Loader className="h-6 w-6 mx-auto mb-4" />
-                  <h3 className="text-sm font-semibold mb-1 text-foreground">Connecting to agent...</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Setting up the session for this worktree
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="mx-auto w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                    <Bot className="h-6 w-6 text-primary/60" />
-                  </div>
-                  <h3 className="text-sm font-semibold mb-1 text-foreground">Start a conversation</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Ask the agent to help you with coding tasks in this worktree
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode: session?.permissionMode ?? permissionMode, agentType: session?.agentType ?? agentType, sessionId: session?.id ?? null }}>
-              <div className="space-y-1">
-                {messages.map((msg, index) => (
-                  <AgentMessageItem key={index} message={msg} messageIndex={index} />
-                ))}
-                {isLoading && (
-                  <div className="flex items-center gap-2 py-4 text-muted-foreground">
-                    <Loader className="h-4 w-4" />
-                    <span className="text-sm">Connecting to agent...</span>
-                  </div>
+      <div className="flex-1 min-h-0 relative">
+        <Conversation className="h-full" initial="instant">
+          <ConversationContent className="gap-1 p-4">
+            {!session && messages.length === 0 ? (
+              <div className="text-center py-16">
+                {isLoading || (projectId && !isInitialized) ? (
+                  <>
+                    <Loader className="h-6 w-6 mx-auto mb-4" />
+                    <h3 className="text-sm font-semibold mb-1 text-foreground">Connecting to agent...</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Setting up the session for this worktree
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mx-auto w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                      <Bot className="h-6 w-6 text-primary/60" />
+                    </div>
+                    <h3 className="text-sm font-semibold mb-1 text-foreground">Start a conversation</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Ask the agent to help you with coding tasks in this worktree
+                    </p>
+                  </>
                 )}
               </div>
-            </AgentConversationContext.Provider>
-          )}
+            ) : (
+              <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode: session?.permissionMode ?? permissionMode, agentType: session?.agentType ?? agentType, sessionId: session?.id ?? null }}>
+                <div className="space-y-1" ref={messagesRef}>
+                  {messages.map((msg, index) =>
+                    msg.type === "user" ? (
+                      <div key={index} data-user-msg-idx={index}>
+                        <AgentMessageItem message={msg} messageIndex={index} />
+                      </div>
+                    ) : (
+                      <AgentMessageItem key={index} message={msg} messageIndex={index} />
+                    )
+                  )}
+                  {isLoading && (
+                    <div className="flex items-center gap-2 py-4 text-muted-foreground">
+                      <Loader className="h-4 w-4" />
+                      <span className="text-sm">Connecting to agent...</span>
+                    </div>
+                  )}
+                </div>
+              </AgentConversationContext.Provider>
+            )}
 
-          {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-500/10 rounded-lg text-red-500 text-sm mt-4">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+            {error && (
+              <div className="flex items-center gap-2 p-3 bg-red-500/10 rounded-lg text-red-500 text-sm mt-4">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
+        <UserInputMarkers messages={messages} contentRef={messagesRef} />
+      </div>
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t border-border/60 p-3">
