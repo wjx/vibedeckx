@@ -20,6 +20,21 @@ import {
 import type { Executor, ExecutorType, PromptProvider } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+interface ExecutorPreset {
+  name: string;
+  command: string;
+  executor_type: "command";
+  pty: boolean;
+}
+
+const EXECUTOR_PRESETS: ExecutorPreset[] = [
+  { name: "Dev Server", command: "pnpm dev", executor_type: "command", pty: true },
+  { name: "Build", command: "pnpm build", executor_type: "command", pty: true },
+  { name: "Lint", command: "pnpm lint", executor_type: "command", pty: true },
+  { name: "Type Check", command: "npx tsc --noEmit", executor_type: "command", pty: true },
+  { name: "Test", command: "pnpm test", executor_type: "command", pty: true },
+];
+
 interface ExecutorFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,18 +55,24 @@ export function ExecutorForm({
   const [cwd, setCwd] = useState(executor?.cwd ?? "");
   const [pty, setPty] = useState(executor?.pty ?? true);
   const [loading, setLoading] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<ExecutorPreset | null>(null);
 
   const isEdit = !!executor;
 
   // Sync form values only when dialog opens
   useEffect(() => {
-    if (open && executor) {
-      setName(executor.name);
-      setExecutorType(executor.executor_type ?? "command");
-      setPromptProvider(executor.prompt_provider ?? "claude");
-      setCommand(executor.command);
-      setCwd(executor.cwd ?? "");
-      setPty(executor.pty);
+    if (open) {
+      setShowPresets(false);
+      setSelectedPreset(null);
+      if (executor) {
+        setName(executor.name);
+        setExecutorType(executor.executor_type ?? "command");
+        setPromptProvider(executor.prompt_provider ?? "claude");
+        setCommand(executor.command);
+        setCwd(executor.cwd ?? "");
+        setPty(executor.pty);
+      }
     }
   }, [open]);
 
@@ -87,8 +108,20 @@ export function ExecutorForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Executor" : "Add Executor"}</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>{showPresets ? "Select Preset" : isEdit ? "Edit Executor" : "Add Executor"}</DialogTitle>
+            {!isEdit && !showPresets && (
+              <button
+                type="button"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowPresets(true)}
+              >
+                Select from presets
+              </button>
+            )}
+          </div>
         </DialogHeader>
+        {!showPresets && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Name</label>
@@ -230,6 +263,57 @@ export function ExecutorForm({
             </Button>
           </DialogFooter>
         </form>
+        )}
+        {showPresets && (
+          <div className="space-y-4">
+            <div className="space-y-1">
+              {EXECUTOR_PRESETS.map((preset) => (
+                <button
+                  key={preset.command}
+                  type="button"
+                  className={cn(
+                    "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors",
+                    selectedPreset?.command === preset.command
+                      ? "bg-primary/10 text-primary"
+                      : "hover:bg-muted"
+                  )}
+                  onClick={() => setSelectedPreset(preset)}
+                >
+                  <span className="font-medium">{preset.name}</span>
+                  <code className="text-xs text-muted-foreground">{preset.command}</code>
+                </button>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowPresets(false);
+                  setSelectedPreset(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={!selectedPreset}
+                onClick={() => {
+                  if (selectedPreset) {
+                    setName(selectedPreset.name);
+                    setCommand(selectedPreset.command);
+                    setExecutorType(selectedPreset.executor_type);
+                    setPty(selectedPreset.pty);
+                    setShowPresets(false);
+                    setSelectedPreset(null);
+                  }
+                }}
+              >
+                Select
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
