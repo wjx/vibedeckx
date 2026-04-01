@@ -60,6 +60,7 @@ export function ExecutorForm({
   const [showPresets, setShowPresets] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<ExecutorPreset | null>(null);
   const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
+  const [presetFilter, setPresetFilter] = useState("");
 
   const isEdit = !!executor;
 
@@ -69,6 +70,7 @@ export function ExecutorForm({
       setShowPresets(false);
       setSelectedPreset(null);
       setExpandedPreset(null);
+      setPresetFilter("");
       if (executor) {
         setName(executor.name);
         setExecutorType(executor.executor_type ?? "command");
@@ -270,8 +272,22 @@ export function ExecutorForm({
         )}
         {showPresets && (
           <div className="space-y-4 min-h-[340px] flex flex-col">
+            <Input
+              placeholder="Search presets..."
+              value={presetFilter}
+              onChange={(e) => setPresetFilter(e.target.value)}
+              autoFocus
+            />
             <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1">
-              {EXECUTOR_PRESETS.map((preset) => {
+              {EXECUTOR_PRESETS.filter((preset) => {
+                if (!presetFilter.trim()) return true;
+                const q = presetFilter.toLowerCase();
+                return (
+                  preset.name.toLowerCase().includes(q) ||
+                  preset.command.toLowerCase().includes(q) ||
+                  (preset.description?.toLowerCase().includes(q) ?? false)
+                );
+              }).map((preset) => {
                 const isSelected = selectedPreset?.command === preset.command;
                 const isExpanded = expandedPreset === preset.command;
                 return (
