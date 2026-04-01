@@ -108,7 +108,7 @@ export function ExecutorForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pr-6">
             <DialogTitle>{showPresets ? "Select Preset" : isEdit ? "Edit Executor" : "Add Executor"}</DialogTitle>
             {!isEdit && !showPresets && (
               <button
@@ -265,8 +265,8 @@ export function ExecutorForm({
         </form>
         )}
         {showPresets && (
-          <div className="space-y-4">
-            <div className="space-y-1">
+          <div className="space-y-4 min-h-[340px] flex flex-col">
+            <div className="space-y-1 flex-1">
               {EXECUTOR_PRESETS.map((preset) => (
                 <button
                   key={preset.command}
