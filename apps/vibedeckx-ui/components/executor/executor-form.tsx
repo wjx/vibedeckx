@@ -19,20 +19,22 @@ import {
 } from "@/components/ui/select";
 import type { Executor, ExecutorType, PromptProvider } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Terminal, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 
 interface ExecutorPreset {
   name: string;
   command: string;
-  executor_type: "command";
+  executor_type: "command" | "prompt";
   pty: boolean;
+  description?: string;
 }
 
 const EXECUTOR_PRESETS: ExecutorPreset[] = [
-  { name: "Dev Server", command: "pnpm dev", executor_type: "command", pty: true },
-  { name: "Build", command: "pnpm build", executor_type: "command", pty: true },
-  { name: "Lint", command: "pnpm lint", executor_type: "command", pty: true },
-  { name: "Type Check", command: "npx tsc --noEmit", executor_type: "command", pty: true },
-  { name: "Test", command: "pnpm test", executor_type: "command", pty: true },
+  { name: "Dev Server", command: "pnpm dev", executor_type: "command", pty: true, description: "Start the development server with hot reload" },
+  { name: "Build", command: "pnpm build", executor_type: "command", pty: true, description: "Build the project for production" },
+  { name: "Lint", command: "pnpm lint", executor_type: "command", pty: true, description: "Run the linter to check code quality" },
+  { name: "Type Check", command: "npx tsc --noEmit", executor_type: "command", pty: true, description: "Run TypeScript type checking without emitting files" },
+  { name: "Test", command: "pnpm test", executor_type: "command", pty: true, description: "Run the test suite" },
 ];
 
 interface ExecutorFormProps {
@@ -57,6 +59,7 @@ export function ExecutorForm({
   const [loading, setLoading] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<ExecutorPreset | null>(null);
+  const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
 
   const isEdit = !!executor;
 
@@ -65,6 +68,7 @@ export function ExecutorForm({
     if (open) {
       setShowPresets(false);
       setSelectedPreset(null);
+      setExpandedPreset(null);
       if (executor) {
         setName(executor.name);
         setExecutorType(executor.executor_type ?? "command");
@@ -266,23 +270,59 @@ export function ExecutorForm({
         )}
         {showPresets && (
           <div className="space-y-4 min-h-[340px] flex flex-col">
-            <div className="space-y-1 flex-1">
-              {EXECUTOR_PRESETS.map((preset) => (
-                <button
-                  key={preset.command}
-                  type="button"
-                  className={cn(
-                    "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors",
-                    selectedPreset?.command === preset.command
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-muted"
-                  )}
-                  onClick={() => setSelectedPreset(preset)}
-                >
-                  <span className="font-medium">{preset.name}</span>
-                  <code className="text-xs text-muted-foreground">{preset.command}</code>
-                </button>
-              ))}
+            <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1">
+              {EXECUTOR_PRESETS.map((preset) => {
+                const isSelected = selectedPreset?.command === preset.command;
+                const isExpanded = expandedPreset === preset.command;
+                return (
+                  <div key={preset.command} className="rounded-md overflow-hidden">
+                    <button
+                      type="button"
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors",
+                        isSelected
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-muted"
+                      )}
+                      onClick={() => setSelectedPreset(preset)}
+                    >
+                      {preset.executor_type === "command" ? (
+                        <Terminal className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="font-medium">{preset.name}</span>
+                      <code className="text-xs text-muted-foreground ml-auto mr-2">{preset.command}</code>
+                      <button
+                        type="button"
+                        className="shrink-0 p-0.5 rounded hover:bg-muted-foreground/10 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedPreset(isExpanded ? null : preset.command);
+                        }}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    </button>
+                    {isExpanded && (
+                      <div className={cn(
+                        "px-3 pb-2 pt-1 text-xs text-muted-foreground space-y-1 border-t border-border/50",
+                        isSelected ? "bg-primary/5" : "bg-muted/50"
+                      )}>
+                        {preset.description && <p>{preset.description}</p>}
+                        <div className="flex gap-3">
+                          <span>Type: <span className="font-medium text-foreground/70">{preset.executor_type}</span></span>
+                          <span>PTY: <span className="font-medium text-foreground/70">{preset.pty ? "on" : "off"}</span></span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <DialogFooter>
               <Button
@@ -291,6 +331,7 @@ export function ExecutorForm({
                 onClick={() => {
                   setShowPresets(false);
                   setSelectedPreset(null);
+                  setExpandedPreset(null);
                 }}
               >
                 Cancel
@@ -306,6 +347,7 @@ export function ExecutorForm({
                     setPty(selectedPreset.pty);
                     setShowPresets(false);
                     setSelectedPreset(null);
+                    setExpandedPreset(null);
                   }
                 }}
               >
