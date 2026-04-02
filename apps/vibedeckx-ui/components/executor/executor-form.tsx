@@ -310,8 +310,7 @@ export function ExecutorForm({
                       ) : (
                         <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="font-medium">{preset.name}</span>
-                      <code className="text-xs text-muted-foreground ml-auto mr-2">{preset.command}</code>
+                      <span className="font-medium flex-1 text-left">{preset.name}</span>
                       <button
                         type="button"
                         className="shrink-0 p-0.5 rounded hover:bg-muted-foreground/10 transition-colors"
@@ -333,6 +332,7 @@ export function ExecutorForm({
                         isSelected ? "bg-primary/5" : "bg-muted/50"
                       )}>
                         {preset.description && <p>{preset.description}</p>}
+                        <pre className="whitespace-pre-wrap break-all bg-muted/50 rounded px-2 py-1 font-mono">{preset.command}</pre>
                         <div className="flex gap-3">
                           <span>Type: <span className="font-medium text-foreground/70">{preset.executor_type}</span></span>
                           <span>PTY: <span className="font-medium text-foreground/70">{preset.pty ? "on" : "off"}</span></span>
