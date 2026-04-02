@@ -16,11 +16,11 @@ export interface ExecutorWithProcess extends Executor {
   isRunning: boolean;
 }
 
-export function useExecutors(projectId: string | null, groupId: string | null | undefined) {
+export function useExecutors(projectId: string | null, groupId: string | null | undefined, executorMode?: string) {
   const [executors, setExecutors] = useState<Executor[]>([]);
-  const [runningProcesses, setRunningProcesses] = useState<Map<string, string>>(
+  const [runningProcesses, setRunningProcesses] = useState<Map<string, { processId: string; target: string }>>(
     new Map()
-  ); // executorId -> processId
+  ); // executorId -> { processId, target }
   const [loading, setLoading] = useState(true);
 
   // Fetch executors scoped to group
@@ -45,9 +45,9 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
   const fetchRunningProcesses = useCallback(async () => {
     try {
       const processes = await api.getRunningProcesses();
-      const processMap = new Map<string, string>();
+      const processMap = new Map<string, { processId: string; target: string }>();
       for (const proc of processes) {
-        processMap.set(proc.executor_id, proc.id);
+        processMap.set(proc.executor_id, { processId: proc.id, target: proc.target ?? "local" });
       }
       setRunningProcesses(processMap);
     } catch (error) {
@@ -81,6 +81,7 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
           projectId: string;
           executorId: string;
           processId: string;
+          target?: string;
         };
 
         if (data.projectId !== projectId) return;
@@ -88,9 +89,10 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
 
         if (data.type === "executor:started") {
           setRunningProcesses((prev) => {
-            if (prev.get(data.executorId) === data.processId) return prev;
+            const existing = prev.get(data.executorId);
+            if (existing?.processId === data.processId) return prev;
             const newMap = new Map(prev);
-            newMap.set(data.executorId, data.processId);
+            newMap.set(data.executorId, { processId: data.processId, target: data.target ?? "local" });
             return newMap;
           });
         } else if (data.type === "executor:stopped") {
@@ -164,7 +166,7 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
       const processId = await api.startExecutor(executorId, branch);
       setRunningProcesses((prev) => {
         const newMap = new Map(prev);
-        newMap.set(executorId, processId);
+        newMap.set(executorId, { processId, target: executorMode ?? "local" });
         return newMap;
       });
       return processId;
@@ -172,11 +174,11 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
       console.error("Failed to start executor:", error);
       return null;
     }
-  }, []);
+  }, [executorMode]);
 
   // Stop executor
   const stopExecutor = useCallback(async (executorId: string, processId?: string) => {
-    const targetProcessId = processId || runningProcesses.get(executorId);
+    const targetProcessId = processId || runningProcesses.get(executorId)?.processId;
     if (!targetProcessId) return;
 
     try {
@@ -223,12 +225,16 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
     [projectId, groupId, executors]
   );
 
-  // Get executor with process info
-  const executorsWithProcess: ExecutorWithProcess[] = executors.map((executor) => ({
-    ...executor,
-    currentProcessId: runningProcesses.get(executor.id) ?? null,
-    isRunning: runningProcesses.has(executor.id),
-  }));
+  // Get executor with process info, filtered by current executor mode
+  const executorsWithProcess: ExecutorWithProcess[] = executors.map((executor) => {
+    const entry = runningProcesses.get(executor.id);
+    const matchesTarget = entry && (!executorMode || entry.target === executorMode);
+    return {
+      ...executor,
+      currentProcessId: matchesTarget ? entry.processId : null,
+      isRunning: !!matchesTarget,
+    };
+  });
 
   return {
     executors: executorsWithProcess,

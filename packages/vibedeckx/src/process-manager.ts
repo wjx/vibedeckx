@@ -171,7 +171,7 @@ export class ProcessManager {
       }
     }
 
-    this.eventBus?.emit({ type: "executor:started", projectId: executor.project_id, executorId: executor.id, processId });
+    this.eventBus?.emit({ type: "executor:started", projectId: executor.project_id, executorId: executor.id, processId, target: "local" });
 
     return processId;
   }
@@ -310,7 +310,7 @@ export class ProcessManager {
       const msg: LogMessage = { type: "finished", exitCode: code };
       runningProcess.logs.push(msg);
       this.broadcast(processId, msg);
-      this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: code });
+      this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: code, target: "local" });
 
       // Schedule cleanup after retention period
       setTimeout(() => {
@@ -383,7 +383,7 @@ export class ProcessManager {
       const msg: LogMessage = { type: "finished", exitCode };
       runningProcess.logs.push(msg);
       this.broadcast(processId, msg);
-      this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode });
+      this.eventBus?.emit({ type: "executor:stopped", projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode, target: "local" });
 
       // Schedule cleanup after retention period
       setTimeout(() => {
@@ -602,7 +602,7 @@ export class ProcessManager {
       const finishMsg: LogMessage = { type: 'finished', exitCode: 1 };
       runningProcess.logs.push(finishMsg);
       this.broadcast(processId, finishMsg);
-      this.eventBus?.emit({ type: 'executor:stopped', projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: 1 });
+      this.eventBus?.emit({ type: 'executor:stopped', projectId: runningProcess.projectId, executorId: runningProcess.executorId, processId, exitCode: 1, target: "local" });
     });
   }
 

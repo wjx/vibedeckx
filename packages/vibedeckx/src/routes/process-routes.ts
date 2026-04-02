@@ -125,6 +125,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
           remoteUrl: remoteConfig.server_url ?? "",
           remoteApiKey: remoteConfig.server_api_key || "",
           remoteProcessId: remoteData.processId,
+          executorId: executor.id,
+          projectId: project.id,
+        });
+        fastify.eventBus.emit({
+          type: "executor:started",
+          projectId: project.id,
+          executorId: executor.id,
+          processId: localProcessId,
+          target: executorMode,
         });
         return reply.code(200).send({ processId: localProcessId });
       }
@@ -166,6 +175,17 @@ const routes: FastifyPluginAsync = async (fastify) => {
           undefined,
           { reverseConnectManager: fastify.reverseConnectManager }
         );
+        if (result.ok) {
+          fastify.eventBus.emit({
+            type: "executor:stopped",
+            projectId: remoteInfo.projectId ?? "",
+            executorId: remoteInfo.executorId,
+            processId: req.params.processId,
+            exitCode: 0,
+            target: remoteInfo.remoteServerId,
+          });
+          fastify.remoteExecutorMap.delete(req.params.processId);
+        }
         return reply.code(result.status || 200).send(result.data);
       }
 
@@ -180,11 +200,25 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
   // 获取所有运行中的进程
   fastify.get("/api/executor-processes/running", async (req, reply) => {
+    // Local processes
     const runningProcessIds = fastify.processManager.getRunningProcessIds();
-    const processes = runningProcessIds.map((id) => {
+    const processes: Array<Record<string, unknown>> = runningProcessIds.map((id) => {
       const dbProcess = fastify.storage.executorProcesses.getById(id);
-      return dbProcess;
-    }).filter(Boolean);
+      return dbProcess ? { ...dbProcess, target: "local" } : null;
+    }).filter(Boolean) as Array<Record<string, unknown>>;
+
+    // Remote processes (tracked in remoteExecutorMap)
+    for (const [localProcessId, info] of fastify.remoteExecutorMap) {
+      processes.push({
+        id: localProcessId,
+        executor_id: info.executorId,
+        status: "running",
+        exit_code: null,
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        target: info.remoteServerId,
+      });
+    }
 
     return reply.code(200).send({ processes });
   });

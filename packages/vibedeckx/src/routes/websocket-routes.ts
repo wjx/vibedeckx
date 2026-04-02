@@ -375,7 +375,26 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
           remoteWs.on("message", (data) => {
             try {
-              socket.send(data.toString());
+              const raw = data.toString();
+              socket.send(raw);
+              // Detect remote process finish and clean up remoteExecutorMap
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed.type === "finished") {
+                  const info = fastify.remoteExecutorMap.get(processId);
+                  if (info) {
+                    fastify.eventBus.emit({
+                      type: "executor:stopped",
+                      projectId: info.projectId ?? "",
+                      executorId: info.executorId,
+                      processId,
+                      exitCode: parsed.exitCode ?? 0,
+                      target: info.remoteServerId,
+                    });
+                    fastify.remoteExecutorMap.delete(processId);
+                  }
+                }
+              } catch { /* ignore parse errors */ }
             } catch (error) {
               console.error("[WebSocket] Failed to forward message to client:", error);
             }

@@ -208,6 +208,7 @@ export interface ExecutorProcess {
   exit_code: number | null;
   started_at: string;
   finished_at: string | null;
+  target?: string;
 }
 
 export interface TerminalSession {

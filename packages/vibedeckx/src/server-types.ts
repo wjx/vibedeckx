@@ -12,6 +12,7 @@ export interface RemoteExecutorInfo {
   remoteUrl: string;
   remoteApiKey: string;
   remoteProcessId: string;
+  executorId: string;
   projectId?: string;
   branch?: string | null;
 }

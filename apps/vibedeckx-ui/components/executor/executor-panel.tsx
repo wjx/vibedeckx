@@ -121,7 +121,7 @@ export function ExecutorPanel({ projectId, selectedBranch, project, onExecutorMo
     stopExecutor,
     markProcessFinished,
     reorderExecutors,
-  } = useExecutors(projectId, activeGroup?.id);
+  } = useExecutors(projectId, activeGroup?.id, project?.executor_mode);
 
   const loading = groupLoading || executorsLoading;
 

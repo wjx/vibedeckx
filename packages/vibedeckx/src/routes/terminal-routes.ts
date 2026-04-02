@@ -173,6 +173,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           remoteUrl: remoteConfig.url,
           remoteApiKey: remoteConfig.apiKey,
           remoteProcessId: remoteId,
+          executorId: "",
           projectId: req.params.projectId,
           branch: branch ?? null,
         });

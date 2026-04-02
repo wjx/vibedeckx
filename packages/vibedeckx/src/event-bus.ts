@@ -7,8 +7,8 @@ export type GlobalEvent =
   | { type: "task:created"; projectId: string; task: Record<string, unknown> }
   | { type: "task:updated"; projectId: string; task: Record<string, unknown> }
   | { type: "task:deleted"; projectId: string; taskId: string }
-  | { type: "executor:started"; projectId: string; executorId: string; processId: string }
-  | { type: "executor:stopped"; projectId: string; executorId: string; processId: string; exitCode: number };
+  | { type: "executor:started"; projectId: string; executorId: string; processId: string; target?: string }
+  | { type: "executor:stopped"; projectId: string; executorId: string; processId: string; exitCode: number; target?: string };
 
 export class EventBus {
   private emitter = new EventEmitter();
