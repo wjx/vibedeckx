@@ -274,14 +274,14 @@ export function ExecutorForm({
         </form>
         )}
         {showPresets && (
-          <div className="space-y-4 flex-1 flex flex-col">
+          <div className="space-y-4 flex-1 flex flex-col min-h-0">
             <Input
               placeholder="Search presets..."
               value={presetFilter}
               onChange={(e) => setPresetFilter(e.target.value)}
               autoFocus
             />
-            <div className="flex-1 overflow-y-auto space-y-1">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-1">
               {EXECUTOR_PRESETS.filter((preset) => {
                 if (!presetFilter.trim()) return true;
                 const q = presetFilter.toLowerCase();
