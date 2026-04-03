@@ -716,13 +716,19 @@ export class AgentSessionManager {
     }
 
     try {
-      session.process?.kill("SIGTERM");
+      // Clear session.process before killing so the process close handler
+      // (which checks session.process !== childProcess) skips its cleanup —
+      // we handle status + broadcast here instead.
+      const proc = session.process;
+      session.process = null;
+      proc?.kill("SIGTERM");
       session.dormant = false;
       session.status = "stopped";
       if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "stopped");
       this.broadcastPatch(sessionId, ConversationPatch.updateStatus("stopped"));
       this.eventBus?.emit({ type: "session:status", projectId: session.projectId, branch: session.branch, sessionId: session.id, status: "stopped" });
-      this.broadcastRaw(sessionId, { finished: true });
+      // Don't send { finished: true } — keep the WebSocket connection alive
+      // so the UI stays "Connected" and the user can start a new conversation.
       return true;
     } catch (error) {
       console.error(`[AgentSession] Failed to stop session:`, error);
