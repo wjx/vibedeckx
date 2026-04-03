@@ -84,6 +84,7 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (cancelled) return;
         console.log(`[useExecutorLogs] WebSocket connected`);
         setStatus("connected");
 
@@ -102,6 +103,7 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
       };
 
       ws.onmessage = (event) => {
+        if (cancelled) return;
         try {
           const msg: LogMessage = JSON.parse(event.data);
 
@@ -122,6 +124,7 @@ export function useExecutorLogs(processId: string | null): UseExecutorLogsResult
       };
 
       ws.onerror = (error) => {
+        if (cancelled) return;
         console.error(`[useExecutorLogs] WebSocket error:`, error);
       };
 
