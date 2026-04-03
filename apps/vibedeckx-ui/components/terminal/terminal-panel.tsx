@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useRef } from "react";
-import { Plus, X, Terminal, Monitor, Cloud, ChevronDown } from "lucide-react";
+import { Plus, X, Terminal, Monitor, Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ExecutorOutput } from "@/components/executor/executor-output";
@@ -154,49 +154,37 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
 
-        <div className="relative shrink-0 flex items-center" ref={menuRef}>
+        <div className="relative shrink-0" ref={menuRef}>
           <Button
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            onClick={handleCreateDefault}
+            onClick={hasMultipleTargets ? () => setShowLocationMenu((v) => !v) : handleCreateDefault}
           >
             <Plus className="h-3.5 w-3.5" />
           </Button>
-          {hasMultipleTargets && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-4 px-0"
-                onClick={() => setShowLocationMenu((v) => !v)}
-              >
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-              {showLocationMenu && (
-                <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md">
-                  {hasLocal && (
-                    <button
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
-                      onClick={() => handleCreateAt("local")}
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      Local Terminal
-                    </button>
-                  )}
-                  {remotes.map((r) => (
-                    <button
-                      key={r.remote_server_id}
-                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
-                      onClick={() => handleCreateAt("remote", r.remote_server_id)}
-                    >
-                      <Cloud className="h-3.5 w-3.5" />
-                      {r.server_name} Terminal
-                    </button>
-                  ))}
-                </div>
+          {hasMultipleTargets && showLocationMenu && (
+            <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border bg-popover p-1 shadow-md">
+              {hasLocal && (
+                <button
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                  onClick={() => handleCreateAt("local")}
+                >
+                  <Monitor className="h-3.5 w-3.5" />
+                  Local Terminal
+                </button>
               )}
-            </>
+              {remotes.map((r) => (
+                <button
+                  key={r.remote_server_id}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                  onClick={() => handleCreateAt("remote", r.remote_server_id)}
+                >
+                  <Cloud className="h-3.5 w-3.5" />
+                  {r.server_name} Terminal
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>
