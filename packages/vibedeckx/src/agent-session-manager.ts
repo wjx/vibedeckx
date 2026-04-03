@@ -717,10 +717,16 @@ export class AgentSessionManager {
     }
 
     try {
-      // Send SIGINT (like Ctrl+C) to interrupt the current execution
-      // without terminating the process. Claude Code handles SIGINT by
-      // stopping the current generation and waiting for new input.
-      session.process?.kill("SIGINT");
+      const provider = getProvider(session.agentType);
+
+      // Try provider-specific interrupt first (e.g. JSON-RPC $/cancelRequest for Codex)
+      const interruptMsg = provider.formatInterrupt?.(sessionId);
+      if (interruptMsg && session.process?.stdin) {
+        session.process.stdin.write(interruptMsg);
+      } else {
+        // Fall back to SIGINT (like Ctrl+C) — works for Claude Code CLI
+        session.process?.kill("SIGINT");
+      }
       return true;
     } catch (error) {
       console.error(`[AgentSession] Failed to stop session:`, error);
