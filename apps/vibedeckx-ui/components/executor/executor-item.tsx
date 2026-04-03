@@ -107,7 +107,7 @@ export function ExecutorItem({
     await onStop(localProcessId || undefined);
   };
 
-  const isRunning = executor.isRunning || status === "connected" || status === "connecting";
+  const isRunning = executor.isRunning;
 
   return (
     <>
