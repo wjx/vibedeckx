@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { produce } from "immer";
 import { toast } from "sonner";
 import { getWebSocketUrl, getAuthToken } from "@/lib/api";
+import { sendCommandToIframe } from "@/components/preview/browser-frames-provider";
 
 // ============ Types (reused from agent session) ============
 
@@ -43,11 +44,20 @@ type PatchValue =
   | { type: "READY"; content: true }
   | { type: "FINISHED"; content: true };
 
+interface BrowserCommand {
+  id: string;
+  action: string;
+  selector?: string;
+  value?: string;
+  key?: string;
+}
+
 type AgentWsMessage =
   | { JsonPatch: Patch }
   | { Ready: true }
   | { finished: true }
-  | { error: string };
+  | { error: string }
+  | { browserCommand: BrowserCommand };
 
 interface PatchContainer {
   entries: AgentMessage[];
@@ -251,6 +261,33 @@ export function useChatSession(projectId: string | null, branch: string | null) 
         if ("finished" in msg) {
           finishedRef.current = true;
           ws.close(1000, "finished");
+          return;
+        }
+
+        if ("browserCommand" in msg) {
+          // Forward command to iframe, send result back via WS
+          const cmd = msg.browserCommand;
+          if (projectId) {
+            sendCommandToIframe(projectId, {
+              type: "vibedeckx-command",
+              ...cmd,
+            }).then((result) => {
+              if (result && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: "browser_result",
+                  result: {
+                    id: cmd.id,
+                    success: result.success ?? false,
+                    error: result.error,
+                    content: result.content,
+                    found: result.found,
+                    tag: result.tag,
+                    text: result.text,
+                  },
+                }));
+              }
+            });
+          }
           return;
         }
 

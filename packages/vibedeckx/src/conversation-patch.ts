@@ -39,7 +39,33 @@ export type AgentWsMessage =
   | { Ready: true }
   | { finished: true }
   | { error: string }
-  | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } };
+  | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } }
+  | { browserCommand: BrowserCommand };
+
+/**
+ * Browser command sent from backend to frontend via WebSocket.
+ * Frontend forwards to iframe's injected script via postMessage.
+ */
+export interface BrowserCommand {
+  id: string;
+  action: "click" | "fill" | "select" | "pressKey" | "getText" | "getHTML" | "querySelector";
+  selector?: string;
+  value?: string;
+  key?: string;
+}
+
+/**
+ * Browser command result sent from frontend back to backend via WebSocket.
+ */
+export interface BrowserCommandResult {
+  id: string;
+  success: boolean;
+  error?: string;
+  content?: string;
+  found?: boolean;
+  tag?: string;
+  text?: string;
+}
 
 // ============ Conversation Patch Builder ============
 

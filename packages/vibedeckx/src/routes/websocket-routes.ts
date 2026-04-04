@@ -654,11 +654,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
         socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
           try {
-            const message = JSON.parse(data.toString()) as AgentWsInput;
+            const message = JSON.parse(data.toString());
             if (message.type === "user_message") {
               // Chat sessions only accept string content
-              const chatContent = typeof message.content === "string" ? message.content : message.content.filter(p => p.type === "text").map(p => p.text).join("\n");
+              const chatContent = typeof message.content === "string" ? message.content : message.content.filter((p: { type: string; text: string }) => p.type === "text").map((p: { text: string }) => p.text).join("\n");
               fastify.chatSessionManager.sendMessage(sessionId, chatContent);
+            } else if (message.type === "browser_result") {
+              fastify.chatSessionManager.handleBrowserResult(message.result);
             }
           } catch (error) {
             console.error("[ChatWS] Failed to parse message:", error);

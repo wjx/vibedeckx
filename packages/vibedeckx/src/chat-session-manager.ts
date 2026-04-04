@@ -14,7 +14,7 @@ import WsWebSocket from "ws";
 import type WebSocket from "ws";
 import type { AgentMessage, AgentSessionStatus } from "./agent-types.js";
 import { ConversationPatch } from "./conversation-patch.js";
-import type { Patch, AgentWsMessage } from "./conversation-patch.js";
+import type { Patch, AgentWsMessage, BrowserCommand, BrowserCommandResult } from "./conversation-patch.js";
 import type { Storage } from "./storage/types.js";
 import type { EventBus, GlobalEvent } from "./event-bus.js";
 import type { ProcessManager, LogMessage } from "./process-manager.js";
@@ -93,6 +93,12 @@ export class ChatSessionManager {
   private remotePatchCache: RemotePatchCache;
   private reverseConnectManager: ReverseConnectManager | null = null;
   private browserManager: BrowserManager | null = null;
+
+  /** Pending browser commands waiting for iframe response: commandId → resolve */
+  private pendingBrowserCommands = new Map<string, {
+    resolve: (result: BrowserCommandResult) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
 
   constructor(
     storage: Storage,
@@ -719,6 +725,10 @@ export class ChatSessionManager {
     const onBrowserError = (error: BrowserError) => {
       if (sessionId) this.handleBrowserError(sessionId, error);
     };
+    /** Try iframe command first, fall back to Playwright. Returns null if iframe handled it. */
+    const tryIframeCommand = sessionId
+      ? (cmd: Omit<BrowserCommand, "id">) => this.sendBrowserCommand(sessionId, cmd)
+      : () => Promise.resolve(null);
 
     return {
       getAgentConversation: tool({
@@ -1152,6 +1162,10 @@ export class ChatSessionManager {
           selector: z.string().describe("Selector for the element to click"),
         }),
         execute: async ({ selector }) => {
+          // Try iframe first (user sees it live)
+          const iframeResult = await tryIframeCommand({ action: "click", selector });
+          if (iframeResult) return iframeResult;
+          // Fallback to Playwright
           const page = browserManager?.getPage(projectId);
           if (!page) return { success: false, error: "No browser session. Use openPreview first." };
           try {
@@ -1173,6 +1187,10 @@ export class ChatSessionManager {
           value: z.string().describe("Value to fill"),
         }),
         execute: async ({ selector, value }) => {
+          // Try iframe first (user sees it live)
+          const iframeResult = await tryIframeCommand({ action: "fill", selector, value });
+          if (iframeResult) return iframeResult;
+          // Fallback to Playwright
           const page = browserManager?.getPage(projectId);
           if (!page) return { success: false, error: "No browser session. Use openPreview first." };
           try {
@@ -1192,6 +1210,10 @@ export class ChatSessionManager {
           value: z.string().describe("Value or label of the option to select"),
         }),
         execute: async ({ selector, value }) => {
+          // Try iframe first
+          const iframeResult = await tryIframeCommand({ action: "select", selector, value });
+          if (iframeResult) return iframeResult;
+          // Fallback to Playwright
           const page = browserManager?.getPage(projectId);
           if (!page) return { success: false, error: "No browser session. Use openPreview first." };
           try {
@@ -1210,6 +1232,10 @@ export class ChatSessionManager {
           key: z.string().describe("Key to press (e.g. 'Enter', 'Tab', 'Escape')"),
         }),
         execute: async ({ key }) => {
+          // Try iframe first
+          const iframeResult = await tryIframeCommand({ action: "pressKey", key });
+          if (iframeResult) return iframeResult;
+          // Fallback to Playwright
           const page = browserManager?.getPage(projectId);
           if (!page) return { success: false, error: "No browser session. Use openPreview first." };
           try {
@@ -1249,6 +1275,18 @@ export class ChatSessionManager {
           selector: z.string().optional().describe("Optional CSS selector to get content of a specific element"),
         }),
         execute: async ({ selector }) => {
+          // Try iframe first (reads from the user's actual page)
+          const iframeResult = await tryIframeCommand({ action: "getText", selector: selector ?? undefined });
+          if (iframeResult) {
+            if (iframeResult.success && iframeResult.content) {
+              const capped = iframeResult.content.length > 10000
+                ? iframeResult.content.slice(0, 10000) + "\n...(truncated)"
+                : iframeResult.content;
+              return { success: true, content: capped };
+            }
+            return iframeResult;
+          }
+          // Fallback to Playwright
           const page = browserManager?.getPage(projectId);
           if (!page) return { success: false, error: "No browser session. Use openPreview first." };
           try {
@@ -1541,5 +1579,54 @@ export class ChatSessionManager {
         // Client gone, will be cleaned up on close
       }
     }
+  }
+
+  // ---- Browser command via iframe ----
+
+  /**
+   * Send a browser command to the frontend via WebSocket.
+   * The frontend forwards it to the iframe's injected script via postMessage.
+   * Returns the result or null if no subscribers or timeout.
+   */
+  sendBrowserCommand(
+    sessionId: string,
+    command: Omit<BrowserCommand, "id">,
+    timeoutMs = 5000,
+  ): Promise<BrowserCommandResult | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.subscribers.size === 0) {
+      return Promise.resolve(null); // No frontend connected
+    }
+
+    const id = `bcmd-${randomUUID()}`;
+    const fullCommand: BrowserCommand = { id, ...command };
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingBrowserCommands.delete(id);
+        resolve(null); // Timeout — frontend didn't respond
+      }, timeoutMs);
+
+      this.pendingBrowserCommands.set(id, { resolve, timer });
+
+      // Broadcast to all subscribers
+      const raw = JSON.stringify({ browserCommand: fullCommand } satisfies AgentWsMessage);
+      for (const ws of session.subscribers) {
+        try {
+          ws.send(raw);
+        } catch { /* client gone */ }
+      }
+    });
+  }
+
+  /**
+   * Called when the frontend sends a browserResult message back over WebSocket.
+   */
+  handleBrowserResult(result: BrowserCommandResult): void {
+    const pending = this.pendingBrowserCommands.get(result.id);
+    if (!pending) return; // Already timed out or duplicate
+    clearTimeout(pending.timer);
+    this.pendingBrowserCommands.delete(result.id);
+    pending.resolve(result);
   }
 }

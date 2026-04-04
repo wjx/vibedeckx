@@ -3,6 +3,45 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 
+// ============ Global iframe command bridge ============
+// Allows use-chat-session hook to send commands to iframes without prop drilling.
+
+type CommandResultCallback = (result: Record<string, unknown>) => void;
+
+const pendingCommands = new Map<string, CommandResultCallback>();
+let iframeRefsGlobal: Map<string, HTMLIFrameElement> | null = null;
+
+/**
+ * Send a command to a project's iframe via postMessage.
+ * Returns the result or null on timeout.
+ * Called from use-chat-session.ts when the backend sends a browserCommand.
+ */
+export function sendCommandToIframe(
+  projectId: string,
+  command: Record<string, unknown>,
+  timeoutMs = 4000,
+): Promise<Record<string, unknown> | null> {
+  const iframe = iframeRefsGlobal?.get(projectId);
+  if (!iframe?.contentWindow) return Promise.resolve(null);
+
+  const id = command.id as string;
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingCommands.delete(id);
+      resolve(null);
+    }, timeoutMs);
+
+    pendingCommands.set(id, (result) => {
+      clearTimeout(timer);
+      pendingCommands.delete(id);
+      resolve(result);
+    });
+
+    iframe.contentWindow!.postMessage(command, "*");
+  });
+}
+
 // ============ Types ============
 
 interface BrowserFrame {
@@ -111,11 +150,23 @@ export function BrowserFramesProvider({ children }: { children: React.ReactNode 
     };
   }, []);
 
-  // Listen for error postMessages from all proxied iframes
+  // Expose iframe refs globally for sendCommandToIframe()
+  useEffect(() => {
+    iframeRefsGlobal = iframeRefs.current;
+    return () => { iframeRefsGlobal = null; };
+  }, []);
+
+  // Listen for postMessages from all proxied iframes (errors + command results)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === "vibedeckx-browser-error" && event.data.projectId) {
+      if (!event.data?.type) return;
+
+      if (event.data.type === "vibedeckx-browser-error" && event.data.projectId) {
         api.reportBrowserError(event.data.projectId, event.data.error).catch(() => {});
+      } else if (event.data.type === "vibedeckx-result" && event.data.id) {
+        // Route command result to pending promise
+        const callback = pendingCommands.get(event.data.id);
+        if (callback) callback(event.data);
       }
     };
     window.addEventListener("message", handler);
