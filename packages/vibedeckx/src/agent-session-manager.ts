@@ -272,6 +272,10 @@ export class AgentSessionManager {
    * Handle stdout data from agent process
    */
   private handleStdout(session: RunningSession, data: string): void {
+    // Ignore output from a process that has been stopped — the process may
+    // still flush data to stdout while shutting down after SIGTERM.
+    if (session.dormant) return;
+
     // Add to buffer
     session.buffer += data;
 
