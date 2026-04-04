@@ -136,6 +136,89 @@ function generateInjectedScript(projectId: string, targetOrigin: string, proxyWs
   Object.defineProperty(window.WebSocket, "CLOSING", { value: OrigWebSocket.CLOSING });
   Object.defineProperty(window.WebSocket, "CLOSED", { value: OrigWebSocket.CLOSED });
 
+  // --- Command Receiver (from parent frame via postMessage) ---
+  window.addEventListener("message", function(e) {
+    if (!e.data || e.data.type !== "vibedeckx-command") return;
+    var cmd = e.data;
+    var result = { type: "vibedeckx-result", id: cmd.id, projectId: PROJECT_ID, success: false };
+    try {
+      switch (cmd.action) {
+        case "click": {
+          var clickEl = document.querySelector(cmd.selector);
+          if (!clickEl) { result.error = "Element not found: " + cmd.selector; break; }
+          clickEl.click();
+          result.success = true;
+          break;
+        }
+        case "fill": {
+          var fillEl = document.querySelector(cmd.selector);
+          if (!fillEl) { result.error = "Element not found: " + cmd.selector; break; }
+          var nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, "value"
+          ) || Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype, "value"
+          );
+          if (nativeSetter && nativeSetter.set) {
+            nativeSetter.set.call(fillEl, cmd.value);
+          } else {
+            fillEl.value = cmd.value;
+          }
+          fillEl.dispatchEvent(new Event("input", { bubbles: true }));
+          fillEl.dispatchEvent(new Event("change", { bubbles: true }));
+          result.success = true;
+          break;
+        }
+        case "select": {
+          var selectEl = document.querySelector(cmd.selector);
+          if (!selectEl) { result.error = "Element not found: " + cmd.selector; break; }
+          selectEl.value = cmd.value;
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          result.success = true;
+          break;
+        }
+        case "pressKey": {
+          var target = document.activeElement || document.body;
+          target.dispatchEvent(new KeyboardEvent("keydown", { key: cmd.key, bubbles: true }));
+          target.dispatchEvent(new KeyboardEvent("keypress", { key: cmd.key, bubbles: true }));
+          target.dispatchEvent(new KeyboardEvent("keyup", { key: cmd.key, bubbles: true }));
+          result.success = true;
+          break;
+        }
+        case "getText": {
+          var textEl = cmd.selector ? document.querySelector(cmd.selector) : document.body;
+          if (!textEl) { result.error = "Element not found: " + cmd.selector; break; }
+          result.content = textEl.innerText || textEl.textContent || "";
+          result.success = true;
+          break;
+        }
+        case "getHTML": {
+          var htmlEl = cmd.selector ? document.querySelector(cmd.selector) : document.documentElement;
+          if (!htmlEl) { result.error = "Element not found: " + cmd.selector; break; }
+          result.content = htmlEl.outerHTML;
+          result.success = true;
+          break;
+        }
+        case "querySelector": {
+          var found = document.querySelector(cmd.selector);
+          result.success = true;
+          result.found = !!found;
+          if (found) {
+            result.tag = found.tagName.toLowerCase();
+            result.text = (found.innerText || found.textContent || "").slice(0, 200);
+          }
+          break;
+        }
+        default:
+          result.error = "Unknown action: " + cmd.action;
+      }
+    } catch(err) {
+      result.error = err.message || "Command execution failed";
+    }
+    try {
+      window.parent.postMessage(result, "*");
+    } catch(e) { /* ignore */ }
+  });
+
   // --- Report to Parent Frame ---
   function report(type, data) {
     try {
