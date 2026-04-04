@@ -734,6 +734,17 @@ export class AgentSessionManager {
       session.process = null;
       proc?.kill("SIGTERM");
 
+      // Finalize any in-flight streaming assistant text
+      this.finalizeStreamingEntry(session);
+      session.store.currentAssistantIndex = null;
+
+      // Add a system message so the UI shows the stop event in the conversation
+      this.pushEntry(sessionId, {
+        type: "system",
+        content: "Session stopped by user.",
+        timestamp: Date.now(),
+      });
+
       // Mark as dormant so the next message triggers wakeDormantSession
       // (which spawns a new process and replays the full conversation context).
       session.dormant = true;
