@@ -4,12 +4,17 @@
  * One browser session per project. Provides page automation (navigate, click, fill)
  * and captures errors via CDP event listeners. Errors are forwarded to a callback
  * (wired to ChatSessionManager for [Browser Event] injection).
+ *
+ * Playwright is an optional dependency — loaded lazily on first use.
+ * If not installed, startSession() throws with install instructions.
  */
 
-import { chromium } from "playwright";
-import type { Browser, BrowserContext, Page } from "playwright";
-
 // ============ Types ============
+
+// Re-export-compatible types (avoid importing playwright-core at module level)
+type Browser = import("playwright-core").Browser;
+type BrowserContext = import("playwright-core").BrowserContext;
+type Page = import("playwright-core").Page;
 
 export interface BrowserError {
   type: "js_error" | "console_error" | "network_error" | "crash";
@@ -44,6 +49,22 @@ interface BrowserSession {
 
 const MAX_ERRORS = 100;
 
+// ============ Lazy Playwright loader ============
+
+let playwrightModule: typeof import("playwright-core") | null = null;
+
+async function getPlaywright(): Promise<typeof import("playwright-core")> {
+  if (playwrightModule) return playwrightModule;
+  try {
+    playwrightModule = await import("playwright-core");
+    return playwrightModule;
+  } catch {
+    throw new Error(
+      "playwright-core is not installed. Install it with: pnpm add playwright-core && npx playwright install chromium"
+    );
+  }
+}
+
 // ============ Manager ============
 
 export class BrowserManager {
@@ -65,9 +86,10 @@ export class BrowserManager {
       }
     }
 
+    const pw = await getPlaywright();
     const id = `browser-${projectId}-${Date.now()}`;
 
-    const browser = await chromium.launch({
+    const browser = await pw.chromium.launch({
       headless: true,
       args: [
         "--no-sandbox",
