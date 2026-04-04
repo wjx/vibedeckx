@@ -48,12 +48,11 @@ export class ClaudeCodeProvider implements AgentProvider {
     ];
 
     if (nativeBinary) {
-      return { command: nativeBinary, args: claudeArgs, shell: true };
+      return { command: nativeBinary, args: claudeArgs };
     }
     return {
       command: "npx",
       args: ["-y", "@anthropic-ai/claude-code", ...claudeArgs],
-      shell: true,
     };
   }
 

@@ -180,6 +180,20 @@ export class AgentSessionManager {
   }
 
   /**
+   * Kill an agent process and its entire process tree.
+   * Uses negative PID to signal the process group (requires detached: true at spawn).
+   */
+  private killProcess(proc: ChildProcess | null, signal: NodeJS.Signals = "SIGTERM"): void {
+    if (!proc?.pid) return;
+    try {
+      process.kill(-proc.pid, signal);
+    } catch {
+      // Process group kill failed (e.g. already dead) — try direct kill as fallback
+      try { proc.kill(signal); } catch { /* already dead */ }
+    }
+  }
+
+  /**
    * Spawn agent process using the provider for this session's agent type
    */
   private spawnAgent(session: RunningSession, cwd: string): void {
@@ -209,6 +223,7 @@ export class AgentSessionManager {
       env: { ...process.env, FORCE_COLOR: "1", ...config.env },
       stdio: ["pipe", "pipe", "pipe"],
       shell: config.shell ?? false,
+      detached: true, // Own process group so we can kill the entire tree
     });
 
     session.process = childProcess;
@@ -736,7 +751,7 @@ export class AgentSessionManager {
       // (which checks session.process !== childProcess) skips its cleanup —
       // we handle status + broadcast here instead.
       session.process = null;
-      proc?.kill("SIGTERM");
+      this.killProcess(proc);
 
       // Finalize any in-flight streaming assistant text
       this.finalizeStreamingEntry(session);
@@ -792,11 +807,7 @@ export class AgentSessionManager {
     console.log(`[AgentSession] Restarting session ${sessionId}`);
 
     // 1. Kill the existing process
-    try {
-      session.process?.kill("SIGTERM");
-    } catch (error) {
-      console.error(`[AgentSession] Failed to kill process:`, error);
-    }
+    this.killProcess(session.process);
 
     // 2. Clear persisted entries
     if (!session.skipDb) {
@@ -854,11 +865,7 @@ export class AgentSessionManager {
     console.log(`[AgentSession] Switching session ${sessionId} from ${session.permissionMode} to ${newMode}`);
 
     // 1. Kill existing process
-    try {
-      session.process?.kill("SIGTERM");
-    } catch (error) {
-      console.error(`[AgentSession] Failed to kill process:`, error);
-    }
+    this.killProcess(session.process);
 
     // 2. Keep message store intact (preserve history in UI)
     // Only reset streaming state and buffer
@@ -1100,9 +1107,7 @@ export class AgentSessionManager {
       try {
         getProvider(session.agentType).onSessionDestroyed?.(id);
       } catch { /* ignore - provider cleanup is best-effort */ }
-      try {
-        session.process?.kill("SIGTERM");
-      } catch { /* ignore - process may already be dead */ }
+      this.killProcess(session.process);
     }
     this.sessions.clear();
   }
