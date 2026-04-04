@@ -118,7 +118,7 @@ export class ReverseConnectClient {
 
       if (frame.port) {
         // Direct fetch to localhost:{port} — used by browser proxy to reach dev servers
-        const url = `http://127.0.0.1:${frame.port}${frame.path}`;
+        const url = `http://localhost:${frame.port}${frame.path}`;
         const fetchInit: RequestInit = {
           method: frame.method,
           headers: frame.headers,
