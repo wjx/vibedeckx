@@ -6,22 +6,65 @@ import type { ReverseConnectManager, RawHttpResponse } from "../reverse-connect-
 import { VirtualWsAdapter } from "../virtual-ws-adapter.js";
 import "../server-types.js";
 
+interface ResolvedTarget {
+  /** The remote server ID if routed via reverse-connect, null for direct fetch */
+  remoteServerId: string | null;
+  /** The URL to fetch — for reverse-connect this is http://localhost:{port}{path} on the remote */
+  fetchUrl: string;
+  /** The origin as the user typed it (used for URL rewriting in HTML) */
+  userOrigin: string;
+}
+
+/**
+ * Resolve a target URL to either a reverse-connected remote server or a direct URL.
+ *
+ * URL format for reverse-connect: http://{remote-server-name}:{port}/{path}
+ * The hostname is matched against project remote server names (case-insensitive).
+ * If matched, the request is routed through the reverse-connect tunnel as
+ * http://localhost:{port}/{path} on the remote side.
+ */
+function resolveTarget(
+  targetUrl: string,
+  projectRemotes: Array<{ remote_server_id: string; server_name: string }>,
+  reverseConnectManager: ReverseConnectManager | null,
+): ResolvedTarget {
+  const parsed = new URL(targetUrl);
+  const hostname = parsed.hostname;
+
+  // Try to match hostname against project remote server names
+  for (const remote of projectRemotes) {
+    if (remote.server_name.toLowerCase() === hostname.toLowerCase()) {
+      const serverId = remote.remote_server_id;
+      if (reverseConnectManager?.isConnected(serverId)) {
+        // Rewrite to localhost on the remote side, preserving port and path
+        const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+        const localUrl = `http://localhost:${port}${parsed.pathname}${parsed.search}`;
+        return {
+          remoteServerId: serverId,
+          fetchUrl: localUrl,
+          userOrigin: parsed.origin,
+        };
+      }
+    }
+  }
+
+  // No match or not connected — direct fetch
+  return { remoteServerId: null, fetchUrl: targetUrl, userOrigin: parsed.origin };
+}
+
 /**
  * Fetch a URL either directly or via reverse-connect tunnel.
- * Tries reverse-connect first if the project has a remote server connected.
  */
 async function proxyFetch(
-  targetUrl: string,
+  resolved: ResolvedTarget,
   requestHeaders: Record<string, string>,
   reverseConnectManager: ReverseConnectManager | null,
-  remoteServerId: string | null,
 ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
-  // Try reverse-connect if available
-  if (remoteServerId && reverseConnectManager?.isConnected(remoteServerId)) {
-    const parsed = new URL(targetUrl);
+  if (resolved.remoteServerId && reverseConnectManager?.isConnected(resolved.remoteServerId)) {
+    const parsed = new URL(resolved.fetchUrl);
     const path = parsed.pathname + parsed.search;
     const raw = await reverseConnectManager.sendRawHttpRequest(
-      remoteServerId,
+      resolved.remoteServerId,
       "GET",
       path,
       requestHeaders,
@@ -30,7 +73,7 @@ async function proxyFetch(
   }
 
   // Direct fetch
-  const response = await fetch(targetUrl, {
+  const response = await fetch(resolved.fetchUrl, {
     headers: requestHeaders,
     redirect: "follow",
   });
@@ -286,18 +329,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      const parsedTarget = new URL(targetUrl);
-      const targetOrigin = parsedTarget.origin;
+      const projectRemotes = fastify.storage.projectRemotes.getByProject(projectId);
+      const resolved = resolveTarget(targetUrl, projectRemotes, fastify.reverseConnectManager);
+      const targetOrigin = resolved.userOrigin;
       const proxyPrefix = `/api/projects/${projectId}/browser/proxy/`;
       const proxyWsPrefix = `/api/projects/${projectId}/browser/proxy-ws/`;
 
-      // Look up remote server for this project (for reverse-connect routing)
-      const projectRemotes = fastify.storage.projectRemotes.getByProject(projectId);
-      const remoteServerId = projectRemotes.length > 0 ? projectRemotes[0].remote_server_id : null;
-
       // Fetch from the remote server (via reverse-connect or direct)
       const response = await proxyFetch(
-        targetUrl,
+        resolved,
         {
           "User-Agent": (req.headers["user-agent"] as string) || "Vibedeckx-Proxy/1.0",
           "Accept": (req.headers.accept as string) || "*/*",
@@ -305,7 +345,6 @@ const routes: FastifyPluginAsync = async (fastify) => {
           "Cookie": (req.headers.cookie as string) || "",
         },
         fastify.reverseConnectManager,
-        remoteServerId,
       );
 
       const contentType = response.headers["content-type"] || "";
@@ -373,15 +412,16 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     console.log(`[BrowserProxy] WS proxy: ${targetWsUrl}`);
 
-    // Check if we should route through reverse-connect
+    // Resolve hostname to remote server
     const projectRemotes = fastify.storage.projectRemotes.getByProject(projectId);
-    const remoteServerId = projectRemotes.length > 0 ? projectRemotes[0].remote_server_id : null;
+    const resolved = resolveTarget(targetWsUrl, projectRemotes, fastify.reverseConnectManager);
     const rcm = fastify.reverseConnectManager;
 
-    if (remoteServerId && rcm.isConnected(remoteServerId)) {
+    if (resolved.remoteServerId && rcm.isConnected(resolved.remoteServerId)) {
       // Route via reverse-connect virtual channel
+      const remoteServerId = resolved.remoteServerId;
       const channelId = randomUUID();
-      const parsed = new URL(targetWsUrl);
+      const parsed = new URL(resolved.fetchUrl);
       const wsPath = parsed.pathname;
       const wsQuery = parsed.search ? parsed.search.slice(1) : undefined;
 
