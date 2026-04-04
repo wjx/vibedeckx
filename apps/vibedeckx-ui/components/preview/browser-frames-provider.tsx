@@ -10,6 +10,15 @@ type CommandResultCallback = (result: Record<string, unknown>) => void;
 
 const pendingCommands = new Map<string, CommandResultCallback>();
 let iframeRefsGlobal: Map<string, HTMLIFrameElement> | null = null;
+let addFrameGlobal: ((projectId: string, url: string) => void) | null = null;
+
+/**
+ * Open a preview iframe for a project from anywhere (e.g. use-chat-session hook).
+ * Called when the backend sends an openPreviewFrame WebSocket message.
+ */
+export function openPreviewFrame(projectId: string, url: string): void {
+  addFrameGlobal?.(projectId, url);
+}
 
 /**
  * Send a command to a project's iframe via postMessage.
@@ -150,11 +159,12 @@ export function BrowserFramesProvider({ children }: { children: React.ReactNode 
     };
   }, []);
 
-  // Expose iframe refs globally for sendCommandToIframe()
+  // Expose iframe refs and addFrame globally for cross-component access
   useEffect(() => {
     iframeRefsGlobal = iframeRefs.current;
-    return () => { iframeRefsGlobal = null; };
-  }, []);
+    addFrameGlobal = addFrame;
+    return () => { iframeRefsGlobal = null; addFrameGlobal = null; };
+  }, [addFrame]);
 
   // Listen for postMessages from all proxied iframes (errors + command results)
   useEffect(() => {

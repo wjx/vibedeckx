@@ -40,7 +40,8 @@ export type AgentWsMessage =
   | { finished: true }
   | { error: string }
   | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } }
-  | { browserCommand: BrowserCommand };
+  | { browserCommand: BrowserCommand }
+  | { openPreviewFrame: { projectId: string; url: string } };
 
 /**
  * Browser command sent from backend to frontend via WebSocket.

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { produce } from "immer";
 import { toast } from "sonner";
 import { getWebSocketUrl, getAuthToken } from "@/lib/api";
-import { sendCommandToIframe } from "@/components/preview/browser-frames-provider";
+import { sendCommandToIframe, openPreviewFrame } from "@/components/preview/browser-frames-provider";
 
 // ============ Types (reused from agent session) ============
 
@@ -57,7 +57,8 @@ type AgentWsMessage =
   | { Ready: true }
   | { finished: true }
   | { error: string }
-  | { browserCommand: BrowserCommand };
+  | { browserCommand: BrowserCommand }
+  | { openPreviewFrame: { projectId: string; url: string } };
 
 interface PatchContainer {
   entries: AgentMessage[];
@@ -261,6 +262,11 @@ export function useChatSession(projectId: string | null, branch: string | null) 
         if ("finished" in msg) {
           finishedRef.current = true;
           ws.close(1000, "finished");
+          return;
+        }
+
+        if ("openPreviewFrame" in msg) {
+          openPreviewFrame(msg.openPreviewFrame.projectId, msg.openPreviewFrame.url);
           return;
         }
 

@@ -1128,13 +1128,35 @@ export class ChatSessionManager {
 
       openPreview: tool({
         description:
-          "Open a URL in the server-side preview browser (Playwright). " +
+          "Open a URL in the preview browser. " +
           "Use this when the user asks to open, preview, or navigate to a web page. " +
-          "This starts a browser session if none exists and navigates to the URL.",
+          "For remote servers, opens in the proxy iframe. Otherwise uses server-side Playwright.",
         inputSchema: z.object({
           url: z.string().describe("The URL to open (e.g. https://remote-server:3000)"),
         }),
         execute: async ({ url }) => {
+          // Check if URL targets a reverse-connected remote server → use iframe proxy
+          if (reverseConnectManager) {
+            try {
+              const projectRemotes = storage.projectRemotes.getByProject(projectId);
+              const resolved = resolveTarget(url, projectRemotes, reverseConnectManager);
+              if (resolved.remoteServerId && reverseConnectManager.isConnected(resolved.remoteServerId)) {
+                // Broadcast to frontend to open iframe preview
+                if (sessionId) {
+                  const session = this.sessions.get(sessionId);
+                  if (session) {
+                    const raw = JSON.stringify({ openPreviewFrame: { projectId, url } } satisfies AgentWsMessage);
+                    for (const ws of session.subscribers) {
+                      try { ws.send(raw); } catch { /* ignore */ }
+                    }
+                  }
+                }
+                return { success: true, title: "Preview opened", url, mode: "iframe-proxy" };
+              }
+            } catch { /* fall through to Playwright */ }
+          }
+
+          // Local URL — use Playwright
           if (!browserManager) {
             return { success: false, message: "Browser preview not available." };
           }
@@ -1142,51 +1164,6 @@ export class ChatSessionManager {
             let session = browserManager.getSession(projectId);
             if (!session) {
               session = await browserManager.startSession(projectId, branch, onBrowserError);
-
-              // Set up route interception for remote server hostnames so Playwright
-              // can reach dev servers on reverse-connected remotes
-              if (reverseConnectManager) {
-                const page = browserManager.getPage(projectId);
-                if (page) {
-                  const projectRemotes = storage.projectRemotes.getByProject(projectId);
-                  await page.route("**/*", async (route) => {
-                    const reqUrl = route.request().url();
-                    let resolved;
-                    try {
-                      resolved = resolveTarget(reqUrl, projectRemotes, reverseConnectManager);
-                    } catch {
-                      await route.continue();
-                      return;
-                    }
-                    if (resolved.remoteServerId && reverseConnectManager.isConnected(resolved.remoteServerId)) {
-                      const parsed = new URL(resolved.fetchUrl);
-                      const port = parsed.port ? parseInt(parsed.port, 10) : undefined;
-                      const path = parsed.pathname + parsed.search;
-                      const reqHeaders: Record<string, string> = {};
-                      const allHeaders = route.request().headers();
-                      for (const [k, v] of Object.entries(allHeaders)) {
-                        if (v) reqHeaders[k] = v;
-                      }
-                      const raw = await reverseConnectManager.sendRawHttpRequest(
-                        resolved.remoteServerId,
-                        route.request().method(),
-                        path,
-                        reqHeaders,
-                        route.request().postData() ?? undefined,
-                        undefined,
-                        port,
-                      );
-                      await route.fulfill({
-                        status: raw.status,
-                        headers: raw.headers,
-                        body: raw.body,
-                      });
-                    } else {
-                      await route.continue();
-                    }
-                  });
-                }
-              }
             }
             const result = await browserManager.navigate(projectId, url);
             if (!result) {
