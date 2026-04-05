@@ -169,8 +169,13 @@ const routes: FastifyPluginAsync = async (fastify) => {
         const remoteData = result.data as {
           terminal: { id: string; name: string; cwd: string };
         };
+        if (!remoteData?.terminal?.id) {
+          console.error(`[terminal-routes] Remote returned unexpected data:`, JSON.stringify(result.data).slice(0, 500));
+          return reply.code(502).send({ error: "Remote returned invalid terminal data" });
+        }
         const remoteId = remoteData.terminal.id;
         const localId = `remote-terminal-${remoteId}`;
+        console.log(`[terminal-routes] Remote terminal created: ${localId} (remote=${remoteId})`);
 
         fastify.remoteExecutorMap.set(localId, {
           remoteServerId: remoteConfig.serverId,
@@ -192,6 +197,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      console.error(`[terminal-routes] Remote terminal creation failed: status=${result.status}, error=${result.errorCode}, data=${JSON.stringify(result.data).slice(0, 300)}`);
       return reply.code(result.status || 502).send(result.data);
     }
 

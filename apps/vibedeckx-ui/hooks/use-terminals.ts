@@ -35,9 +35,13 @@ export function useTerminals(
 
   const createTerminal = useCallback(async (location?: "local" | "remote", remoteServerId?: string) => {
     if (!projectId) return;
-    const terminal = await api.createTerminal(projectId, branch, location, remoteServerId);
-    setTerminals((prev) => [...prev, terminal]);
-    setActiveTerminalId(terminal.id);
+    try {
+      const terminal = await api.createTerminal(projectId, branch, location, remoteServerId);
+      setTerminals((prev) => [...prev, terminal]);
+      setActiveTerminalId(terminal.id);
+    } catch (error) {
+      console.error("[useTerminals] Failed to create terminal:", error);
+    }
   }, [projectId, branch]);
 
   const closeTerminal = useCallback(async (id: string) => {

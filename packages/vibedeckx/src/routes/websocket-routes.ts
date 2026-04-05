@@ -354,6 +354,12 @@ const routes: FastifyPluginAsync = async (fastify) => {
             console.log(`[WebSocket] Virtual channel opened for remote process ${remoteInfo.remoteProcessId}`);
             setTimeout(() => adapter.emit("open"), 0);
           } else {
+            if (!remoteInfo.remoteUrl) {
+              console.log(`[WebSocket] No direct URL for remote process ${processId}, cannot proxy (reverse-connect only)`);
+              socket.send(JSON.stringify({ type: "error", message: "Remote server not reachable (reverse-connect offline)" }));
+              socket.close();
+              return;
+            }
             const cleanRemoteUrl = remoteInfo.remoteUrl.replace(/\/+$/, "");
             const wsProtocol = cleanRemoteUrl.startsWith("https") ? "wss" : "ws";
             const wsUrl = cleanRemoteUrl.replace(/^https?/, wsProtocol);

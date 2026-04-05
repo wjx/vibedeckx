@@ -236,7 +236,12 @@ export class ProcessManager {
       const msg: LogMessage = { type: "finished", exitCode: code };
       runningProcess.logs.push(msg);
       this.broadcast(processId, msg);
-      this.processes.delete(processId);
+      // Keep terminal in the map briefly so late WebSocket connections
+      // (e.g. remote proxy) can still retrieve logs and the finished status
+      // instead of getting "Process not found".
+      setTimeout(() => {
+        this.processes.delete(processId);
+      }, LOG_RETENTION_MS);
     });
 
     return { id: processId, name };
