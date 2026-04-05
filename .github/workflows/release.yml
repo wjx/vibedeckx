@@ -55,7 +55,7 @@ jobs:
 
           # Install production dependencies into staging
           cd "staging/${ARCHIVE_NAME}"
-          npm install --omit=dev --ignore-scripts
+          npm install --omit=dev --ignore-scripts --legacy-peer-deps
           npm rebuild better-sqlite3 node-pty
           cd ../..
 
@@ -78,7 +78,7 @@ jobs:
 
           # Install production dependencies into staging
           Set-Location "staging/${archiveName}"
-          npm install --omit=dev --ignore-scripts
+          npm install --omit=dev --ignore-scripts --legacy-peer-deps
           npm rebuild better-sqlite3 node-pty
           Set-Location ../..
 
