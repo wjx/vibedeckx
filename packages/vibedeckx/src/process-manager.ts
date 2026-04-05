@@ -195,15 +195,22 @@ export class ProcessManager {
       }
     }
 
-    console.log(`[ProcessManager] Starting terminal ${processId} (${name}) in ${cwd}`);
+    console.log(`[ProcessManager] Starting terminal ${processId} (${name}) in ${cwd}, shell=${shell}`);
 
-    const ptyProcess = pty.spawn(shell, [], {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
-      cwd,
-      env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>,
-    });
+    let ptyProcess: IPty;
+    try {
+      ptyProcess = pty.spawn(shell, [], {
+        name: "xterm-256color",
+        cols: 80,
+        rows: 24,
+        cwd,
+        env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>,
+      });
+      console.log(`[ProcessManager] Terminal ${processId} spawned successfully, PID: ${ptyProcess.pid}`);
+    } catch (err) {
+      console.error(`[ProcessManager] Failed to spawn terminal ${processId}: ${err}`);
+      throw err;
+    }
 
     const runningProcess: RunningProcess = {
       process: ptyProcess,

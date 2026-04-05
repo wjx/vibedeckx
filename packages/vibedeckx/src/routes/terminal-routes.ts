@@ -50,6 +50,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const terminal = fastify.processManager.startTerminal("remote", resolvedPath);
       return reply.code(201).send({ terminal: { id: terminal.id, name: terminal.name, cwd: resolvedPath } });
     } catch (error) {
+      console.error(`[terminal-routes] Failed to start terminal in ${resolvedPath}:`, error);
       return reply.code(500).send({ error: String(error) });
     }
   });
