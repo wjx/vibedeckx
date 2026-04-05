@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc && chmod +x ./dist/bin.js",
     "dev": "tsc -w",
+    "prepublishOnly": "npm run build",
     "postinstall": "npm rebuild node-pty || echo 'node-pty rebuild failed, PTY features may not work'"
   },
   "dependencies": {
