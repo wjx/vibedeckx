@@ -57,6 +57,43 @@ jobs:
           cd "staging/${ARCHIVE_NAME}"
           npm install --omit=dev --ignore-scripts --legacy-peer-deps
           npm rebuild better-sqlite3 node-pty
+
+          # Trim node_modules to reduce package size
+          CURRENT_PLATFORM="${{ matrix.platform }}"
+
+          # Remove other-platform prebuilds from node-pty (saves ~58MB)
+          if [ -d node_modules/node-pty/prebuilds ]; then
+            for dir in node_modules/node-pty/prebuilds/*/; do
+              platform_dir=$(basename "$dir")
+              if [ "$platform_dir" != "${CURRENT_PLATFORM%-*}-${CURRENT_PLATFORM#*-}" ]; then
+                rm -rf "$dir"
+              fi
+            done
+          fi
+
+          # Remove node-pty build artifacts not needed at runtime
+          rm -rf node_modules/node-pty/src node_modules/node-pty/deps \
+                 node_modules/node-pty/third_party node_modules/node-pty/scripts \
+                 node_modules/node-pty/node-addon-api
+
+          # Remove better-sqlite3 source/deps (keep lib/ + build/Release/*.node)
+          rm -rf node_modules/better-sqlite3/src node_modules/better-sqlite3/deps \
+                 node_modules/better-sqlite3/build/Release/.deps \
+                 node_modules/better-sqlite3/build/Release/obj.target \
+                 node_modules/better-sqlite3/build/Release/obj \
+                 node_modules/better-sqlite3/build/*.mk \
+                 node_modules/better-sqlite3/build/*.Makefile \
+                 node_modules/better-sqlite3/build/gyp-* \
+                 node_modules/better-sqlite3/build/config.gypi
+
+          # Remove playwright-core (optional, not needed for core functionality)
+          rm -rf node_modules/playwright-core
+
+          # General cleanup: remove docs, tests, TypeScript source maps
+          find node_modules -type f \( -name "*.md" -o -name "*.map" -o -name "*.ts" \
+               -o -name "CHANGELOG*" -o -name "HISTORY*" -o -name "*.flow" \) \
+               ! -path "*/dist/*" -delete 2>/dev/null || true
+
           cd ../..
 
           # Create tarball
@@ -80,6 +117,31 @@ jobs:
           Set-Location "staging/${archiveName}"
           npm install --omit=dev --ignore-scripts --legacy-peer-deps
           npm rebuild better-sqlite3 node-pty
+
+          # Trim node_modules to reduce package size
+          $currentPlatform = "${{ matrix.platform }}" -split "-"
+          $keepOs = $currentPlatform[0]
+          $keepArch = $currentPlatform[1]
+          $keepDir = "${keepOs}-${keepArch}"
+
+          # Remove other-platform prebuilds from node-pty
+          if (Test-Path "node_modules/node-pty/prebuilds") {
+            Get-ChildItem "node_modules/node-pty/prebuilds" -Directory | Where-Object { $_.Name -ne $keepDir } | Remove-Item -Recurse -Force
+          }
+
+          # Remove node-pty build artifacts not needed at runtime
+          foreach ($dir in @("src", "deps", "third_party", "scripts", "node-addon-api")) {
+            if (Test-Path "node_modules/node-pty/$dir") { Remove-Item -Recurse -Force "node_modules/node-pty/$dir" }
+          }
+
+          # Remove better-sqlite3 source/deps
+          foreach ($dir in @("src", "deps")) {
+            if (Test-Path "node_modules/better-sqlite3/$dir") { Remove-Item -Recurse -Force "node_modules/better-sqlite3/$dir" }
+          }
+
+          # Remove playwright-core
+          if (Test-Path "node_modules/playwright-core") { Remove-Item -Recurse -Force "node_modules/playwright-core" }
+
           Set-Location ../..
 
           # Create zip
@@ -101,12 +163,13 @@ jobs:
           cp "packages/vibedeckx-${{ matrix.platform }}/package.json" npm-package/
 
           # Merge dependencies from the main package.json into the platform package.json
+          # Exclude playwright-core (removed during trim step)
           node -e "
             const fs = require('fs');
             const main = JSON.parse(fs.readFileSync('packages/vibedeckx/package.json', 'utf8'));
             const platform = JSON.parse(fs.readFileSync('npm-package/package.json', 'utf8'));
             platform.dependencies = main.dependencies || {};
-            if (main.optionalDependencies) platform.optionalDependencies = main.optionalDependencies;
+            delete platform.optionalDependencies;
             platform.version = '${VERSION}';
             fs.writeFileSync('npm-package/package.json', JSON.stringify(platform, null, 2) + '\n');
           "
@@ -127,12 +190,13 @@ jobs:
           Copy-Item "packages/vibedeckx-${{ matrix.platform }}/package.json" npm-package/
 
           # Merge dependencies from the main package.json into the platform package.json
+          # Exclude playwright-core (removed during trim step)
           node -e "
             const fs = require('fs');
             const main = JSON.parse(fs.readFileSync('packages/vibedeckx/package.json', 'utf8'));
             const platform = JSON.parse(fs.readFileSync('npm-package/package.json', 'utf8'));
             platform.dependencies = main.dependencies || {};
-            if (main.optionalDependencies) platform.optionalDependencies = main.optionalDependencies;
+            delete platform.optionalDependencies;
             platform.version = '$version';
             fs.writeFileSync('npm-package/package.json', JSON.stringify(platform, null, 2) + '\n');
           "
