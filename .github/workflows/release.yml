@@ -87,9 +87,7 @@ jobs:
                  node_modules/better-sqlite3/build/config.gypi
 
           # Remove playwright-core (optional, not needed for core functionality)
-          rm -rf node_modules/playwright-core
-          # Clean up broken symlinks in .bin (macOS cp -r fails on them)
-          find node_modules/.bin -xtype l -delete 2>/dev/null || true
+          rm -rf node_modules/playwright-core node_modules/.bin/playwright-core
 
           # Remove test, docs, benchmark, example directories
           find node_modules -type d \( -name "test" -o -name "tests" -o -name "__tests__" \
@@ -152,10 +150,7 @@ jobs:
 
           # Remove playwright-core
           if (Test-Path "node_modules/playwright-core") { Remove-Item -Recurse -Force "node_modules/playwright-core" }
-          # Clean up broken symlinks in .bin
-          if (Test-Path "node_modules/.bin") {
-            Get-ChildItem "node_modules/.bin" -ErrorAction SilentlyContinue | Where-Object { $_.LinkType -and !(Test-Path $_.Target -ErrorAction SilentlyContinue) } | Remove-Item -Force -ErrorAction SilentlyContinue
-          }
+          if (Test-Path "node_modules/.bin/playwright-core") { Remove-Item -Force "node_modules/.bin/playwright-core" }
 
           # Remove test, docs, benchmark, example directories
           foreach ($dirName in @("test", "tests", "__tests__", "docs", "benchmark", "benchmarks", "example", "examples")) {
