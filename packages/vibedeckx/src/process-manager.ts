@@ -1,4 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from "child_process";
+import { existsSync } from "fs";
 import path from "path";
 import * as pty from "node-pty";
 import type { IPty } from "node-pty";
@@ -185,31 +186,48 @@ export class ProcessManager {
     this.terminalCounter++;
     const name = `Terminal ${this.terminalCounter}`;
 
-    let shell: string;
+    if (!existsSync(cwd)) {
+      throw new Error(`Working directory does not exist: ${cwd}`);
+    }
+
+    // Build ordered list of shells to try. On macOS, node-pty's posix_spawnp
+    // can fail for certain shells (e.g. /bin/bash on ARM64), so we fall back
+    // through alternatives.
+    const shells: string[] = [];
     if (process.platform === "win32") {
-      shell = "powershell.exe";
+      shells.push("powershell.exe");
     } else {
-      shell = process.env.SHELL || "/bin/zsh";
-      if (!shell.includes("/")) {
-        shell = `/bin/${shell}`;
+      const preferred = process.env.SHELL || "/bin/zsh";
+      shells.push(preferred.includes("/") ? preferred : `/bin/${preferred}`);
+      // Add fallbacks that aren't already in the list
+      for (const fallback of ["/bin/zsh", "/bin/bash", "/bin/sh"]) {
+        if (!shells.includes(fallback)) shells.push(fallback);
       }
     }
 
-    console.log(`[ProcessManager] Starting terminal ${processId} (${name}) in ${cwd}, shell=${shell}`);
+    console.log(`[ProcessManager] Starting terminal ${processId} (${name}) in ${cwd}, shells=${shells.join(", ")}`);
 
-    let ptyProcess: IPty;
-    try {
-      ptyProcess = pty.spawn(shell, [], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd,
-        env: { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>,
-      });
-      console.log(`[ProcessManager] Terminal ${processId} spawned successfully, PID: ${ptyProcess.pid}`);
-    } catch (err) {
-      console.error(`[ProcessManager] Failed to spawn terminal ${processId}: ${err}`);
-      throw err;
+    const ptyEnv = { ...process.env, TERM: "xterm-256color", FORCE_COLOR: "1" } as Record<string, string>;
+    let ptyProcess: IPty | undefined;
+    let lastError: unknown;
+    for (const shell of shells) {
+      try {
+        ptyProcess = pty.spawn(shell, [], {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          cwd,
+          env: ptyEnv,
+        });
+        console.log(`[ProcessManager] Terminal ${processId} spawned with ${shell}, PID: ${ptyProcess.pid}`);
+        break;
+      } catch (err) {
+        console.warn(`[ProcessManager] Failed to spawn terminal with ${shell}: ${err}`);
+        lastError = err;
+      }
+    }
+    if (!ptyProcess) {
+      throw lastError ?? new Error("All shell candidates failed");
     }
 
     const runningProcess: RunningProcess = {
