@@ -9,25 +9,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FolderOpen, Calendar, Trash2, Globe, MoreVertical, Pencil, ArrowUp, ArrowDown, Play, RotateCcw, Copy, Check, Loader2 } from "lucide-react";
+import { FolderOpen, Calendar, Globe, ArrowUp, ArrowDown, Play, RotateCcw, Copy, Check, Loader2 } from "lucide-react";
 import { api, type Project, type Task, type SyncButtonConfig, type SyncExecutionResult, type ExecutionMode } from "@/lib/api";
 import { useProjectRemotes } from "@/hooks/use-project-remotes";
-import { EditProjectDialog } from "./edit-project-dialog";
 import { SyncOutputDialog } from "./sync-output-dialog";
 
 interface ProjectCardProps {
   project: Project;
   selectedBranch: string | null;
-  onUpdateProject: (id: string, opts: {
-    name?: string;
-    path?: string | null;
-    remotePath?: string | null;
-    remoteUrl?: string | null;
-    remoteApiKey?: string | null;
-    syncUpConfig?: SyncButtonConfig | null;
-    syncDownConfig?: SyncButtonConfig | null;
-  }) => Promise<void> | Promise<unknown>;
-  onDeleteProject: (id: string) => Promise<void>;
   onSyncPrompt?: (prompt: string, executionMode: ExecutionMode) => void;
   assignedTask?: Task | null;
   onStartTask?: (task: Task) => void;
@@ -35,9 +24,8 @@ interface ProjectCardProps {
   startingTask?: boolean;
 }
 
-export function ProjectCard({ project, selectedBranch, onUpdateProject, onDeleteProject, onSyncPrompt, assignedTask, onStartTask, onResetTask, startingTask }: ProjectCardProps) {
+export function ProjectCard({ project, selectedBranch, onSyncPrompt, assignedTask, onStartTask, onResetTask, startingTask }: ProjectCardProps) {
   const { remotes } = useProjectRemotes(project.id);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [syncOutputOpen, setSyncOutputOpen] = useState(false);
   const [syncOutput, setSyncOutput] = useState<{
     type: 'up' | 'down';
@@ -234,26 +222,6 @@ export function ProjectCard({ project, selectedBranch, onUpdateProject, onDelete
           {renderBadge()}
           {showSyncUp && renderSyncButton('up', syncUpSources)}
           {showSyncDown && renderSyncButton('down', syncDownSources)}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="h-7 w-7">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setEditDialogOpen(true)}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => onDeleteProject(project.id)}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -348,12 +316,6 @@ export function ProjectCard({ project, selectedBranch, onUpdateProject, onDelete
           </div>
         )}
       </CardContent>
-      <EditProjectDialog
-        project={project}
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        onProjectUpdated={onUpdateProject}
-      />
       <SyncOutputDialog
         open={syncOutputOpen}
         onOpenChange={setSyncOutputOpen}

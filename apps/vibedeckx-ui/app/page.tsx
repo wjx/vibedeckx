@@ -290,8 +290,6 @@ Please proceed step by step and let me know if there are any issues or conflicts
                       <ProjectCard
                         project={currentProject}
                         selectedBranch={selectedBranch}
-                        onUpdateProject={updateProject}
-                        onDeleteProject={deleteProject}
                         onSyncPrompt={handleSyncPrompt}
                         assignedTask={assignedTask}
                         onStartTask={handleStartTask}
