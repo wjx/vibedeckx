@@ -1,0 +1,12 @@
+{
+  "name": "@vibedeckx/darwin-arm64",
+  "version": "0.1.0",
+  "description": "Vibedeckx platform binaries for macOS ARM64",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "type": "module",
+  "bin": {
+    "vibedeckx": "./dist/bin.js"
+  },
+  "bundleDependencies": true
+}
