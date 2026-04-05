@@ -85,19 +85,61 @@ jobs:
           # Create zip
           Compress-Archive -Path "staging/${archiveName}" -DestinationPath "${archiveName}.zip"
 
-      - name: Upload artifact (Unix)
+      # Prepare platform npm package from the staged build
+      - name: Prepare platform npm package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE_NAME="vibedeckx-${VERSION}-${{ matrix.platform }}"
+          mkdir -p npm-package
+
+          # Copy the complete built package (dist + node_modules)
+          cp -r "staging/${ARCHIVE_NAME}/dist" npm-package/
+          cp -r "staging/${ARCHIVE_NAME}/node_modules" npm-package/
+
+          # Copy the platform-specific package.json template and set version
+          cp "packages/vibedeckx-${{ matrix.platform }}/package.json" npm-package/
+          cd npm-package
+          npm version "$VERSION" --no-git-tag-version
+          cd ..
+
+      - name: Prepare platform npm package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v',''
+          $archiveName = "vibedeckx-${version}-${{ matrix.platform }}"
+          New-Item -ItemType Directory -Force -Path npm-package
+
+          # Copy the complete built package (dist + node_modules)
+          Copy-Item -Recurse "staging/${archiveName}/dist" npm-package/
+          Copy-Item -Recurse "staging/${archiveName}/node_modules" npm-package/
+
+          # Copy the platform-specific package.json template and set version
+          Copy-Item "packages/vibedeckx-${{ matrix.platform }}/package.json" npm-package/
+          Set-Location npm-package
+          npm version "$version" --no-git-tag-version
+          Set-Location ..
+
+      - name: Upload release artifact (Unix)
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: vibedeckx-${{ matrix.platform }}
           path: "*.tar.gz"
 
-      - name: Upload artifact (Windows)
+      - name: Upload release artifact (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: vibedeckx-${{ matrix.platform }}
           path: "*.zip"
+
+      - name: Upload npm platform package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platform }}
+          path: npm-package/
 
   release:
     needs: build
@@ -106,9 +148,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: vibedeckx-*
           path: artifacts
           merge-multiple: true
 
@@ -118,6 +161,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           cat > release-notes.md << NOTES_EOF
           ## Installation
+
+          ### Quick install via npx
+
+          \`\`\`bash
+          npx vibedeckx@latest
+          \`\`\`
 
           ### macOS
 
@@ -172,29 +221,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-          cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Download platform npm packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: npm-packages
 
-      - name: Build
-        run: pnpm build
+      # Publish each platform package
+      - name: Publish @vibedeckx/linux-x64
+        run: npm publish --access public
+        working-directory: npm-packages/npm-linux-x64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Set version from tag
+      - name: Publish @vibedeckx/darwin-arm64
+        run: npm publish --access public
+        working-directory: npm-packages/npm-darwin-arm64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @vibedeckx/win32-x64
+        run: npm publish --access public
+        working-directory: npm-packages/npm-win32-x64
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Publish the main thin wrapper package
+      - name: Prepare main package for npm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd packages/vibedeckx
-          npm version "$VERSION" --no-git-tag-version
 
-      - name: Publish to npm
+          # Rewrite package.json as thin wrapper (no dependencies, just platform optionalDeps)
+          node -e "
+            const pkg = JSON.parse(require('fs').readFileSync('package.json', 'utf8'));
+            const wrapper = {
+              name: pkg.name,
+              version: '${VERSION}',
+              type: 'module',
+              description: 'AI-powered app generator with project management',
+              bin: { vibedeckx: './bin/vibedeckx.mjs' },
+              files: ['./bin/*'],
+              engines: { node: '>=20' },
+              optionalDependencies: {
+                '@vibedeckx/linux-x64': '${VERSION}',
+                '@vibedeckx/darwin-arm64': '${VERSION}',
+                '@vibedeckx/win32-x64': '${VERSION}'
+              }
+            };
+            require('fs').writeFileSync('package.json', JSON.stringify(wrapper, null, 2) + '\n');
+          "
+
+      - name: Publish vibedeckx
         run: npm publish --access public
         working-directory: packages/vibedeckx
         env:
