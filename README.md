@@ -84,36 +84,48 @@ node packages/vibedeckx/dist/bin.js --port 8080
 
 #### platform vs npm-platform
 
-两者都包含 esbuild bundle（`dist/bin.js` + `dist/ui/`）和预编译 native 模块（`node-pty`、`better-sqlite3`），区别如下：
+两者内容相同（esbuild bundle + 预编译 native 模块），但打包方式不同：
 
-|  | `platform` | `npm-platform` |
-|---|---|---|
-| 包名 | `vibedeckx`（无 scope） | `@vibedeckx/linux-x64`（scoped） |
-| `bin` 字段 | 有（`vibedeckx` -> `./dist/bin.js`） | 无 |
-| Sourcemap | 包含 | 不包含 |
-| 用途 | 直接下载运行，`npx -y ./file.tar.gz` | 本地测试 npm 安装流程 |
-| 对应 | GitHub Release 资产 | npmjs.com 发布的包 |
+**`platform`** — 独立包（standalone package）
 
-**`platform`** 是面向终端用户的独立归档，包名为无 scope 的 `vibedeckx` 并带有 `bin` 入口，可通过 `npx -y ./vibedeckx-0.1.0-linux-x64.tar.gz` 直接运行。
-
-**`npm-platform`** 复现 CI 发布到 npmjs 的 `@vibedeckx/linux-x64` 包，用于在发布前本地验证 npm 安装流程：
+用户下载后即可直接运行，不依赖其他包。为此需要：
+- 无 scope 包名（`vibedeckx`），否则 `npx` 无法直接执行
+- `bin` 字段指向 `dist/bin.js`，让 npm/npx 知道入口
+- 包含 sourcemap，方便用户排查问题
 
 ```bash
-# 构建 npm 平台包
-./scripts/pack.sh npm-platform --skip-build
-
-# 本地安装测试
-npm install ./dist-out/vibedeckx-linux-x64-0.1.0.tgz
+# 下载即运行
+npx -y ./vibedeckx-0.1.0-linux-x64.tar.gz
 ```
 
-#### 安装时包的关系
+**`npm-platform`** — 依赖包（dependency package）
+
+不独立运行，而是作为主包 `vibedeckx` 的 `optionalDependency` 被安装。npm 根据 `os`/`cpu` 字段自动选择匹配当前平台的包。为此需要：
+- scoped 包名（`@vibedeckx/linux-x64`），与主包的 `optionalDependencies` 对应
+- 不需要 `bin` 字段 — 入口由主包的 `bin/vibedeckx.mjs` 提供
+- 不含 sourcemap，减小安装体积
 
 ```
 npx vibedeckx
   -> 安装 vibedeckx（轻量 wrapper，几 KB）
-     -> optionalDependencies 触发安装 @vibedeckx/linux-x64
-        -> 包含 dist/bin.js（esbuild bundle）+ dist/ui/ + native node_modules/
+     -> optionalDependencies 自动安装 @vibedeckx/linux-x64
+        -> 包含 dist/bin.js + dist/ui/ + native node_modules/
   -> bin/vibedeckx.mjs 定位平台包并运行 dist/bin.js
+```
+
+|  | `platform` | `npm-platform` |
+|---|---|---|
+| 打包方式 | 独立包，直接运行 | 依赖包，由主包间接安装 |
+| 包名 | `vibedeckx`（无 scope） | `@vibedeckx/linux-x64`（scoped） |
+| `bin` 字段 | 有 | 无（主包提供） |
+| Sourcemap | 包含 | 不包含 |
+| 对应产物 | GitHub Release 资产 | npmjs.com 发布的包 |
+
+`npm-platform` 用于在发布前本地验证 npm 安装流程：
+
+```bash
+./scripts/pack.sh npm-platform --skip-build
+npm install ./dist-out/vibedeckx-linux-x64-0.1.0.tgz
 ```
 
 ### 发布到 npm
