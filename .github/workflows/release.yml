@@ -53,6 +53,16 @@ jobs:
           # Copy platform package.json (has native module dependencies)
           cp "packages/vibedeckx-${{ matrix.platform }}/package.json" "staging/${ARCHIVE_NAME}/"
 
+          # Inject bin entry and package name for npx compatibility
+          node -e "
+            const fs = require('fs');
+            const p = 'staging/${ARCHIVE_NAME}/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.name = 'vibedeckx';
+            pkg.bin = { vibedeckx: './dist/bin.js' };
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
           # Install only native module dependencies and rebuild for target platform
           cd "staging/${ARCHIVE_NAME}"
           npm install --ignore-scripts --legacy-peer-deps
@@ -138,6 +148,16 @@ jobs:
 
           # Copy platform package.json (has native module dependencies)
           Copy-Item "packages/vibedeckx-${{ matrix.platform }}/package.json" "staging/${archiveName}/"
+
+          # Inject bin entry and package name for npx compatibility
+          node -e "
+            const fs = require('fs');
+            const p = 'staging/${archiveName}/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.name = 'vibedeckx';
+            pkg.bin = { vibedeckx: './dist/bin.js' };
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
 
           # Install only native module dependencies and rebuild for target platform
           Set-Location "staging/${archiveName}"

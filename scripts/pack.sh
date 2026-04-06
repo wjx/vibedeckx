@@ -86,6 +86,15 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "platform" ]; then
   # Copy platform package.json (has native module dependencies)
   cp "$ROOT_DIR/packages/vibedeckx-${PLATFORM}/package.json" "$STAGING/"
 
+  # Inject bin entry and package name for npx compatibility
+  node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('$STAGING/package.json', 'utf8'));
+    pkg.name = 'vibedeckx';
+    pkg.bin = { vibedeckx: './dist/bin.js' };
+    fs.writeFileSync('$STAGING/package.json', JSON.stringify(pkg, null, 2) + '\n');
+  "
+
   # Install only native module dependencies and rebuild
   echo "    Installing native module dependencies..."
   cd "$STAGING"
