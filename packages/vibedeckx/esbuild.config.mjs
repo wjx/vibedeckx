@@ -10,6 +10,6 @@ await build({
   sourcemap: true,
   external: ["node-pty", "better-sqlite3", "playwright-core"],
   banner: {
-    js: "#!/usr/bin/env node",
+    js: "import { createRequire as __bundleRequire } from 'module';const require = __bundleRequire(import.meta.url);",
   },
 });
