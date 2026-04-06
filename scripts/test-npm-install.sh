@@ -66,10 +66,6 @@ echo "==> Verifying installation..."
 echo "    Wrapper:  $(ls node_modules/vibedeckx/bin/vibedeckx.mjs 2>/dev/null && echo 'OK' || echo 'MISSING')"
 echo "    Platform: $(ls node_modules/@vibedeckx/${PLATFORM}/dist/bin.js 2>/dev/null && echo 'OK' || echo 'MISSING')"
 
-echo ""
-echo "==> Starting server (5 second timeout)..."
-timeout 5 npx vibedeckx 2>&1 || true
-
 # ─── Cleanup ──────────────────────────────────────────────────────────
 echo ""
 echo "==> Cleaning up $TEST_DIR ..."
