@@ -6,6 +6,7 @@ import type { LogMessage, InputMessage } from "../process-manager.js";
 import type { AgentWsInput } from "../agent-types.js";
 import type { RemoteSessionInfo } from "../server-types.js";
 import type { RemotePatchCache } from "../remote-patch-cache.js";
+import type { EventBus } from "../event-bus.js";
 import { VirtualWsAdapter } from "../virtual-ws-adapter.js";
 import "../server-types.js";
 
@@ -61,6 +62,7 @@ function connectPersistentRemoteWs(
   cache: RemotePatchCache,
   wsOptions: Record<string, unknown>,
   reverseConnectManager?: import("../reverse-connect-manager.js").ReverseConnectManager,
+  eventBus?: EventBus,
 ): void {
   const hasCachedData = cache.hasData(sessionId);
   const useVirtual = reverseConnectManager && reverseConnectManager.isConnected(remoteInfo.remoteServerId);
@@ -123,6 +125,26 @@ function connectPersistentRemoteWs(
     } else if ("taskCompleted" in parsed) {
       cache.appendMessage(sessionId, raw, false);
       cache.broadcast(sessionId, raw);
+      // Emit on local EventBus so ChatSessionManager can detect task completion
+      // (mirrors the executor:stopped pattern for remote executors)
+      if (eventBus) {
+        const tc = parsed.taskCompleted as Record<string, unknown> | undefined;
+        const prefix = `remote-${remoteInfo.remoteServerId}-`;
+        const suffix = `-${remoteInfo.remoteSessionId}`;
+        const projectId = sessionId.startsWith(prefix) && sessionId.endsWith(suffix)
+          ? sessionId.slice(prefix.length, sessionId.length - suffix.length)
+          : sessionId.split("-").slice(2, -1).join("-");
+        eventBus.emit({
+          type: "session:taskCompleted",
+          projectId,
+          branch: remoteInfo.branch ?? null,
+          sessionId,
+          duration_ms: tc?.duration_ms as number | undefined,
+          cost_usd: tc?.cost_usd as number | undefined,
+          input_tokens: tc?.input_tokens as number | undefined,
+          output_tokens: tc?.output_tokens as number | undefined,
+        });
+      }
     } else if ("error" in parsed) {
       cache.appendMessage(sessionId, raw, false);
       cache.broadcast(sessionId, raw);
@@ -246,7 +268,7 @@ function connectPersistentRemoteWs(
     const entry = cache.get(sessionId);
     if (!entry || entry.finished) return;
 
-    scheduleRemoteReconnect(sessionId, remoteInfo, cache, wsOptions, reverseConnectManager);
+    scheduleRemoteReconnect(sessionId, remoteInfo, cache, wsOptions, reverseConnectManager, eventBus);
   });
 }
 
@@ -260,6 +282,7 @@ function scheduleRemoteReconnect(
   cache: RemotePatchCache,
   wsOptions: Record<string, unknown>,
   reverseConnectManager?: import("../reverse-connect-manager.js").ReverseConnectManager,
+  eventBus?: EventBus,
 ): void {
   const entry = cache.get(sessionId);
   if (!entry || entry.finished) return;
@@ -288,7 +311,7 @@ function scheduleRemoteReconnect(
       cache.setReconnecting(sessionId, false);
       return;
     }
-    connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, reverseConnectManager);
+    connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, reverseConnectManager, eventBus);
   }, totalDelay);
 
   cache.setReconnectTimer(sessionId, timer);
@@ -312,7 +335,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       console.log(`[AgentWS] Reverse-connect restored for ${remoteServerId}, re-establishing WS for ${sessionId}`);
       cache.resetReconnectAttempt(sessionId);
-      connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, fastify.reverseConnectManager);
+      connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, fastify.reverseConnectManager, fastify.eventBus);
     }
   });
 
@@ -576,7 +599,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           const existingRemoteWs = cache.getRemoteWs(sessionId);
           if (!existingRemoteWs && !cache.isReconnecting(sessionId)) {
             // Need to open a new persistent remote WS
-            connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, fastify.reverseConnectManager);
+            connectPersistentRemoteWs(sessionId, remoteInfo, cache, wsOptions, fastify.reverseConnectManager, fastify.eventBus);
           }
 
           // Send current remote connection status to the newly connected frontend
