@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, useTransition } from 'react';
-import { ProjectCard } from '@/components/project/project-card';
+import { RulesList } from '@/components/rules/rules-list';
+import { useRules } from '@/hooks/use-rules';
 import { ProjectInfoView } from '@/components/project/project-info-view';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorktrees } from '@/hooks/use-worktrees';
@@ -73,6 +74,7 @@ export default function Home() {
   const { worktrees, loading: worktreesLoading, refetch: refetchWorktrees } = useWorktrees(currentProject?.id ?? null);
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
   const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
+  const { rules, createRule, updateRule, deleteRule } = useRules(currentProject?.id ?? null, selectedBranch);
 
   // Per-branch real-time workspace statuses, set directly from events.
   // Persists across branch switches so switching away doesn't lose status.
@@ -287,14 +289,11 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 <div className="h-full flex flex-col overflow-hidden">
                   {currentProject && (
                     <div className="px-4 py-3 border-b border-border/60 flex-shrink-0">
-                      <ProjectCard
-                        project={currentProject}
-                        selectedBranch={selectedBranch}
-                        onSyncPrompt={handleSyncPrompt}
-                        assignedTask={assignedTask}
-                        onStartTask={handleStartTask}
-                        onResetTask={handleResetTask}
-                        startingTask={startingTask}
+                      <RulesList
+                        rules={rules}
+                        onCreateRule={createRule}
+                        onUpdateRule={updateRule}
+                        onDeleteRule={deleteRule}
                       />
                     </div>
                   )}
