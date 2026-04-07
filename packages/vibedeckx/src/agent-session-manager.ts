@@ -435,6 +435,16 @@ export class AgentSessionManager {
               output_tokens: event.output_tokens,
             },
           });
+          this.eventBus?.emit({
+            type: "session:taskCompleted",
+            projectId: session.projectId,
+            branch: session.branch,
+            sessionId,
+            duration_ms: event.duration_ms,
+            cost_usd: event.cost_usd,
+            input_tokens: event.input_tokens,
+            output_tokens: event.output_tokens,
+          });
 
           // Auto-update task status to "done" for the branch's assigned task
           const tasks = this.storage.tasks.getByProjectId(session.projectId);

@@ -26,16 +26,28 @@ type SessionFinishedEvent = {
   sessionId: string;
 };
 
+type SessionTaskCompletedEvent = {
+  type: "session:taskCompleted";
+  projectId: string;
+  branch: string | null;
+  sessionId: string;
+  duration_ms?: number;
+  cost_usd?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+};
+
 type TaskChangedEvent = {
   type: "task:created" | "task:updated" | "task:deleted";
   projectId: string;
 };
 
-type GlobalEvent = SessionStatusEvent | SessionFinishedEvent | TaskChangedEvent;
+type GlobalEvent = SessionStatusEvent | SessionFinishedEvent | SessionTaskCompletedEvent | TaskChangedEvent;
 
 interface UseGlobalEventsOptions {
   onSessionStatus?: (branch: string | null, status: "running" | "stopped" | "error") => void;
   onSessionFinished?: (branch: string | null) => void;
+  onSessionTaskCompleted?: (branch: string | null, stats: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number }) => void;
   onTaskChanged?: () => void;
 }
 
@@ -45,12 +57,14 @@ export function useGlobalEvents(
 ) {
   const onSessionStatusRef = useRef(options.onSessionStatus);
   const onSessionFinishedRef = useRef(options.onSessionFinished);
+  const onSessionTaskCompletedRef = useRef(options.onSessionTaskCompleted);
   const onTaskChangedRef = useRef(options.onTaskChanged);
 
   // Keep refs in sync
   useEffect(() => {
     onSessionStatusRef.current = options.onSessionStatus;
     onSessionFinishedRef.current = options.onSessionFinished;
+    onSessionTaskCompletedRef.current = options.onSessionTaskCompleted;
     onTaskChangedRef.current = options.onTaskChanged;
   });
 
@@ -73,6 +87,13 @@ export function useGlobalEvents(
           onSessionStatusRef.current?.(data.branch, data.status);
         } else if (data.type === "session:finished") {
           onSessionFinishedRef.current?.(data.branch);
+        } else if (data.type === "session:taskCompleted") {
+          onSessionTaskCompletedRef.current?.(data.branch, {
+            duration_ms: data.duration_ms,
+            cost_usd: data.cost_usd,
+            input_tokens: data.input_tokens,
+            output_tokens: data.output_tokens,
+          });
         } else if (
           data.type === "task:created" ||
           data.type === "task:updated" ||

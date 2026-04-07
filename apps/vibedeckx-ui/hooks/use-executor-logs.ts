@@ -109,8 +109,10 @@ export function useExecutorLogs(processId: string | null, resetKey?: string): Us
           if (msg.type === "init") {
             setIsPty(msg.isPty);
             setReplayingHistory(true);
+            console.log(`[useExecutorLogs] init received, setReplayingHistory(true)`);
           } else if (msg.type === "history_end") {
             setReplayingHistory(false);
+            console.log(`[useExecutorLogs] history_end received, setReplayingHistory(false)`);
           } else if (msg.type === "finished") {
             finishedRef.current = true;
             setExitCode(msg.exitCode);

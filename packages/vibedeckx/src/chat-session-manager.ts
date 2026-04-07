@@ -143,8 +143,51 @@ export class ChatSessionManager {
     this.eventBus.subscribe((event: GlobalEvent) => {
       if (event.type === "executor:stopped") {
         this.handleExecutorFinished(event);
+      } else if (event.type === "session:taskCompleted") {
+        this.handleSessionTaskCompleted(event);
       }
     });
+  }
+
+  private handleSessionTaskCompleted(event: Extract<GlobalEvent, { type: "session:taskCompleted" }>): void {
+    try {
+      // Find a chat session for this project+branch that has event listening enabled
+      const key = `${event.projectId}:${event.branch ?? ""}`;
+      const sessionId = this.sessionIndex.get(key);
+      if (!sessionId) return;
+
+      const session = this.sessions.get(sessionId);
+      if (!session || !session.eventListeningEnabled) return;
+
+      // Format stats
+      const stats: string[] = [];
+      if (event.duration_ms !== undefined) {
+        const seconds = (event.duration_ms / 1000).toFixed(1);
+        stats.push(`Duration: ${seconds}s`);
+      }
+      if (event.cost_usd !== undefined) {
+        stats.push(`Cost: $${event.cost_usd.toFixed(4)}`);
+      }
+      if (event.input_tokens !== undefined) {
+        stats.push(`Input tokens: ${event.input_tokens.toLocaleString()}`);
+      }
+      if (event.output_tokens !== undefined) {
+        stats.push(`Output tokens: ${event.output_tokens.toLocaleString()}`);
+      }
+
+      const message = [
+        `[Agent Event: Task Completed]`,
+        `Branch: ${event.branch ?? "main"}`,
+        stats.length > 0 ? stats.join(" | ") : "",
+        ``,
+        `Summarize in 1-2 sentences what the coding agent accomplished.`,
+      ].filter(Boolean).join("\n");
+
+      // Send as a user message into the main chat — triggers AI response
+      this.enqueueOrSend(sessionId, message);
+    } catch (error) {
+      console.error(`[ChatSession] handleSessionTaskCompleted error:`, error);
+    }
   }
 
   private handleExecutorFinished(event: Extract<GlobalEvent, { type: "executor:stopped" }>): void {

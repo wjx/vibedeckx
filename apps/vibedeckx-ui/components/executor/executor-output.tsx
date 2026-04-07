@@ -31,6 +31,9 @@ export function ExecutorOutput({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastLogIndexRef = useRef(0);
   const muteInputRef = useRef(muteInput);
+  if (muteInputRef.current !== muteInput) {
+    console.log(`[ExecutorOutput] muteInput changed: ${muteInputRef.current} → ${muteInput}`);
+  }
   muteInputRef.current = muteInput;
 
   // Initialize terminal
@@ -96,6 +99,11 @@ convertEol: true, // Convert \n to \r\n for proper line handling on macOS
     // Handle user input (only in PTY mode)
     if (isPty && onInput) {
       terminal.onData((data) => {
+        // Detect terminal query responses (non-printable sequences)
+        const isTermResponse = data.charCodeAt(0) < 32 || data.startsWith('\x1b');
+        if (isTermResponse) {
+          console.log(`[ExecutorOutput onData] terminal response detected, muteInput=${muteInputRef.current}, data=${JSON.stringify(data)}`);
+        }
         if (!muteInputRef.current) {
           onInput(data);
         }
@@ -125,6 +133,11 @@ convertEol: true, // Convert \n to \r\n for proper line handling on macOS
     if (logs.length < lastLogIndexRef.current) {
       terminalRef.current.reset();
       lastLogIndexRef.current = 0;
+    }
+
+    const newCount = logs.length - lastLogIndexRef.current;
+    if (newCount > 0) {
+      console.log(`[ExecutorOutput] writing ${newCount} logs (${lastLogIndexRef.current}→${logs.length}), muteInput=${muteInputRef.current}`);
     }
 
     // Only write new logs since last update

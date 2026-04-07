@@ -386,6 +386,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
               // Detect remote process finish and clean up remoteExecutorMap
               try {
                 const parsed = JSON.parse(raw);
+                if (parsed.type === "init" || parsed.type === "history_end") {
+                  console.log(`[WebSocket] Remote proxy forwarded: ${parsed.type} for ${processId}`);
+                }
                 if (parsed.type === "finished") {
                   const info = fastify.remoteExecutorMap.get(processId);
                   if (info) {
