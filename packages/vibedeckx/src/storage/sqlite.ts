@@ -3,7 +3,7 @@ import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, ExecutorType, PromptProvider, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Storage, ExecutionMode, SyncButtonConfig, RemoteServer, RemoteServerConnectionMode, RemoteServerStatus, ProjectRemote, ProjectRemoteWithServer } from "./types.js";
+import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, ExecutorType, PromptProvider, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Rule, Storage, ExecutionMode, SyncButtonConfig, RemoteServer, RemoteServerConnectionMode, RemoteServerStatus, ProjectRemote, ProjectRemoteWithServer } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -82,6 +82,19 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       position INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS rules (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      branch TEXT,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
@@ -1330,6 +1343,91 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           for (let i = 0; i < orderedIds.length; i++) {
             db.prepare(
               `UPDATE tasks SET position = @position, updated_at = CURRENT_TIMESTAMP WHERE id = @id AND project_id = @project_id`
+            ).run({ id: orderedIds[i], project_id: projectId, position: i });
+          }
+        });
+        transaction();
+      },
+    },
+
+    rules: {
+      create: ({ id, project_id, branch, name, content, enabled }) => {
+        const maxPos = db.prepare<{ project_id: string; branch: string | null }, { max_pos: number | null }>(
+          `SELECT MAX(position) as max_pos FROM rules WHERE project_id = @project_id AND (branch IS @branch OR (branch IS NULL AND @branch IS NULL))`
+        ).get({ project_id, branch: branch ?? null });
+        const position = (maxPos?.max_pos ?? -1) + 1;
+
+        db.prepare(
+          `INSERT INTO rules (id, project_id, branch, name, content, enabled, position)
+           VALUES (@id, @project_id, @branch, @name, @content, @enabled, @position)`
+        ).run({
+          id,
+          project_id,
+          branch: branch ?? null,
+          name,
+          content,
+          enabled: enabled === false ? 0 : 1,
+          position,
+        });
+
+        return db
+          .prepare<{ id: string }, Rule>(`SELECT * FROM rules WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getByWorkspace: (projectId: string, branch: string | null) => {
+        return db
+          .prepare<{ project_id: string; branch: string | null }, Rule>(
+            `SELECT * FROM rules WHERE project_id = @project_id AND (branch IS @branch OR (branch IS NULL AND @branch IS NULL)) ORDER BY position ASC`
+          )
+          .all({ project_id: projectId, branch: branch ?? null });
+      },
+
+      getById: (id: string) => {
+        return db
+          .prepare<{ id: string }, Rule>(`SELECT * FROM rules WHERE id = @id`)
+          .get({ id });
+      },
+
+      update: (id: string, opts: { name?: string; content?: string; enabled?: boolean; position?: number }) => {
+        const updates: string[] = [];
+        const params: Record<string, unknown> = { id };
+
+        if (opts.name !== undefined) {
+          updates.push('name = @name');
+          params.name = opts.name;
+        }
+        if (opts.content !== undefined) {
+          updates.push('content = @content');
+          params.content = opts.content;
+        }
+        if (opts.enabled !== undefined) {
+          updates.push('enabled = @enabled');
+          params.enabled = opts.enabled ? 1 : 0;
+        }
+        if (opts.position !== undefined) {
+          updates.push('position = @position');
+          params.position = opts.position;
+        }
+
+        if (updates.length === 0) {
+          return db.prepare<{ id: string }, Rule>(`SELECT * FROM rules WHERE id = @id`).get({ id });
+        }
+
+        updates.push('updated_at = datetime(\'now\')');
+        db.prepare(`UPDATE rules SET ${updates.join(', ')} WHERE id = @id`).run(params);
+        return db.prepare<{ id: string }, Rule>(`SELECT * FROM rules WHERE id = @id`).get({ id });
+      },
+
+      delete: (id: string) => {
+        db.prepare(`DELETE FROM rules WHERE id = @id`).run({ id });
+      },
+
+      reorder: (projectId: string, branch: string | null, orderedIds: string[]) => {
+        const transaction = db.transaction(() => {
+          for (let i = 0; i < orderedIds.length; i++) {
+            db.prepare(
+              `UPDATE rules SET position = @position, updated_at = datetime('now') WHERE id = @id AND project_id = @project_id`
             ).run({ id: orderedIds[i], project_id: projectId, position: i });
           }
         });
