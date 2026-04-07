@@ -749,7 +749,7 @@ export class ChatSessionManager {
   // ---- Tools & system prompt ----
 
   private getSystemPrompt(projectId: string, branch: string | null): string {
-    return [
+    const lines = [
       "You are a helpful assistant for a software development workspace.",
       "You can check the status of running executors (dev servers, build processes, etc.) using the getExecutorStatus tool.",
       "You can start executors using the runExecutor tool and stop them using the stopExecutor tool.",
@@ -768,7 +768,21 @@ export class ChatSessionManager {
       "You can inspect pages: screenshot (returns base64 image), getPageContent (returns text/HTML), waitForElement.",
       "When you receive a [Browser Event] message, respond in 1-2 sentences. State what error occurred and suggest a fix if obvious.",
       `Current workspace: project=${projectId}, branch=${branch ?? "default"}.`,
-    ].join("\n");
+    ];
+
+    // Inject workspace rules
+    const rules = this.storage.rules.getByWorkspace(projectId, branch);
+    const enabledRules = rules.filter(r => r.enabled);
+    if (enabledRules.length > 0) {
+      lines.push("");
+      lines.push("## Workspace Rules");
+      lines.push("The user has configured the following rules for this workspace. Follow them:");
+      enabledRules.forEach((rule, i) => {
+        lines.push(`${i + 1}. [${rule.name}]: ${rule.content}`);
+      });
+    }
+
+    return lines.join("\n");
   }
 
   private createTools(projectId: string, branch: string | null, sessionId?: string) {
