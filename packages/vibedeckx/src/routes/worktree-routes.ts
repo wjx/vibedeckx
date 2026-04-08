@@ -7,28 +7,40 @@ import { requireAuth } from "../server.js";
 import "../server-types.js";
 import type { Project } from "../storage/types.js";
 
-function getRemoteConfig(fastify: FastifyInstance, project: Project) {
+interface RemoteConfig {
+  serverId: string;
+  url: string;
+  apiKey: string;
+  remotePath: string;
+}
+
+function getAllRemoteConfigs(fastify: FastifyInstance, project: Project): RemoteConfig[] {
   // Check project_remotes table first (new approach)
   const remotes = fastify.storage.projectRemotes.getByProject(project.id);
   if (remotes.length > 0) {
-    const primary = remotes[0]; // sorted by sort_order
-    return {
-      serverId: primary.remote_server_id,
-      url: primary.server_url ?? "",
-      apiKey: primary.server_api_key ?? "",
-      remotePath: primary.remote_path,
-    };
+    return remotes.map((r) => ({
+      serverId: r.remote_server_id,
+      url: r.server_url ?? "",
+      apiKey: r.server_api_key ?? "",
+      remotePath: r.remote_path,
+    }));
   }
   // Fallback to legacy project fields
   if (project.remote_url && project.remote_api_key && project.remote_path) {
-    return {
+    return [{
       serverId: "",
       url: project.remote_url,
       apiKey: project.remote_api_key,
       remotePath: project.remote_path,
-    };
+    }];
   }
-  return null;
+  return [];
+}
+
+/** Returns the primary (first) remote config, or null. Used by endpoints that operate on a single remote. */
+function getRemoteConfig(fastify: FastifyInstance, project: Project): RemoteConfig | null {
+  const all = getAllRemoteConfigs(fastify, project);
+  return all.length > 0 ? all[0] : null;
 }
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -327,21 +339,55 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     const hasLocal = !!project.path;
-    const remoteConfig = getRemoteConfig(fastify, project);
-    const hasRemote = !!remoteConfig;
+    const remoteConfigs = getAllRemoteConfigs(fastify, project);
+    const hasRemote = remoteConfigs.length > 0;
 
-    // Remote-only project: proxy to remote
-    if (!hasLocal && hasRemote) {
-      const result = await proxyToRemoteAuto(
-        remoteConfig!.serverId,
-        remoteConfig!.url,
-        remoteConfig!.apiKey,
+    // Helper to delete worktree on a single remote
+    const deleteOnRemote = async (rc: RemoteConfig) => {
+      return proxyToRemoteAuto(
+        rc.serverId,
+        rc.url,
+        rc.apiKey,
         "DELETE",
         `/api/path/worktrees`,
-        { path: remoteConfig!.remotePath, branch },
+        { path: rc.remotePath, branch },
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+    };
+
+    // Remote-only project: delete from all remotes
+    if (!hasLocal && hasRemote) {
+      if (remoteConfigs.length === 1) {
+        // Single remote: backward-compatible flat response
+        const result = await deleteOnRemote(remoteConfigs[0]);
+        return reply.code(result.status || 200).send(result.data);
+      }
+
+      // Multiple remotes: delete from all in parallel
+      const results: Record<string, { success: boolean; error?: string }> = {};
+      await Promise.allSettled(
+        remoteConfigs.map(async (rc) => {
+          const key = rc.serverId || rc.url;
+          try {
+            const result = await deleteOnRemote(rc);
+            if (result.ok) {
+              results[key] = { success: true };
+            } else {
+              const data = result.data as { error?: string };
+              results[key] = { success: false, error: data.error || "Remote deletion failed" };
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            results[key] = { success: false, error: errorMessage };
+          }
+        })
+      );
+
+      const anyFailed = Object.values(results).some((r) => !r.success);
+      if (anyFailed) {
+        return reply.code(207).send({ success: true, results });
+      }
+      return reply.code(200).send({ success: true, results });
     }
 
     if (!hasLocal) {
@@ -410,7 +456,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Hybrid project: delete from both local and remote
+    // Hybrid project: delete from local + all remotes
     const results: Record<string, { success: boolean; error?: string }> = {};
 
     // Delete local first
@@ -419,33 +465,31 @@ const routes: FastifyPluginAsync = async (fastify) => {
       results.local = { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      // Local failure: return error immediately, don't attempt remote
+      // Local failure: return error immediately, don't attempt remotes
       return reply.code(500).send({ error: `Failed to delete local worktree: ${errorMessage}` });
     }
 
-    // Delete remote
-    try {
-      const remoteResult = await proxyToRemoteAuto(
-        remoteConfig!.serverId,
-        remoteConfig!.url,
-        remoteConfig!.apiKey,
-        "DELETE",
-        `/api/path/worktrees`,
-        { path: remoteConfig!.remotePath, branch },
-        { reverseConnectManager: fastify.reverseConnectManager }
-      );
-      if (remoteResult.ok) {
-        results.remote = { success: true };
-      } else {
-        const remoteData = remoteResult.data as { error?: string };
-        results.remote = { success: false, error: remoteData.error || "Remote deletion failed" };
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      results.remote = { success: false, error: errorMessage };
-    }
+    // Delete from all remotes in parallel
+    await Promise.allSettled(
+      remoteConfigs.map(async (rc) => {
+        const key = remoteConfigs.length === 1 ? "remote" : (rc.serverId || rc.url);
+        try {
+          const remoteResult = await deleteOnRemote(rc);
+          if (remoteResult.ok) {
+            results[key] = { success: true };
+          } else {
+            const remoteData = remoteResult.data as { error?: string };
+            results[key] = { success: false, error: remoteData.error || "Remote deletion failed" };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          results[key] = { success: false, error: errorMessage };
+        }
+      })
+    );
 
-    if (!results.remote?.success) {
+    const anyRemoteFailed = Object.entries(results).some(([k, v]) => k !== "local" && !v.success);
+    if (anyRemoteFailed) {
       return reply.code(207).send({ success: true, results });
     }
 
@@ -487,8 +531,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     // Determine targets
     const hasLocal = !!project.path;
-    const remoteConfig = getRemoteConfig(fastify, project);
-    const hasRemote = !!remoteConfig;
+    const remoteConfigs = getAllRemoteConfigs(fastify, project);
+    const hasRemote = remoteConfigs.length > 0;
     let targets: ("local" | "remote")[];
 
     if (req.body.targets && req.body.targets.length > 0) {
@@ -507,18 +551,59 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no remote configuration" });
     }
 
-    // Single-target: remote only (backward-compatible path)
-    if (targets.length === 1 && targets[0] === "remote") {
-      const result = await proxyToRemoteAuto(
-        remoteConfig!.serverId,
-        remoteConfig!.url,
-        remoteConfig!.apiKey,
+    // Helper to create worktree on a single remote
+    const createOnRemote = async (rc: RemoteConfig) => {
+      return proxyToRemoteAuto(
+        rc.serverId,
+        rc.url,
+        rc.apiKey,
         "POST",
         `/api/path/worktrees`,
-        { path: remoteConfig!.remotePath, branchName: trimmedBranch, baseBranch: remoteStartPoint },
+        { path: rc.remotePath, branchName: trimmedBranch, baseBranch: remoteStartPoint },
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 201).send(result.data);
+    };
+
+    // Single-target: remote only
+    if (targets.length === 1 && targets[0] === "remote") {
+      if (remoteConfigs.length === 1) {
+        // Single remote: backward-compatible flat response
+        const result = await createOnRemote(remoteConfigs[0]);
+        return reply.code(result.status || 201).send(result.data);
+      }
+
+      // Multiple remotes: create on all in parallel
+      const results: Record<string, { success: boolean; worktree?: { branch: string }; error?: string; errorCode?: string; requestId?: string }> = {};
+      const settled = await Promise.allSettled(
+        remoteConfigs.map(async (rc) => {
+          const key = rc.serverId || rc.url;
+          console.log(`[worktree] Creating remote worktree: project=${req.params.id}, branch=${trimmedBranch}, serverId=${rc.serverId}, url=${rc.url}`);
+          try {
+            const result = await createOnRemote(rc);
+            if (result.ok) {
+              const data = result.data as { worktree?: { branch: string } };
+              results[key] = { success: true, worktree: data.worktree };
+            } else {
+              const data = result.data as { error?: string };
+              console.error(`[worktree] Remote failed: serverId=${rc.serverId}, requestId=${result.requestId}, error=${JSON.stringify(result.data)}`);
+              results[key] = { success: false, error: data.error || "Remote creation failed", errorCode: result.errorCode, requestId: result.requestId };
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            results[key] = { success: false, error: errorMessage };
+          }
+        })
+      );
+
+      const anyFailed = Object.values(results).some((r) => !r.success);
+      const allFailed = Object.values(results).every((r) => !r.success);
+      if (allFailed) {
+        return reply.code(500).send({ error: "Failed to create worktree on all remotes", results });
+      }
+      if (anyFailed) {
+        return reply.code(207).send({ worktree: { branch: trimmedBranch }, results });
+      }
+      return reply.code(201).send({ worktree: { branch: trimmedBranch }, results });
     }
 
     // Local creation helper
@@ -565,7 +650,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Multi-target: local + remote
+    // Multi-target: local + remote(s)
     const results: Record<string, { success: boolean; worktree?: { branch: string }; error?: string; errorCode?: string; requestId?: string }> = {};
 
     // Local first
@@ -575,42 +660,40 @@ const routes: FastifyPluginAsync = async (fastify) => {
       results.local = { success: true, worktree: localWorktree };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      // Local failure: return error immediately, don't attempt remote
+      // Local failure: return error immediately, don't attempt remotes
       return reply.code(500).send({ error: `Failed to create local worktree: ${errorMessage}` });
     }
 
-    // Remote second
-    console.log(`[worktree] Creating remote worktree: project=${req.params.id}, branch=${trimmedBranch}, serverId=${remoteConfig!.serverId}, url=${remoteConfig!.url}`);
-    try {
-      const remoteResult = await proxyToRemoteAuto(
-        remoteConfig!.serverId,
-        remoteConfig!.url,
-        remoteConfig!.apiKey,
-        "POST",
-        `/api/path/worktrees`,
-        { path: remoteConfig!.remotePath, branchName: trimmedBranch, baseBranch: remoteStartPoint },
-        { reverseConnectManager: fastify.reverseConnectManager }
-      );
-      if (remoteResult.ok) {
-        const remoteData = remoteResult.data as { worktree?: { branch: string } };
-        results.remote = { success: true, worktree: remoteData.worktree };
-      } else {
-        const remoteData = remoteResult.data as { error?: string };
-        console.error(`[worktree] Remote failed: requestId=${remoteResult.requestId}, errorCode=${remoteResult.errorCode}, status=${remoteResult.status}, duration=${remoteResult.durationMs}ms, error=${JSON.stringify(remoteResult.data)}`);
-        results.remote = {
-          success: false,
-          error: remoteData.error || "Remote creation failed",
-          errorCode: remoteResult.errorCode,
-          requestId: remoteResult.requestId,
-        };
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      results.remote = { success: false, error: errorMessage };
-    }
+    // All remotes in parallel
+    await Promise.allSettled(
+      remoteConfigs.map(async (rc) => {
+        const key = remoteConfigs.length === 1 ? "remote" : (rc.serverId || rc.url);
+        console.log(`[worktree] Creating remote worktree: project=${req.params.id}, branch=${trimmedBranch}, serverId=${rc.serverId}, url=${rc.url}`);
+        try {
+          const remoteResult = await createOnRemote(rc);
+          if (remoteResult.ok) {
+            const remoteData = remoteResult.data as { worktree?: { branch: string } };
+            results[key] = { success: true, worktree: remoteData.worktree };
+          } else {
+            const remoteData = remoteResult.data as { error?: string };
+            console.error(`[worktree] Remote failed: serverId=${rc.serverId}, requestId=${remoteResult.requestId}, errorCode=${remoteResult.errorCode}, status=${remoteResult.status}, duration=${remoteResult.durationMs}ms, error=${JSON.stringify(remoteResult.data)}`);
+            results[key] = {
+              success: false,
+              error: remoteData.error || "Remote creation failed",
+              errorCode: remoteResult.errorCode,
+              requestId: remoteResult.requestId,
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          results[key] = { success: false, error: errorMessage };
+        }
+      })
+    );
 
-    // If remote failed, return 207 partial success
-    if (!results.remote?.success) {
+    // If any remote failed, return 207 partial success
+    const anyRemoteFailed = Object.entries(results).some(([k, v]) => k !== "local" && !v.success);
+    if (anyRemoteFailed) {
       return reply.code(207).send({
         worktree: localWorktree,
         results,
