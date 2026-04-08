@@ -204,23 +204,31 @@ export class ChatSessionManager {
 
   private handleExecutorFinished(event: Extract<GlobalEvent, { type: "executor:stopped" }>): void {
     try {
+      console.log(`[ChatSession] handleExecutorFinished: executorId=${event.executorId}, projectId=${event.projectId}, exitCode=${event.exitCode}`);
+
       // Look up executor metadata
       const executor = this.storage.executors.getById(event.executorId);
-      if (!executor) return;
+      if (!executor) { console.log(`[ChatSession] handleExecutorFinished: executor not found`); return; }
 
       // Look up group to get branch
       const group = this.storage.executorGroups.getById(executor.group_id);
-      if (!group) return;
+      if (!group) { console.log(`[ChatSession] handleExecutorFinished: group not found for executor.group_id=${executor.group_id}`); return; }
 
       const branch = group.branch || null;
 
       // Find a chat session for this project+branch that has event listening enabled
       const key = `${event.projectId}:${branch ?? ""}`;
       const sessionId = this.sessionIndex.get(key);
-      if (!sessionId) return;
+      if (!sessionId) {
+        console.log(`[ChatSession] handleExecutorFinished: no session for key="${key}", sessionIndex keys=[${[...this.sessionIndex.keys()].join(", ")}]`);
+        return;
+      }
 
       const session = this.sessions.get(sessionId);
-      if (!session || !session.eventListeningEnabled) return;
+      if (!session) { console.log(`[ChatSession] handleExecutorFinished: session object not found for id=${sessionId}`); return; }
+      if (!session.eventListeningEnabled) { console.log(`[ChatSession] handleExecutorFinished: eventListening disabled for session ${sessionId}`); return; }
+
+      console.log(`[ChatSession] handleExecutorFinished: processing event, session=${sessionId}, subscribers=${session.subscribers.size}`);
 
       // Get tail output from process manager
       const logs = this.processManager.getLogs(event.processId);
@@ -1036,9 +1044,20 @@ export class ChatSessionManager {
             }
           }
 
-          // Resolve remote target: explicit param only
+          // Resolve remote target: explicit param → project.executor_mode fallback
+          // This matches the behavior of process-routes.ts start handler so the
+          // executor panel (which filters by executor_mode) sees the process.
           const project = storage.projects.getById(projectId);
-          const resolvedRemote = remoteServerId;
+          let executorMode = remoteServerId || project?.executor_mode;
+          let resolvedRemote = executorMode && executorMode !== "local" ? executorMode : undefined;
+
+          // Fallback: if local mode but no local path, try to find a remote
+          if (!resolvedRemote && !project?.path) {
+            const remotes = storage.projectRemotes.getByProject(projectId);
+            if (remotes.length > 0) {
+              resolvedRemote = remotes[0].remote_server_id;
+            }
+          }
 
           // Remote execution — proxy to the resolved remote server
           if (resolvedRemote) {
@@ -1641,11 +1660,15 @@ export class ChatSessionManager {
       console.log(`[ChatSession] sendMessage: session ${sessionId} not found`);
       return false;
     }
-    console.log(`[ChatSession] sendMessage called: session=${sessionId}, contentLen=${content.length}, isTerminalEvent=${content.includes("[Terminal Event]")}`);
+    const isExecutorEvent = content.includes("[Executor Event");
+    console.log(`[ChatSession] sendMessage called: session=${sessionId}, contentLen=${content.length}, isExecutorEvent=${isExecutorEvent}, isTerminalEvent=${content.includes("[Terminal Event]")}, subscribers=${session.subscribers.size}`);
 
     // 1. Push user message
     const userMsg: AgentMessage = { type: "user", content, timestamp: Date.now() };
     this.pushEntry(session, userMsg);
+    if (isExecutorEvent) {
+      console.log(`[ChatSession] Executor event user message pushed at index ${session.store.nextIndex - 1}, broadcasting to ${session.subscribers.size} subscribers`);
+    }
 
     // 2. Update status to running
     session.status = "running";
@@ -1806,6 +1829,8 @@ export class ChatSessionManager {
       this.broadcastPatch(session, ConversationPatch.updateStatus("stopped"));
 
       // Process any queued messages (e.g. [Terminal Event] that arrived during this stream)
+      const queueLen = this.messageQueue.get(sessionId)?.length ?? 0;
+      console.log(`[ChatSession] sendMessage finished for ${sessionId}, draining queue (${queueLen} items), subscribers=${session.subscribers.size}`);
       this.drainQueue(sessionId);
     }
 
@@ -1835,12 +1860,23 @@ export class ChatSessionManager {
   }
 
   private broadcastPatch(session: ChatSession, patch: Patch): void {
+    if (session.subscribers.size === 0) {
+      // Check if this is an ENTRY patch (new message) — log it since no one will receive it
+      const hasEntry = patch.some(p => p.value?.type === "ENTRY");
+      if (hasEntry) {
+        console.log(`[ChatSession] broadcastPatch: ENTRY patch but 0 subscribers for session ${session.id}`);
+      }
+    }
     const raw = JSON.stringify({ JsonPatch: patch });
     for (const ws of session.subscribers) {
       try {
+        if (ws.readyState !== 1 /* OPEN */) {
+          console.log(`[ChatSession] broadcastPatch: subscriber ws.readyState=${ws.readyState} (not OPEN), skipping`);
+          continue;
+        }
         ws.send(raw);
-      } catch {
-        // Client gone, will be cleaned up on close
+      } catch (err) {
+        console.log(`[ChatSession] broadcastPatch: send failed:`, err);
       }
     }
   }
