@@ -769,9 +769,15 @@ export class ChatSessionManager {
         if (!project?.path) {
           lines.push("This project has no local path — executors must run on a remote server.");
         }
-        lines.push(
-          "When the user asks to run or stop an executor without specifying which remote, ask them to choose a remote before calling the tool. Available remotes: " + remoteNames.join(", ") + "."
-        );
+        if (remotes.length === 1) {
+          lines.push(
+            `When the user asks to run or stop an executor without specifying a remote, use "${remoteNames[0]}" automatically.`
+          );
+        } else {
+          lines.push(
+            "When the user asks to run or stop an executor without specifying which remote, ask them to choose a remote before calling the tool. Available remotes: " + remoteNames.join(", ") + "."
+          );
+        }
         return lines;
       })(),
       "You can view the coding agent's conversation history using the getAgentConversation tool.",
