@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -56,6 +56,13 @@ export function MainConversation({ projectId, branch }: MainConversationProps) {
 
   const [inputValue, setInputValue] = useState("");
   const [eventListeningEnabled, setEventListeningEnabled] = useState(false);
+
+  // Sync button state when backend auto-enables event listening (e.g. via runExecutor tool)
+  useEffect(() => {
+    if (session?.eventListeningEnabled != null) {
+      setEventListeningEnabled(session.eventListeningEnabled);
+    }
+  }, [session?.eventListeningEnabled]);
 
   const isGenerating = status === "running";
 
