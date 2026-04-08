@@ -755,6 +755,25 @@ export class ChatSessionManager {
       "You can start executors using the runExecutor tool and stop them using the stopExecutor tool.",
       "When the user asks about running processes, errors, build status, or dev server status, use the getExecutorStatus tool.",
       "When the user asks to start, run, or launch a process, use runExecutor. When they ask to stop or kill a process, use stopExecutor.",
+      ...(() => {
+        const project = this.storage.projects.getById(projectId);
+        const remotes = this.storage.projectRemotes.getByProject(projectId);
+        if (remotes.length === 0) return [];
+        const remoteNames = remotes.map((r) => {
+          const server = this.storage.remoteServers.getById(r.remote_server_id);
+          return server?.name ?? r.remote_server_id;
+        });
+        const lines = [
+          `This project has ${remotes.length} remote server(s): ${remoteNames.join(", ")}.`,
+        ];
+        if (!project?.path) {
+          lines.push("This project has no local path — executors must run on a remote server.");
+        }
+        lines.push(
+          "When the user asks to run or stop an executor without specifying which remote, ask them to choose a remote before calling the tool. Available remotes: " + remoteNames.join(", ") + "."
+        );
+        return lines;
+      })(),
       "You can view the coding agent's conversation history using the getAgentConversation tool.",
       "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
       "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
@@ -974,7 +993,7 @@ export class ChatSessionManager {
           remote: z
             .string()
             .optional()
-            .describe("Remote server ID to run the executor on. If omitted, runs locally."),
+            .describe("Remote server name or ID to run the executor on. If omitted, uses project executor_mode or runs locally."),
         }),
         execute: async ({ executorName, remote }) => {
           const group = branch
@@ -998,15 +1017,32 @@ export class ChatSessionManager {
             };
           }
 
-          // Remote execution — proxy to the specified remote server
+          // Resolve remote by name or ID
+          let remoteServerId = remote;
           if (remote) {
-            const remoteConfig = storage.projectRemotes.getByProjectAndServer(projectId, remote);
+            const byId = storage.remoteServers.getById(remote);
+            if (!byId) {
+              const allServers = storage.remoteServers.getAll();
+              const byName = allServers.find((s) => s.name.toLowerCase() === remote.toLowerCase());
+              if (byName) {
+                remoteServerId = byName.id;
+              }
+            }
+          }
+
+          // Resolve remote target: explicit param only
+          const project = storage.projects.getById(projectId);
+          const resolvedRemote = remoteServerId;
+
+          // Remote execution — proxy to the resolved remote server
+          if (resolvedRemote) {
+            const remoteConfig = storage.projectRemotes.getByProjectAndServer(projectId, resolvedRemote);
             if (!remoteConfig) {
-              return { success: false, message: `Remote server "${remote}" not configured for this project.` };
+              return { success: false, message: `Remote server "${resolvedRemote}" not configured for this project.` };
             }
 
             const result = await proxyToRemoteAuto(
-              remote,
+              resolvedRemote,
               remoteConfig.server_url ?? "",
               remoteConfig.server_api_key || "",
               "POST",
@@ -1030,7 +1066,7 @@ export class ChatSessionManager {
             const remoteData = result.data as { processId: string };
             const localProcessId = `remote-${executor.id}-${remoteData.processId}`;
             remoteExecutorMap.set(localProcessId, {
-              remoteServerId: remote,
+              remoteServerId: resolvedRemote,
               remoteUrl: remoteConfig.server_url ?? "",
               remoteApiKey: remoteConfig.server_api_key || "",
               remoteProcessId: remoteData.processId,
@@ -1044,8 +1080,8 @@ export class ChatSessionManager {
               processId: localProcessId,
               executorName: executor.name,
               command: executor.command,
-              target: remote,
-              message: `Started "${executor.name}" on remote server "${remote}" (${executor.command}).`,
+              target: resolvedRemote,
+              message: `Started "${executor.name}" on remote server "${resolvedRemote}" (${executor.command}).`,
             };
           }
 
@@ -1061,11 +1097,11 @@ export class ChatSessionManager {
             };
           }
 
-          // Resolve project path
-          const project = storage.projects.getById(projectId);
+          // Resolve project path (local execution)
           if (!project?.path) {
-            return { success: false, message: "No project path configured." };
+            return { success: false, message: "No project path configured and no remote servers available." };
           }
+
 
           const basePath = resolveWorktreePath(project.path, branch);
 
@@ -1097,7 +1133,7 @@ export class ChatSessionManager {
           remote: z
             .string()
             .optional()
-            .describe("Remote server ID where the executor is running. If omitted, stops the local executor."),
+            .describe("Remote server name or ID where the executor is running. If omitted, auto-detects."),
         }),
         execute: async ({ executorName, remote }) => {
           const group = branch
@@ -1121,46 +1157,82 @@ export class ChatSessionManager {
             };
           }
 
-          // Remote stop — find the remote process in remoteExecutorMap and proxy the stop
+          // Resolve remote by name or ID
+          let remoteServerId = remote;
           if (remote) {
+            const byId = storage.remoteServers.getById(remote);
+            if (!byId) {
+              const allServers = storage.remoteServers.getAll();
+              const byName = allServers.find((s) => s.name.toLowerCase() === remote.toLowerCase());
+              if (byName) {
+                remoteServerId = byName.id;
+              }
+            }
+          }
+
+          // Resolve remote target: explicit param or auto-detect from remoteExecutorMap
+          let resolvedRemote = remoteServerId;
+
+          // Auto-detect: if not specified, check if the executor is running on a remote
+          if (!resolvedRemote) {
+            const runningRemotes: string[] = [];
+            for (const [, info] of remoteExecutorMap.entries()) {
+              if (info.executorId === executor.id) {
+                runningRemotes.push(info.remoteServerId);
+              }
+            }
+            if (runningRemotes.length === 1) {
+              resolvedRemote = runningRemotes[0];
+            } else if (runningRemotes.length > 1) {
+              const remoteNames = runningRemotes.map((id) => {
+                const server = storage.remoteServers.getById(id);
+                return server?.name ?? id;
+              });
+              return {
+                success: false,
+                needsClarification: true,
+                availableRemotes: remoteNames,
+                message: `Executor "${executor.name}" is running on multiple remotes. Please ask the user which one to stop. Running on: ${remoteNames.join(", ")}`,
+              };
+            }
+          }
+
+          // Remote stop — find the remote process in remoteExecutorMap and proxy the stop
+          if (resolvedRemote) {
             let remoteEntry: { key: string; info: RemoteExecutorInfo } | undefined;
             for (const [key, info] of remoteExecutorMap.entries()) {
-              if (info.executorId === executor.id && info.remoteServerId === remote) {
+              if (info.executorId === executor.id && info.remoteServerId === resolvedRemote) {
                 remoteEntry = { key, info };
                 break;
               }
             }
 
             if (!remoteEntry) {
+              // Not running on remote, fall through to local check
+            } else {
+              const result = await proxyToRemoteAuto(
+                remoteEntry.info.remoteServerId,
+                remoteEntry.info.remoteUrl,
+                remoteEntry.info.remoteApiKey,
+                "POST",
+                `/api/executor-processes/${remoteEntry.info.remoteProcessId}/stop`,
+                undefined,
+                { reverseConnectManager: reverseConnectManager ?? undefined },
+              );
+
+              if (!result.ok) {
+                return { success: false, message: `Remote stop failed: ${JSON.stringify(result.data)}` };
+              }
+
+              remoteExecutorMap.delete(remoteEntry.key);
               return {
-                success: false,
+                success: true,
                 executorName: executor.name,
-                message: `Executor "${executor.name}" is not running on remote "${remote}".`,
+                processId: remoteEntry.key,
+                target: resolvedRemote,
+                message: `Stopped "${executor.name}" on remote server "${resolvedRemote}".`,
               };
             }
-
-            const result = await proxyToRemoteAuto(
-              remoteEntry.info.remoteServerId,
-              remoteEntry.info.remoteUrl,
-              remoteEntry.info.remoteApiKey,
-              "POST",
-              `/api/executor-processes/${remoteEntry.info.remoteProcessId}/stop`,
-              undefined,
-              { reverseConnectManager: reverseConnectManager ?? undefined },
-            );
-
-            if (!result.ok) {
-              return { success: false, message: `Remote stop failed: ${JSON.stringify(result.data)}` };
-            }
-
-            remoteExecutorMap.delete(remoteEntry.key);
-            return {
-              success: true,
-              executorName: executor.name,
-              processId: remoteEntry.key,
-              target: remote,
-              message: `Stopped "${executor.name}" on remote server "${remote}".`,
-            };
           }
 
           const processes = processManager.getProcessesByExecutorId(executor.id);
