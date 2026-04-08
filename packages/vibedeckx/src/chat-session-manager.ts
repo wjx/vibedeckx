@@ -1364,6 +1364,7 @@ export class ChatSessionManager {
               }
 
               remoteExecutorMap.delete(remoteEntry.key);
+              this.storage.remoteExecutorProcesses.delete(remoteEntry.key);
               return {
                 success: true,
                 executorName: executor.name,

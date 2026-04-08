@@ -242,6 +242,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         );
 
         fastify.remoteExecutorMap.delete(terminalId);
+        fastify.storage.remoteExecutorProcesses.delete(terminalId);
 
         if (!result.ok) {
           return reply.code(result.status || 502).send(result.data);

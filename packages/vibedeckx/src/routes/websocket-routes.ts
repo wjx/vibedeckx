@@ -424,6 +424,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
                       target: info.remoteServerId,
                     });
                     fastify.remoteExecutorMap.delete(processId);
+                    fastify.storage.remoteExecutorProcesses.delete(processId);
                   }
                 }
               } catch { /* ignore parse errors */ }
