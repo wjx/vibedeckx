@@ -46,10 +46,13 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
           remote_api_key,
           "GET",
           "/api/executor-processes/running",
+          undefined,
+          { timeoutMs: 5000 },
         );
         if (result.ok) {
-          const data = result.data as { processes: Array<{ id: string }> };
-          const runningIds = new Set(data.processes.map((p) => p.id));
+          const data = result.data as { processes?: Array<{ id: string }> };
+          const processes = Array.isArray(data?.processes) ? data.processes : [];
+          const runningIds = new Set(processes.map((p) => p.id));
           for (const row of rows) {
             if (runningIds.has(row.remote_process_id)) {
               remoteExecutorMap.set(row.local_process_id, {
