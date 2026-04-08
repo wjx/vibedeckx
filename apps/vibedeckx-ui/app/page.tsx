@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, useTransition } from 'react';
-import { RulesList } from '@/components/rules/rules-list';
+import { WorkspaceTabs } from '@/components/workspace/workspace-tabs';
 import { useRules } from '@/hooks/use-rules';
 import { ProjectInfoView } from '@/components/project/project-info-view';
 import { useProjects } from '@/hooks/use-projects';
@@ -289,7 +289,8 @@ Please proceed step by step and let me know if there are any issues or conflicts
                 <div className="h-full flex flex-col overflow-hidden">
                   {currentProject && (
                     <div className="px-4 py-3 border-b border-border/60 flex-shrink-0">
-                      <RulesList
+                      <WorkspaceTabs
+                        assignedTask={assignedTask}
                         rules={rules}
                         onCreateRule={createRule}
                         onUpdateRule={updateRule}
