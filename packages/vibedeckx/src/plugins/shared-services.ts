@@ -7,7 +7,7 @@ import { ChatSessionManager } from "../chat-session-manager.js";
 import { EventBus } from "../event-bus.js";
 import { ProxyManager } from "../utils/proxy-manager.js";
 import type { ProxyConfig } from "../utils/proxy-manager.js";
-import { setGlobalProxyManager } from "../utils/remote-proxy.js";
+import { setGlobalProxyManager, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { RemotePatchCache } from "../remote-patch-cache.js";
 import { ReverseConnectManager } from "../reverse-connect-manager.js";
 import { BrowserManager } from "../browser-manager.js";
@@ -23,6 +23,59 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   const agentSessionManager = new AgentSessionManager(opts.storage);
   agentSessionManager.restoreSessionsFromDb();
   const remoteExecutorMap = new Map<string, RemoteExecutorInfo>();
+
+  // Restore remote executor processes from DB
+  const savedRemoteExecutors = opts.storage.remoteExecutorProcesses.getAll();
+  if (savedRemoteExecutors.length > 0) {
+    console.log(`[SharedServices] Found ${savedRemoteExecutors.length} persisted remote executor(s), verifying...`);
+
+    // Group by remote server ID to batch verification calls
+    const byServer = new Map<string, typeof savedRemoteExecutors>();
+    for (const row of savedRemoteExecutors) {
+      const group = byServer.get(row.remote_server_id) ?? [];
+      group.push(row);
+      byServer.set(row.remote_server_id, group);
+    }
+
+    for (const [serverId, rows] of byServer) {
+      try {
+        const { remote_url, remote_api_key } = rows[0];
+        const result = await proxyToRemoteAuto(
+          serverId,
+          remote_url,
+          remote_api_key,
+          "GET",
+          "/api/executor-processes/running",
+        );
+        if (result.ok) {
+          const data = result.data as { processes: Array<{ id: string }> };
+          const runningIds = new Set(data.processes.map((p) => p.id));
+          for (const row of rows) {
+            if (runningIds.has(row.remote_process_id)) {
+              remoteExecutorMap.set(row.local_process_id, {
+                remoteServerId: row.remote_server_id,
+                remoteUrl: row.remote_url,
+                remoteApiKey: row.remote_api_key,
+                remoteProcessId: row.remote_process_id,
+                executorId: row.executor_id,
+                projectId: row.project_id ?? undefined,
+                branch: row.branch,
+              });
+              console.log(`[SharedServices] Restored remote executor: ${row.local_process_id}`);
+            } else {
+              opts.storage.remoteExecutorProcesses.delete(row.local_process_id);
+              console.log(`[SharedServices] Cleaned up stale remote executor: ${row.local_process_id}`);
+            }
+          }
+        } else {
+          console.warn(`[SharedServices] Could not reach remote server ${serverId} (status ${result.status}), keeping DB rows for later retry`);
+        }
+      } catch (err) {
+        console.warn(`[SharedServices] Failed to verify remote executors on ${serverId}: ${err}`);
+      }
+    }
+  }
+
   const remoteSessionMap = new Map<string, RemoteSessionInfo>();
   const remotePatchCache = new RemotePatchCache();
   const eventBus = new EventBus();
