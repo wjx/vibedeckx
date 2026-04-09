@@ -61,6 +61,7 @@ export function ExecutorItem({
     executor.currentProcessId
   );
   const processFinishedCalledRef = useRef(false);
+  const prevProcessIdRef = useRef<string | null>(executor.currentProcessId);
 
   const {
     attributes,
@@ -81,13 +82,21 @@ export function ExecutorItem({
 
   const { logs, status, exitCode, isPty, replayingHistory, sendInput, sendResize } = useExecutorLogs(localProcessId, executorMode);
 
-  // Sync local process ID with executor's current process
+  // Sync local process ID with executor's current process.
+  // Only update when a NEW process starts — don't clear to null when the process
+  // finishes. This prevents a race condition where monitorRemoteExecutor detects
+  // the process finished (emits executor:stopped, clearing currentProcessId) before
+  // the frontend log WebSocket has connected and received the output history.
   useEffect(() => {
-    setLocalProcessId(executor.currentProcessId);
-    if (executor.currentProcessId) {
-      processFinishedCalledRef.current = false; // Reset when new process starts
+    const prevId = prevProcessIdRef.current;
+    prevProcessIdRef.current = executor.currentProcessId;
+
+    if (executor.currentProcessId && executor.currentProcessId !== prevId) {
+      setLocalProcessId(executor.currentProcessId);
+      processFinishedCalledRef.current = false;
+      onOpenChange(true); // Auto-open when process starts (including from Main Chat)
     }
-  }, [executor.currentProcessId]);
+  }, [executor.currentProcessId, onOpenChange]);
 
   // Handle process finished - only call once per process
   useEffect(() => {
