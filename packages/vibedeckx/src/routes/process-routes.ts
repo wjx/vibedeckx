@@ -138,6 +138,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           projectId: project.id,
           branch: branch ?? undefined,
         });
+        console.log(`[DEBUG insert] Persisted remote executor: localProcessId=${localProcessId}, remoteProcessId=${remoteData.processId}, serverId=${executorMode}`);
         fastify.eventBus.emit({
           type: "executor:started",
           projectId: project.id,
@@ -211,6 +212,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
   // 获取所有运行中的进程
   fastify.get("/api/executor-processes/running", async (req, reply) => {
+    console.log(`[DEBUG /running] remoteExecutorMap size=${fastify.remoteExecutorMap.size}, entries: ${JSON.stringify([...fastify.remoteExecutorMap.keys()])}`);
     // Local processes
     const runningProcessIds = fastify.processManager.getRunningProcessIds();
     const processes: Array<Record<string, unknown>> = runningProcessIds.map((id) => {

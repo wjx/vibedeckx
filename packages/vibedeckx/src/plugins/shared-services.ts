@@ -71,6 +71,7 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   // registration (proxyToRemote retries can exceed Fastify's plugin timeout).
   void (async () => {
     const savedRemoteExecutors = opts.storage.remoteExecutorProcesses.getAll();
+    console.log(`[DEBUG restore] DB returned ${savedRemoteExecutors.length} rows:`, JSON.stringify(savedRemoteExecutors.map(r => ({ id: r.local_process_id, server: r.remote_server_id, url: r.remote_url ? r.remote_url.substring(0, 30) : '(empty)', remoteProcessId: r.remote_process_id }))));
     if (savedRemoteExecutors.length === 0) return;
 
     console.log(`[SharedServices] Found ${savedRemoteExecutors.length} persisted remote executor(s), verifying...`);
@@ -100,10 +101,12 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
           undefined,
           { timeoutMs: 5000, reverseConnectManager },
         );
+        console.log(`[DEBUG restore] proxyToRemoteAuto result for ${serverId}: ok=${result.ok}, status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
         if (result.ok) {
           const data = result.data as { processes?: Array<{ id: string }> };
           const processes = Array.isArray(data?.processes) ? data.processes : [];
           const runningIds = new Set(processes.map((p) => p.id));
+          console.log(`[DEBUG restore] Remote running IDs: ${JSON.stringify([...runningIds])}, checking against local rows: ${JSON.stringify(rows.map(r => r.remote_process_id))}`);
           for (const row of rows) {
             if (runningIds.has(row.remote_process_id)) {
               remoteExecutorMap.set(row.local_process_id, {
