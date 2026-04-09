@@ -51,17 +51,15 @@ export function WorkspaceTabs({
         >
           Rules
         </button>
-        {activeTab === "rules" && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="h-6 w-6 ml-auto"
-            onClick={() => rulesListRef.current?.openAdd()}
-            title="Add rule"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={`h-6 w-6 ml-auto ${activeTab !== "rules" ? "invisible" : ""}`}
+          onClick={() => rulesListRef.current?.openAdd()}
+          title="Add rule"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
       </div>
 
       {/* Tab content — both panels share the same grid cell so height stays consistent */}
