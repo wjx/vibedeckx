@@ -70,7 +70,14 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   // This is intentionally fire-and-forget to avoid blocking plugin
   // registration (proxyToRemote retries can exceed Fastify's plugin timeout).
   void (async () => {
-    const savedRemoteExecutors = opts.storage.remoteExecutorProcesses.getAll();
+    console.log(`[DEBUG restore] Starting remote executor restore...`);
+    let savedRemoteExecutors: ReturnType<typeof opts.storage.remoteExecutorProcesses.getAll>;
+    try {
+      savedRemoteExecutors = opts.storage.remoteExecutorProcesses.getAll();
+    } catch (err) {
+      console.error(`[DEBUG restore] FAILED to query remote_executor_processes table:`, err);
+      return;
+    }
     console.log(`[DEBUG restore] DB returned ${savedRemoteExecutors.length} rows:`, JSON.stringify(savedRemoteExecutors.map(r => ({ id: r.local_process_id, server: r.remote_server_id, url: r.remote_url ? r.remote_url.substring(0, 30) : '(empty)', remoteProcessId: r.remote_process_id }))));
     if (savedRemoteExecutors.length === 0) return;
 
@@ -138,7 +145,9 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
         console.warn(`[SharedServices] Failed to verify remote executors on ${serverId}: ${err}`);
       }
     }
-  })();
+  })().catch(err => {
+    console.error(`[SharedServices] Unexpected error in remote executor restore:`, err);
+  });
 
   // Graceful shutdown: kill child processes and clear timers when server closes
   fastify.addHook("onClose", async () => {
