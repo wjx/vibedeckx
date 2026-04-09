@@ -47,8 +47,68 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   const reverseConnectManager = new ReverseConnectManager();
   const browserManager = new BrowserManager();
   const chatSessionManager = new ChatSessionManager(opts.storage, processManager, agentSessionManager, remoteSessionMap, remoteExecutorMap, remotePatchCache, reverseConnectManager, browserManager);
+  // Restore persisted remote executors for a specific server by verifying
+  // against the remote's running process list and repopulating remoteExecutorMap.
+  async function restoreRemoteExecutorsForServer(serverId: string): Promise<void> {
+    const allRows = opts.storage.remoteExecutorProcesses.getAll();
+    const rows = allRows.filter(r => r.remote_server_id === serverId);
+    if (rows.length === 0) return;
+
+    // Skip if already restored
+    if (rows.every(r => remoteExecutorMap.has(r.local_process_id))) return;
+
+    try {
+      const { remote_url, remote_api_key } = rows[0];
+      const result = await proxyToRemoteAuto(
+        serverId, remote_url, remote_api_key,
+        "GET", "/api/executor-processes/running",
+        undefined, { timeoutMs: 5000, reverseConnectManager },
+      );
+      if (result.ok) {
+        const data = result.data as { processes?: Array<{ id: string }> };
+        const processes = Array.isArray(data?.processes) ? data.processes : [];
+        const runningIds = new Set(processes.map((p) => p.id));
+        for (const row of rows) {
+          if (remoteExecutorMap.has(row.local_process_id)) continue;
+          if (runningIds.has(row.remote_process_id)) {
+            remoteExecutorMap.set(row.local_process_id, {
+              remoteServerId: row.remote_server_id,
+              remoteUrl: row.remote_url,
+              remoteApiKey: row.remote_api_key,
+              remoteProcessId: row.remote_process_id,
+              executorId: row.executor_id,
+              projectId: row.project_id ?? undefined,
+              branch: row.branch,
+            });
+            eventBus.emit({
+              type: "executor:started",
+              projectId: row.project_id ?? "",
+              executorId: row.executor_id,
+              processId: row.local_process_id,
+              target: row.remote_server_id,
+            });
+            console.log(`[SharedServices] Restored remote executor: ${row.local_process_id}`);
+          } else {
+            opts.storage.remoteExecutorProcesses.delete(row.local_process_id);
+            console.log(`[SharedServices] Cleaned up stale remote executor: ${row.local_process_id}`);
+          }
+        }
+      } else {
+        console.warn(`[SharedServices] Could not verify remote executors on ${serverId} (status ${result.status})`);
+      }
+    } catch (err) {
+      console.warn(`[SharedServices] Failed to verify remote executors on ${serverId}: ${err}`);
+    }
+  }
+
   reverseConnectManager.setStatusChangeHandler((remoteServerId, status) => {
     opts.storage.remoteServers.updateStatus(remoteServerId, status);
+    // When a reverse connection comes online, restore any persisted remote executors
+    if (status === "online") {
+      restoreRemoteExecutorsForServer(remoteServerId).catch(err => {
+        console.warn(`[SharedServices] Failed to restore remote executors on reconnect for ${remoteServerId}: ${err}`);
+      });
+    }
   });
 
   fastify.decorate("storage", opts.storage);
@@ -67,83 +127,17 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   processManager.setEventBus(eventBus);
 
   // Restore remote executor processes from DB in the background.
-  // This is intentionally fire-and-forget to avoid blocking plugin
-  // registration (proxyToRemote retries can exceed Fastify's plugin timeout).
+  // Servers reachable now are restored immediately; reverse-connect servers
+  // are restored when they reconnect (via the status change handler above).
   void (async () => {
-    console.log(`[DEBUG restore] Starting remote executor restore...`);
-    let savedRemoteExecutors: ReturnType<typeof opts.storage.remoteExecutorProcesses.getAll>;
-    try {
-      savedRemoteExecutors = opts.storage.remoteExecutorProcesses.getAll();
-    } catch (err) {
-      console.error(`[DEBUG restore] FAILED to query remote_executor_processes table:`, err);
-      return;
-    }
-    console.log(`[DEBUG restore] DB returned ${savedRemoteExecutors.length} rows:`, JSON.stringify(savedRemoteExecutors.map(r => ({ id: r.local_process_id, server: r.remote_server_id, url: r.remote_url ? r.remote_url.substring(0, 30) : '(empty)', remoteProcessId: r.remote_process_id }))));
-    if (savedRemoteExecutors.length === 0) return;
+    const savedRows = opts.storage.remoteExecutorProcesses.getAll();
+    if (savedRows.length === 0) return;
 
-    console.log(`[SharedServices] Found ${savedRemoteExecutors.length} persisted remote executor(s), verifying...`);
+    const serverIds = new Set(savedRows.map(r => r.remote_server_id));
+    console.log(`[SharedServices] Found ${savedRows.length} persisted remote executor(s) across ${serverIds.size} server(s), verifying...`);
 
-    // Group by remote server ID to batch verification calls
-    const byServer = new Map<string, typeof savedRemoteExecutors>();
-    for (const row of savedRemoteExecutors) {
-      const group = byServer.get(row.remote_server_id) ?? [];
-      group.push(row);
-      byServer.set(row.remote_server_id, group);
-    }
-
-    for (const [serverId, rows] of byServer) {
-      try {
-        const { remote_url, remote_api_key } = rows[0];
-        // Skip verification if no URL and no active reverse connection
-        if (!remote_url && !reverseConnectManager.isConnected(serverId)) {
-          console.log(`[SharedServices] Remote server ${serverId} has no URL and no reverse connection, keeping DB rows for later`);
-          continue;
-        }
-        const result = await proxyToRemoteAuto(
-          serverId,
-          remote_url,
-          remote_api_key,
-          "GET",
-          "/api/executor-processes/running",
-          undefined,
-          { timeoutMs: 5000, reverseConnectManager },
-        );
-        console.log(`[DEBUG restore] proxyToRemoteAuto result for ${serverId}: ok=${result.ok}, status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
-        if (result.ok) {
-          const data = result.data as { processes?: Array<{ id: string }> };
-          const processes = Array.isArray(data?.processes) ? data.processes : [];
-          const runningIds = new Set(processes.map((p) => p.id));
-          console.log(`[DEBUG restore] Remote running IDs: ${JSON.stringify([...runningIds])}, checking against local rows: ${JSON.stringify(rows.map(r => r.remote_process_id))}`);
-          for (const row of rows) {
-            if (runningIds.has(row.remote_process_id)) {
-              remoteExecutorMap.set(row.local_process_id, {
-                remoteServerId: row.remote_server_id,
-                remoteUrl: row.remote_url,
-                remoteApiKey: row.remote_api_key,
-                remoteProcessId: row.remote_process_id,
-                executorId: row.executor_id,
-                projectId: row.project_id ?? undefined,
-                branch: row.branch,
-              });
-              eventBus.emit({
-                type: "executor:started",
-                projectId: row.project_id ?? "",
-                executorId: row.executor_id,
-                processId: row.local_process_id,
-                target: row.remote_server_id,
-              });
-              console.log(`[SharedServices] Restored remote executor: ${row.local_process_id}`);
-            } else {
-              opts.storage.remoteExecutorProcesses.delete(row.local_process_id);
-              console.log(`[SharedServices] Cleaned up stale remote executor: ${row.local_process_id}`);
-            }
-          }
-        } else {
-          console.warn(`[SharedServices] Could not reach remote server ${serverId} (status ${result.status}), keeping DB rows for later retry`);
-        }
-      } catch (err) {
-        console.warn(`[SharedServices] Failed to verify remote executors on ${serverId}: ${err}`);
-      }
+    for (const serverId of serverIds) {
+      await restoreRemoteExecutorsForServer(serverId);
     }
   })().catch(err => {
     console.error(`[SharedServices] Unexpected error in remote executor restore:`, err);
