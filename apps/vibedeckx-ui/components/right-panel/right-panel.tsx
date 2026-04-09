@@ -46,67 +46,28 @@ export function RightPanel({ projectId, selectedBranch, onMergeRequest, project,
   return (
     <div className="h-full flex flex-col">
       {/* Tab Bar */}
-      <div className="flex items-center border-b border-border/60 h-10 px-2 gap-0.5 bg-muted/30">
-        <button
-          onClick={() => setActiveTab('agent')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
-            activeTab === 'agent'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-          )}
-        >
-          <Bot className="h-3.5 w-3.5" />
-          Agent
-        </button>
-        <button
-          onClick={() => setActiveTab('executors')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
-            activeTab === 'executors'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-          )}
-        >
-          <Terminal className="h-3.5 w-3.5" />
-          Executors
-        </button>
-        <button
-          onClick={() => setActiveTab('diff')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
-            activeTab === 'diff'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-          )}
-        >
-          <GitBranch className="h-3.5 w-3.5" />
-          Diff
-        </button>
-        <button
-          onClick={() => setActiveTab('terminal')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
-            activeTab === 'terminal'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-          )}
-        >
-          <SquareTerminal className="h-3.5 w-3.5" />
-          Terminal
-        </button>
-        <button
-          onClick={() => setActiveTab('preview')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150',
-            activeTab === 'preview'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-          )}
-        >
-          <Globe className="h-3.5 w-3.5" />
-          Preview
-        </button>
+      <div className="flex items-center px-3 gap-4 border-b border-border/60">
+        {([
+          { id: 'agent' as const, icon: Bot, label: 'Agent' },
+          { id: 'executors' as const, icon: Terminal, label: 'Executors' },
+          { id: 'diff' as const, icon: GitBranch, label: 'Diff' },
+          { id: 'terminal' as const, icon: SquareTerminal, label: 'Terminal' },
+          { id: 'preview' as const, icon: Globe, label: 'Preview' },
+        ]).map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={cn(
+              'flex items-center gap-1.5 py-2.5 text-xs font-medium uppercase tracking-wider border-b-2 transition-colors',
+              activeTab === id
+                ? 'text-foreground border-foreground'
+                : 'text-muted-foreground border-transparent hover:text-foreground/70'
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Tab Content — CSS show/hide to keep all panels mounted */}

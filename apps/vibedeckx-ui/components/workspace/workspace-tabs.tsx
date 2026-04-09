@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RulesList } from "@/components/rules/rules-list";
 import type { RulesListHandle } from "@/components/rules/rules-list";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Check, Pencil, Plus } from "lucide-react";
 import type { Rule, Task } from "@/lib/api";
 
 type Tab = "task" | "rules";
@@ -15,6 +15,8 @@ interface WorkspaceTabsProps {
   onCreateRule: (opts: { name: string; content: string; enabled?: boolean }) => Promise<Rule | null>;
   onUpdateRule: (id: string, opts: { name?: string; content?: string; enabled?: boolean }) => Promise<Rule | null>;
   onDeleteRule: (id: string) => Promise<void>;
+  onUpdateTaskTitle?: (taskId: string, title: string) => void;
+  onCompleteTask?: (taskId: string) => void;
 }
 
 export function WorkspaceTabs({
@@ -23,9 +25,43 @@ export function WorkspaceTabs({
   onCreateRule,
   onUpdateRule,
   onDeleteRule,
+  onUpdateTaskTitle,
+  onCompleteTask,
 }: WorkspaceTabsProps) {
   const [activeTab, setActiveTab] = useState<Tab>("task");
   const rulesListRef = useRef<RulesListHandle>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local title value when the assigned task changes
+  useEffect(() => {
+    if (assignedTask) {
+      setTitleValue(assignedTask.title);
+    }
+    setEditingTitle(false);
+  }, [assignedTask?.id, assignedTask?.title]);
+
+  const commitTitle = () => {
+    setEditingTitle(false);
+    const trimmed = titleValue.trim();
+    if (trimmed && assignedTask && trimmed !== assignedTask.title) {
+      onUpdateTaskTitle?.(assignedTask.id, trimmed);
+    } else if (assignedTask) {
+      setTitleValue(assignedTask.title);
+    }
+  };
+
+  const handleEdit = () => {
+    if (!assignedTask) return;
+    setTitleValue(assignedTask.title);
+    setEditingTitle(true);
+    // Focus after React renders the input
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
 
   return (
     <div className="space-y-2">
@@ -51,24 +87,72 @@ export function WorkspaceTabs({
         >
           Rules
         </button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={`h-6 w-6 ml-auto ${activeTab !== "rules" ? "invisible" : ""}`}
-          onClick={() => rulesListRef.current?.openAdd()}
-          title="Add rule"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
+        {/* Right-side action buttons — always rendered for consistent height */}
+        <div className="flex items-center gap-1 ml-auto">
+          {activeTab === "task" && assignedTask ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-6 w-6"
+                onClick={handleEdit}
+                title="Edit task title"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-6 w-6"
+                onClick={() => onCompleteTask?.(assignedTask.id)}
+                title="Complete task"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          ) : activeTab === "rules" ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-6 w-6"
+              onClick={() => rulesListRef.current?.openAdd()}
+              title="Add rule"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            // Invisible placeholder to maintain consistent height
+            <Button variant="ghost" size="icon-sm" className="h-6 w-6 invisible">
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tab content — both panels share the same grid cell so height stays consistent */}
       <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
         <div className={activeTab !== "task" ? "invisible" : undefined}>
           {assignedTask ? (
-            <p className="text-sm text-foreground truncate" title={assignedTask.title}>
-              {assignedTask.title}
-            </p>
+            editingTitle ? (
+              <input
+                ref={inputRef}
+                className="w-full bg-transparent border-b border-primary outline-none text-sm py-0.5"
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={commitTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTitle();
+                  if (e.key === "Escape") {
+                    setTitleValue(assignedTask.title);
+                    setEditingTitle(false);
+                  }
+                }}
+              />
+            ) : (
+              <p className="text-sm text-foreground truncate" title={assignedTask.title}>
+                {assignedTask.title}
+              </p>
+            )
           ) : (
             <p className="text-xs text-muted-foreground py-3 text-center">
               No task assigned to this workspace.

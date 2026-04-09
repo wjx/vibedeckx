@@ -295,6 +295,11 @@ Please proceed step by step and let me know if there are any issues or conflicts
                         onCreateRule={createRule}
                         onUpdateRule={updateRule}
                         onDeleteRule={deleteRule}
+                        onUpdateTaskTitle={(id, title) => updateTask(id, { title })}
+                        onCompleteTask={(id) => {
+                          updateTask(id, { status: "done", assigned_branch: null });
+                          setRealtimeWorkspaceStatuses(prev => clearRealtimeStatus(prev, selectedBranch));
+                        }}
                       />
                     </div>
                   )}
