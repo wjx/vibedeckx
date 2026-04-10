@@ -21,6 +21,13 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
   const [runningProcesses, setRunningProcesses] = useState<Map<string, Array<{ processId: string; target: string }>>>(
     new Map()
   ); // executorId -> [{ processId, target }]
+  // Tracks the most recent processId per executor+target, persists after the
+  // process stops.  This prevents a React-batching race where executor:started
+  // and executor:stopped SSE events arrive in the same render frame, causing
+  // currentProcessId to never be seen as non-null by child components.
+  const [lastStartedProcess, setLastStartedProcess] = useState<Map<string, { processId: string; target: string }>>(
+    new Map()
+  );
   const [loading, setLoading] = useState(true);
 
   // Fetch executors scoped to group
@@ -46,6 +53,7 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
     try {
       const processes = await api.getRunningProcesses();
       const processMap = new Map<string, Array<{ processId: string; target: string }>>();
+      const lastStartedMap = new Map<string, { processId: string; target: string }>();
       for (const proc of processes) {
         const entry = { processId: proc.id, target: proc.target ?? "local" };
         const existing = processMap.get(proc.executor_id);
@@ -54,8 +62,15 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
         } else {
           processMap.set(proc.executor_id, [entry]);
         }
+        lastStartedMap.set(proc.executor_id, entry);
       }
       setRunningProcesses(processMap);
+      setLastStartedProcess((prev) => {
+        // Merge — don't overwrite entries for executors that aren't currently running
+        const merged = new Map(prev);
+        for (const [k, v] of lastStartedMap) merged.set(k, v);
+        return merged;
+      });
     } catch (error) {
       console.error("Failed to fetch running processes:", error);
     }
@@ -111,6 +126,11 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
             if (entries.some(e => e.processId === data.processId)) return prev;
             const newMap = new Map(prev);
             newMap.set(data.executorId, [...entries, { processId: data.processId, target: data.target ?? "local" }]);
+            return newMap;
+          });
+          setLastStartedProcess((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(data.executorId, { processId: data.processId, target: data.target ?? "local" });
             return newMap;
           });
         } else if (data.type === "executor:stopped") {
@@ -188,10 +208,16 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
   const startExecutor = useCallback(async (executorId: string, branch?: string | null) => {
     try {
       const processId = await api.startExecutor(executorId, branch, executorMode);
+      const target = executorMode ?? "local";
       setRunningProcesses((prev) => {
         const entries = prev.get(executorId) ?? [];
         const newMap = new Map(prev);
-        newMap.set(executorId, [...entries, { processId, target: executorMode ?? "local" }]);
+        newMap.set(executorId, [...entries, { processId, target }]);
+        return newMap;
+      });
+      setLastStartedProcess((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(executorId, { processId, target });
         return newMap;
       });
       return processId;
@@ -275,14 +301,18 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
     [projectId, groupId, executors]
   );
 
-  // Get executor with process info, filtered by current executor mode
+  // Get executor with process info, filtered by current executor mode.
+  // Falls back to lastStartedProcess so that currentProcessId survives
+  // even if executor:stopped arrives before React renders the started state.
   const executorsWithProcess: ExecutorWithProcess[] = executors.map((executor) => {
     const entries = runningProcesses.get(executor.id);
     const targetMode = executorMode ?? "local";
     const match = entries?.find(e => e.target === targetMode);
+    const lastStarted = lastStartedProcess.get(executor.id);
+    const lastStartedMatch = lastStarted?.target === targetMode ? lastStarted : undefined;
     return {
       ...executor,
-      currentProcessId: match?.processId ?? null,
+      currentProcessId: match?.processId ?? lastStartedMatch?.processId ?? null,
       isRunning: !!match,
     };
   });
