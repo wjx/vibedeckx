@@ -720,13 +720,24 @@ export class ChatSessionManager {
       try { remoteWs.close(); } catch { /* already closed */ }
     };
 
+    // Collect output from remote log messages to include in the event
+    const outputChunks: string[] = [];
+
     remoteWs.on("message", (data) => {
       try {
         const parsed = JSON.parse(data.toString());
+        // Accumulate output from pty/stdout/stderr messages
+        if ((parsed.type === "pty" || parsed.type === "stdout" || parsed.type === "stderr") && parsed.data) {
+          outputChunks.push(parsed.data);
+        }
         if (parsed.type === "finished") {
           const info = this.remoteExecutorMap.get(localProcessId);
           if (info && !info.stoppedEmitted) {
             info.stoppedEmitted = true;
+            // Build tail output from collected chunks, strip ANSI codes
+            let raw = outputChunks.join("");
+            raw = raw.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+            const tailOutput = raw.length > 10000 ? raw.slice(-10000) : raw;
             this.eventBus?.emit({
               type: "executor:stopped",
               projectId: info.projectId ?? "",
@@ -734,6 +745,7 @@ export class ChatSessionManager {
               processId: localProcessId,
               exitCode: parsed.exitCode ?? 0,
               target: info.remoteServerId,
+              tailOutput,
             });
           }
           cleanup();
