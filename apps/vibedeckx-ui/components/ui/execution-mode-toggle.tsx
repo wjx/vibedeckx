@@ -2,11 +2,14 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Plus, MoreHorizontal } from "lucide-react";
+import { Plus, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
@@ -24,9 +27,6 @@ interface ExecutionModeToggleProps {
   disabled?: boolean;
 }
 
-const MAX_VISIBLE = 4;
-const OVERFLOW_VISIBLE = 3;
-
 export function ExecutionModeToggle({
   targets,
   activeTarget,
@@ -34,90 +34,49 @@ export function ExecutionModeToggle({
   onAddRemote,
   disabled,
 }: ExecutionModeToggleProps) {
-  const hasOverflow = targets.length > MAX_VISIBLE;
-  const visibleTargets = hasOverflow
-    ? targets.slice(0, OVERFLOW_VISIBLE)
-    : targets;
-  const overflowTargets = hasOverflow
-    ? targets.slice(OVERFLOW_VISIBLE)
-    : [];
-
-  const isActiveInOverflow = overflowTargets.some(
-    (t) => t.id === activeTarget
-  );
+  const active = targets.find((t) => t.id === activeTarget) ?? targets[0];
+  const ActiveIcon = active?.icon;
 
   return (
-    <div className="inline-flex items-center rounded-md border bg-muted/50 p-0.5 text-xs">
-      {visibleTargets.map((target) => {
-        const Icon = target.icon;
-        return (
-          <button
-            key={target.id}
-            onClick={() => onTargetChange(target.id)}
-            disabled={disabled}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-sm px-2 py-0.5 transition-colors",
-              activeTarget === target.id
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-              disabled && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            {Icon && <Icon className="h-3 w-3" />}
-            {target.label}
-          </button>
-        );
-      })}
-
-      {hasOverflow && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              disabled={disabled}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-sm px-2 py-0.5 transition-colors",
-                isActiveInOverflow
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-                disabled && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              <MoreHorizontal className="h-3 w-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {overflowTargets.map((target) => {
-              const Icon = target.icon;
-              return (
-                <DropdownMenuItem
-                  key={target.id}
-                  onClick={() => onTargetChange(target.id)}
-                  className={cn(
-                    "text-xs",
-                    activeTarget === target.id && "font-medium"
-                  )}
-                >
-                  {Icon && <Icon className="h-3 w-3" />}
-                  {target.label}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-
-      {onAddRemote && (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
-          onClick={onAddRemote}
           disabled={disabled}
           className={cn(
-            "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 transition-colors text-muted-foreground hover:text-foreground",
+            "inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-muted",
             disabled && "opacity-50 cursor-not-allowed"
           )}
         >
-          <Plus className="h-3 w-3" />
+          {ActiveIcon && <ActiveIcon className="h-3 w-3" />}
+          {active?.label ?? "Local"}
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
-      )}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuRadioGroup
+          value={activeTarget}
+          onValueChange={onTargetChange}
+        >
+          {targets.map((target) => {
+            const Icon = target.icon;
+            return (
+              <DropdownMenuRadioItem key={target.id} value={target.id} className="text-xs">
+                {Icon && <Icon className="h-3 w-3" />}
+                {target.label}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+        {onAddRemote && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onAddRemote} className="text-xs">
+              <Plus className="h-3 w-3" />
+              Add Remote
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
