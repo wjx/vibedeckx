@@ -15,7 +15,7 @@ export function PermissionModeToggle({
   disabled,
 }: PermissionModeToggleProps) {
   return (
-    <div className="inline-flex items-center rounded-md border bg-muted/50 p-0.5 text-xs">
+    <div className="inline-flex items-center rounded-md border bg-muted/50 px-0.5 text-xs">
       <button
         onClick={() => onModeChange("plan")}
         disabled={disabled}
