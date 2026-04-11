@@ -93,6 +93,20 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
     return reply.send({ ok: true });
   });
+
+  // Reset session (clear conversation history)
+  fastify.post<{
+    Params: { sessionId: string };
+  }>("/api/chat-sessions/:sessionId/reset", async (req, reply) => {
+    const { sessionId } = req.params;
+
+    const reset = fastify.chatSessionManager.resetSession(sessionId);
+    if (!reset) {
+      return reply.code(404).send({ error: "Session not found" });
+    }
+
+    return reply.send({ ok: true });
+  });
 };
 
 export default fp(routes, { name: "chat-session-routes" });

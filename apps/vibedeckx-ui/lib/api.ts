@@ -1040,6 +1040,14 @@ export const api = {
     return data.enabled;
   },
 
+  // Reset Chat Session (clear conversation)
+  async resetChatSession(sessionId: string): Promise<void> {
+    const res = await authFetch(`${getApiBase()}/api/chat-sessions/${sessionId}/reset`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Failed to reset chat session");
+  },
+
   // Settings API
   async getProxySettings(): Promise<ProxyConfig> {
     const res = await authFetch(`${getApiBase()}/api/settings/proxy`);

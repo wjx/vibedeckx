@@ -1975,6 +1975,36 @@ export class ChatSessionManager {
     return true;
   }
 
+  /**
+   * Reset a chat session — abort any in-flight generation, clear messages,
+   * and broadcast a clearAll patch so connected frontends reset.
+   */
+  resetSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+
+    // Abort in-flight generation
+    if (session.abortController) {
+      session.abortController.abort();
+      session.abortController = null;
+    }
+
+    // Clear the message store
+    session.store.patches = [];
+    session.store.entries = [];
+    session.store.nextIndex = 0;
+    session.status = "stopped";
+
+    // Broadcast clearAll + status to connected subscribers
+    const clearPatch = ConversationPatch.clearAll();
+    this.broadcastPatch(session, clearPatch);
+    const statusPatch = ConversationPatch.updateStatus("stopped");
+    this.broadcastPatch(session, statusPatch);
+
+    console.log(`[ChatSession] Reset session ${sessionId}`);
+    return true;
+  }
+
   // ---- Internal helpers ----
 
   private pushEntry(session: ChatSession, entry: AgentMessage): void {

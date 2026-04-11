@@ -17,7 +17,7 @@ import {
   MessageResponse,
 } from "@/components/ai-elements/message";
 import { useChatSession } from "@/hooks/use-chat-session";
-import { MessageSquare, Loader2, Square, Search, Radio } from "lucide-react";
+import { MessageSquare, Loader2, Square, Search, Radio, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ export function MainConversation({ projectId, branch }: MainConversationProps) {
     error,
     sendMessage,
     stopGeneration,
+    restartSession,
   } = useChatSession(projectId, branch);
 
   const [inputValue, setInputValue] = useState("");
@@ -101,23 +102,35 @@ export function MainConversation({ projectId, branch }: MainConversationProps) {
           )}
         </div>
         {session && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={async () => {
-              const newVal = !eventListeningEnabled;
-              try {
-                await api.setChatEventListening(session.id, newVal);
-                setEventListeningEnabled(newVal);
-              } catch {
-                toast.error("Failed to toggle event listening");
-              }
-            }}
-            className={`h-7 w-7 ${eventListeningEnabled ? "text-amber-500" : ""}`}
-            title={eventListeningEnabled ? "Listening to executor events (click to disable)" : "Listen to executor events (click to enable)"}
-          >
-            <Radio className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={async () => {
+                const newVal = !eventListeningEnabled;
+                try {
+                  await api.setChatEventListening(session.id, newVal);
+                  setEventListeningEnabled(newVal);
+                } catch {
+                  toast.error("Failed to toggle event listening");
+                }
+              }}
+              className={`h-7 w-7 ${eventListeningEnabled ? "text-amber-500" : ""}`}
+              title={eventListeningEnabled ? "Listening to executor events (click to disable)" : "Listen to executor events (click to enable)"}
+            >
+              <Radio className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => restartSession()}
+              disabled={isGenerating}
+              className="h-7 w-7"
+              title="New Conversation"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         )}
       </div>
 

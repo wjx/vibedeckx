@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { produce } from "immer";
 import { toast } from "sonner";
-import { getWebSocketUrl, getAuthToken } from "@/lib/api";
+import { getWebSocketUrl, getAuthToken, api } from "@/lib/api";
 import { sendCommandToIframe, openPreviewFrame } from "@/components/preview/browser-frames-provider";
 
 // ============ Types (reused from agent session) ============
@@ -450,6 +450,21 @@ export function useChatSession(projectId: string | null, branch: string | null) 
     }
   }, [session?.id]);
 
+  const restartSession = useCallback(async () => {
+    if (!session?.id) return;
+    try {
+      await api.resetChatSession(session.id);
+      // The backend broadcasts a clearAll patch via WS which resets messages.
+      // Also clear local state immediately for responsiveness.
+      setMessages([]);
+      setStatus("stopped");
+      containerRef.current = { entries: [], status: "stopped" };
+    } catch (e) {
+      console.error("[ChatSession] Failed to reset session:", e);
+      toast.error("Failed to start new conversation");
+    }
+  }, [session?.id]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -544,5 +559,6 @@ export function useChatSession(projectId: string | null, branch: string | null) 
     error,
     sendMessage,
     stopGeneration,
+    restartSession,
   };
 }
