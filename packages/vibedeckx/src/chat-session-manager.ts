@@ -875,7 +875,7 @@ export class ChatSessionManager {
       })(),
       "You can view the coding agent's conversation history using the getAgentConversation tool.",
       "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
-      "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
+      "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. If a rule says to run an executor, always run it — even if that executor has already been executed in this session. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
       "You can list active terminal sessions using the listTerminals tool.",
       "You can send commands to a terminal using the runInTerminal tool. The command runs visibly in the user's terminal and returns immediately.",
       "After sending a command, terminal output will arrive as a [Terminal Event] message once the command finishes. Wait for it before commenting on results.",
