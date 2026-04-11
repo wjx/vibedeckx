@@ -22,8 +22,16 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud, Languages, X, Loader2 } from "lucide-react";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud, Languages, X, Loader2, ChevronDown } from "lucide-react";
 import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { PermissionModeToggle } from "@/components/ui/permission-mode-toggle";
 import { useInputHistory } from "@/hooks/use-input-history";
 import { useProjectRemotes } from "@/hooks/use-project-remotes";
@@ -267,30 +275,48 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 h-10 border-b border-border/60 bg-muted/20">
         <div className="flex items-center gap-2">
-          <Bot className={`h-4 w-4 ${agentType === "codex" ? "text-green-500" : "text-violet-500"}`} />
           {providers.length > 1 ? (
-            <select
-              className="text-sm font-medium bg-transparent border border-border rounded px-1.5 py-0.5 outline-none"
-              value={agentType}
-              onChange={(e) => {
-                const newType = e.target.value as AgentType;
-                setAgentType(newType);
-                if (session) {
-                  restartSession(newType);
-                }
-              }}
-              disabled={session !== null && messages.length > 0}
-            >
-              {providers.map((p) => (
-                <option key={p.type} value={p.type} disabled={!p.available}>
-                  {p.displayName}
-                </option>
-              ))}
-            </select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={session !== null && messages.length > 0}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs font-medium transition-colors hover:bg-muted",
+                    session !== null && messages.length > 0 && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Bot className={`h-3 w-3 ${agentType === "codex" ? "text-green-500" : "text-violet-500"}`} />
+                  {providers.find(p => p.type === agentType)?.displayName ?? (agentType === "codex" ? "Codex" : "Claude Code")}
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuRadioGroup
+                  value={agentType}
+                  onValueChange={(v) => {
+                    const newType = v as AgentType;
+                    setAgentType(newType);
+                    if (session) {
+                      restartSession(newType);
+                    }
+                  }}
+                >
+                  {providers.map((p) => (
+                    <DropdownMenuRadioItem key={p.type} value={p.type} disabled={!p.available} className="text-xs">
+                      <Bot className={`h-3 w-3 ${p.type === "codex" ? "text-green-500" : "text-violet-500"}`} />
+                      {p.displayName}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
-            <span className="text-sm font-medium">
-              {agentType === "codex" ? "Codex" : "Claude Code"}
-            </span>
+            <>
+              <Bot className={`h-4 w-4 ${agentType === "codex" ? "text-green-500" : "text-violet-500"}`} />
+              <span className="text-sm font-medium">
+                {agentType === "codex" ? "Codex" : "Claude Code"}
+              </span>
+            </>
           )}
           <PermissionModeToggle
             mode={permissionMode}
