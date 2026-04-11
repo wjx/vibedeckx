@@ -469,15 +469,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
 
 export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
   await mkdir(path.dirname(dbPath), { recursive: true });
-  console.log(`[DEBUG DB] Opening database at: ${dbPath}`);
   const db = createDatabase(dbPath);
-  // Debug: check remote_executor_processes table state on startup
-  try {
-    const remoteExecCount = db.prepare(`SELECT COUNT(*) as cnt FROM remote_executor_processes`).get() as { cnt: number };
-    console.log(`[DEBUG DB] remote_executor_processes row count on startup: ${remoteExecCount.cnt}`);
-  } catch (err) {
-    console.log(`[DEBUG DB] remote_executor_processes table check failed:`, err);
-  }
 
   // Helper to convert SQLite project row to Project interface
   const toProject = (row: ProjectRow): Project => ({
@@ -1191,9 +1183,6 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           project_id: info.projectId ?? null,
           branch: info.branch ?? null,
         });
-        // Debug: verify row was written
-        const count = db.prepare(`SELECT COUNT(*) as cnt FROM remote_executor_processes`).get() as { cnt: number };
-        console.log(`[DEBUG DB] After insert: remote_executor_processes count=${count.cnt}, dbPath=${dbPath}`);
       },
 
       delete: (localProcessId) => {

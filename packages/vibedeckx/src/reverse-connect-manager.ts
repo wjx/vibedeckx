@@ -38,12 +38,31 @@ interface ReverseConnection {
 export class ReverseConnectManager {
   private connections = new Map<string, ReverseConnection>();
   private statusChangeHandlers: Array<(remoteServerId: string, status: "online" | "offline") => void> = [];
+  // Aliases map old/stale server IDs to currently-connected server IDs.
+  // This handles cases where the same physical machine reconnects under
+  // a different remote_servers.id (e.g., after server entry recreation).
+  private aliases = new Map<string, string>();
+
+  /** Resolve a server ID through aliases. */
+  private resolveId(serverId: string): string {
+    return this.aliases.get(serverId) ?? serverId;
+  }
+
+  /** Register an alias so that requests for oldId route to connectedId. */
+  addAlias(oldId: string, connectedId: string): void {
+    if (oldId !== connectedId) {
+      this.aliases.set(oldId, connectedId);
+    }
+  }
 
   setStatusChangeHandler(handler: (remoteServerId: string, status: "online" | "offline") => void): void {
     this.statusChangeHandlers.push(handler);
   }
 
   registerConnection(remoteServerId: string, ws: WebSocket): void {
+    // If this server had an alias, remove it — it now has its own connection
+    this.aliases.delete(remoteServerId);
+
     // Last-writer-wins: close old connection if exists
     const existing = this.connections.get(remoteServerId);
     if (existing) {
@@ -98,7 +117,7 @@ export class ReverseConnectManager {
   }
 
   isConnected(remoteServerId: string): boolean {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     return conn !== undefined && conn.ws.readyState === 1; // WebSocket.OPEN
   }
 
@@ -109,7 +128,7 @@ export class ReverseConnectManager {
     body?: unknown,
     timeoutMs = DEFAULT_HTTP_TIMEOUT_MS
   ): Promise<ProxyResult> {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn || conn.ws.readyState !== 1) {
       return {
         ok: false,
@@ -158,7 +177,7 @@ export class ReverseConnectManager {
     timeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
     port?: number,
   ): Promise<RawHttpResponse> {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn || conn.ws.readyState !== 1) {
       return { ok: false, status: 0, headers: {}, body: "" };
     }
@@ -186,7 +205,7 @@ export class ReverseConnectManager {
   }
 
   openVirtualChannel(remoteServerId: string, channelId: string, path: string, query?: string): void {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn || conn.ws.readyState !== 1) return;
 
     const frame: WsOpenFrame = { type: "ws_open", channelId, path, query };
@@ -194,7 +213,7 @@ export class ReverseConnectManager {
   }
 
   sendChannelData(remoteServerId: string, channelId: string, data: string): void {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn || conn.ws.readyState !== 1) return;
 
     const frame: WsDataFrame = { type: "ws_data", channelId, data };
@@ -202,7 +221,7 @@ export class ReverseConnectManager {
   }
 
   closeChannel(remoteServerId: string, channelId: string, code?: number, reason?: string): void {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn) return;
 
     conn.virtualChannels.delete(channelId);
@@ -213,7 +232,7 @@ export class ReverseConnectManager {
   }
 
   setChannelAdapter(remoteServerId: string, channelId: string, adapter: VirtualWsAdapter): void {
-    const conn = this.connections.get(remoteServerId);
+    const conn = this.connections.get(this.resolveId(remoteServerId));
     if (!conn) return;
     conn.virtualChannels.set(channelId, adapter);
   }
