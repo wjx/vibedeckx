@@ -68,10 +68,12 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
         "GET", "/api/executor-processes/running",
         undefined, { timeoutMs: 5000, reverseConnectManager },
       );
+      console.log(`[DEBUG restoreForServer] proxyToRemoteAuto result: ok=${result.ok}, status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
       if (result.ok) {
         const data = result.data as { processes?: Array<{ id: string }> };
         const processes = Array.isArray(data?.processes) ? data.processes : [];
         const runningIds = new Set(processes.map((p) => p.id));
+        console.log(`[DEBUG restoreForServer] Remote running IDs: ${JSON.stringify([...runningIds])}, checking local rows: ${JSON.stringify(rows.map(r => ({ localId: r.local_process_id.substring(0, 30), remoteProcessId: r.remote_process_id })))}`);
         for (const row of rows) {
           if (remoteExecutorMap.has(row.local_process_id)) continue;
           if (runningIds.has(row.remote_process_id)) {

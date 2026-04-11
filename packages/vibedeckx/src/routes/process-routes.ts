@@ -212,9 +212,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
   // 获取所有运行中的进程
   fastify.get("/api/executor-processes/running", async (req, reply) => {
-    console.log(`[DEBUG /running] remoteExecutorMap size=${fastify.remoteExecutorMap.size}, entries: ${JSON.stringify([...fastify.remoteExecutorMap.keys()])}`);
-    // Local processes
     const runningProcessIds = fastify.processManager.getRunningProcessIds();
+    console.log(`[DEBUG /running] processManager running=${JSON.stringify(runningProcessIds)}, remoteExecutorMap size=${fastify.remoteExecutorMap.size}, entries: ${JSON.stringify([...fastify.remoteExecutorMap.keys()])}`);
+    // Local processes
     const processes: Array<Record<string, unknown>> = runningProcessIds.map((id) => {
       const dbProcess = fastify.storage.executorProcesses.getById(id);
       return dbProcess ? { ...dbProcess, target: "local" } : null;
