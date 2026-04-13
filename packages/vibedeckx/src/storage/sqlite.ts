@@ -3,7 +3,7 @@ import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, ExecutorType, PromptProvider, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Rule, Storage, ExecutionMode, SyncButtonConfig, RemoteServer, RemoteServerConnectionMode, RemoteServerStatus, ProjectRemote, ProjectRemoteWithServer } from "./types.js";
+import type { Project, Executor, ExecutorGroup, ExecutorProcess, ExecutorProcessStatus, ExecutorType, PromptProvider, AgentSession, AgentSessionStatus, Task, TaskStatus, TaskPriority, Rule, Command, Storage, ExecutionMode, SyncButtonConfig, RemoteServer, RemoteServerConnectionMode, RemoteServerStatus, ProjectRemote, ProjectRemoteWithServer } from "./types.js";
 
 const createDatabase = (dbPath: string): BetterSqlite3Database => {
   const db = new Database(dbPath);
@@ -104,6 +104,18 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       name TEXT NOT NULL,
       content TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS commands (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      branch TEXT,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
       position INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -1473,6 +1485,68 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           }
         });
         transaction();
+      },
+    },
+
+    commands: {
+      create: ({ id, project_id, branch, name, content }) => {
+        const maxPos = db.prepare<{ project_id: string; branch: string | null }, { max_pos: number | null }>(
+          `SELECT MAX(position) as max_pos FROM commands WHERE project_id = @project_id AND (branch IS @branch OR (branch IS NULL AND @branch IS NULL))`
+        ).get({ project_id, branch: branch ?? null });
+        const position = (maxPos?.max_pos ?? -1) + 1;
+
+        db.prepare(
+          `INSERT INTO commands (id, project_id, branch, name, content, position)
+           VALUES (@id, @project_id, @branch, @name, @content, @position)`
+        ).run({ id, project_id, branch: branch ?? null, name, content, position });
+
+        return db
+          .prepare<{ id: string }, Command>(`SELECT * FROM commands WHERE id = @id`)
+          .get({ id })!;
+      },
+
+      getByWorkspace: (projectId: string, branch: string | null) => {
+        return db
+          .prepare<{ project_id: string; branch: string | null }, Command>(
+            `SELECT * FROM commands WHERE project_id = @project_id AND (branch IS @branch OR (branch IS NULL AND @branch IS NULL)) ORDER BY position ASC`
+          )
+          .all({ project_id: projectId, branch: branch ?? null });
+      },
+
+      getById: (id: string) => {
+        return db
+          .prepare<{ id: string }, Command>(`SELECT * FROM commands WHERE id = @id`)
+          .get({ id });
+      },
+
+      update: (id: string, opts: { name?: string; content?: string; position?: number }) => {
+        const updates: string[] = [];
+        const params: Record<string, unknown> = { id };
+
+        if (opts.name !== undefined) {
+          updates.push('name = @name');
+          params.name = opts.name;
+        }
+        if (opts.content !== undefined) {
+          updates.push('content = @content');
+          params.content = opts.content;
+        }
+        if (opts.position !== undefined) {
+          updates.push('position = @position');
+          params.position = opts.position;
+        }
+
+        if (updates.length === 0) {
+          return db.prepare<{ id: string }, Command>(`SELECT * FROM commands WHERE id = @id`).get({ id });
+        }
+
+        updates.push('updated_at = datetime(\'now\')');
+        db.prepare(`UPDATE commands SET ${updates.join(', ')} WHERE id = @id`).run(params);
+        return db.prepare<{ id: string }, Command>(`SELECT * FROM commands WHERE id = @id`).get({ id });
+      },
+
+      delete: (id: string) => {
+        db.prepare(`DELETE FROM commands WHERE id = @id`).run({ id });
       },
     },
 

@@ -261,6 +261,17 @@ export interface Rule {
   updated_at: string;
 }
 
+export interface Command {
+  id: string;
+  project_id: string;
+  branch: string | null;
+  name: string;
+  content: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DiffLine {
   type: 'context' | 'add' | 'delete';
   content: string;
@@ -940,6 +951,63 @@ export const api = {
 
   async deleteRule(id: string): Promise<void> {
     const res = await authFetch(`${getApiBase()}/api/rules/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+  },
+
+  async getCommands(projectId: string, branch: string | null): Promise<Command[]> {
+    const params = new URLSearchParams();
+    if (branch) params.set("branch", branch);
+    const qs = params.toString();
+    const res = await authFetch(`${getApiBase()}/api/projects/${projectId}/commands${qs ? `?${qs}` : ""}`);
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.commands;
+  },
+
+  async createCommand(
+    projectId: string,
+    opts: { branch: string | null; name: string; content: string }
+  ): Promise<Command> {
+    const res = await authFetch(`${getApiBase()}/api/projects/${projectId}/commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.command;
+  },
+
+  async updateCommand(
+    id: string,
+    opts: { name?: string; content?: string; position?: number }
+  ): Promise<Command> {
+    const res = await authFetch(`${getApiBase()}/api/commands/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error);
+    }
+    const data = await res.json();
+    return data.command;
+  },
+
+  async deleteCommand(id: string): Promise<void> {
+    const res = await authFetch(`${getApiBase()}/api/commands/${id}`, {
       method: "DELETE",
     });
     if (!res.ok) {

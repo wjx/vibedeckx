@@ -121,6 +121,17 @@ export interface Rule {
   updated_at: string;
 }
 
+export interface Command {
+  id: string;
+  project_id: string;
+  branch: string | null;
+  name: string;
+  content: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AgentSessionStatus = 'running' | 'stopped' | 'error';
 
 export interface AgentSession {
@@ -256,6 +267,13 @@ export interface Storage {
     update: (id: string, opts: { name?: string; content?: string; enabled?: boolean; position?: number }) => Rule | undefined;
     delete: (id: string) => void;
     reorder: (projectId: string, branch: string | null, orderedIds: string[]) => void;
+  };
+  commands: {
+    create: (opts: { id: string; project_id: string; branch: string | null; name: string; content: string }) => Command;
+    getByWorkspace: (projectId: string, branch: string | null) => Command[];
+    getById: (id: string) => Command | undefined;
+    update: (id: string, opts: { name?: string; content?: string; position?: number }) => Command | undefined;
+    delete: (id: string) => void;
   };
   close: () => void;
 }

@@ -3,18 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { RulesList } from "@/components/rules/rules-list";
 import type { RulesListHandle } from "@/components/rules/rules-list";
+import { CommandsList } from "@/components/commands/commands-list";
+import type { CommandsListHandle } from "@/components/commands/commands-list";
 import { Button } from "@/components/ui/button";
 import { Check, Pencil, Plus } from "lucide-react";
-import type { Rule, Task } from "@/lib/api";
+import type { Rule, Command, Task } from "@/lib/api";
 
-type Tab = "task" | "rules";
+type Tab = "task" | "rules" | "commands";
 
 interface WorkspaceTabsProps {
   assignedTask: Task | null;
   rules: Rule[];
+  commands: Command[];
   onCreateRule: (opts: { name: string; content: string; enabled?: boolean }) => Promise<Rule | null>;
   onUpdateRule: (id: string, opts: { name?: string; content?: string; enabled?: boolean }) => Promise<Rule | null>;
   onDeleteRule: (id: string) => Promise<void>;
+  onCreateCommand: (opts: { name: string; content: string }) => Promise<Command | null>;
+  onUpdateCommand: (id: string, opts: { name?: string; content?: string }) => Promise<Command | null>;
+  onDeleteCommand: (id: string) => Promise<void>;
+  onExecuteCommand: (content: string) => void;
   onUpdateTaskTitle?: (taskId: string, title: string) => void;
   onCompleteTask?: (taskId: string) => void;
 }
@@ -22,14 +29,20 @@ interface WorkspaceTabsProps {
 export function WorkspaceTabs({
   assignedTask,
   rules,
+  commands,
   onCreateRule,
   onUpdateRule,
   onDeleteRule,
+  onCreateCommand,
+  onUpdateCommand,
+  onDeleteCommand,
+  onExecuteCommand,
   onUpdateTaskTitle,
   onCompleteTask,
 }: WorkspaceTabsProps) {
   const [activeTab, setActiveTab] = useState<Tab>("task");
   const rulesListRef = useRef<RulesListHandle>(null);
+  const commandsListRef = useRef<CommandsListHandle>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +100,16 @@ export function WorkspaceTabs({
         >
           Rules
         </button>
+        <button
+          onClick={() => setActiveTab("commands")}
+          className={`text-xs font-medium pb-1 border-b-2 transition-colors ${
+            activeTab === "commands"
+              ? "text-foreground border-foreground"
+              : "text-muted-foreground border-transparent hover:text-foreground/70"
+          }`}
+        >
+          Commands
+        </button>
         {/* Right-side action buttons — always rendered for consistent height */}
         <div className="flex items-center gap-1 ml-auto">
           {activeTab === "task" && assignedTask ? (
@@ -117,6 +140,16 @@ export function WorkspaceTabs({
               className="h-6 w-6"
               onClick={() => rulesListRef.current?.openAdd()}
               title="Add rule"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          ) : activeTab === "commands" ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-6 w-6"
+              onClick={() => commandsListRef.current?.openAdd()}
+              title="Add command"
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
@@ -167,6 +200,17 @@ export function WorkspaceTabs({
             onCreateRule={onCreateRule}
             onUpdateRule={onUpdateRule}
             onDeleteRule={onDeleteRule}
+          />
+        </div>
+        <div className={activeTab !== "commands" ? "invisible" : undefined}>
+          <CommandsList
+            ref={commandsListRef}
+            hideHeader
+            commands={commands}
+            onCreateCommand={onCreateCommand}
+            onUpdateCommand={onUpdateCommand}
+            onDeleteCommand={onDeleteCommand}
+            onExecuteCommand={onExecuteCommand}
           />
         </div>
       </div>

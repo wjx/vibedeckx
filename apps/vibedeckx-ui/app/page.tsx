@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useTransition } from 'react';
 import { WorkspaceTabs } from '@/components/workspace/workspace-tabs';
 import { useRules } from '@/hooks/use-rules';
+import { useCommands } from '@/hooks/use-commands';
 import { ProjectInfoView } from '@/components/project/project-info-view';
 import { useProjects } from '@/hooks/use-projects';
 import { useWorktrees } from '@/hooks/use-worktrees';
@@ -17,7 +18,7 @@ import { DeleteWorktreeDialog } from '@/components/project/delete-worktree-dialo
 import { UserMenu } from '@/components/auth/user-menu';
 import { RightPanel } from '@/components/right-panel';
 import { AgentConversation, AgentConversationHandle } from '@/components/agent';
-import { MainConversation } from '@/components/conversation';
+import { MainConversation, type MainConversationHandle } from '@/components/conversation';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { AppSidebar, type ActiveView } from '@/components/layout';
 import { TasksView } from '@/components/task';
@@ -75,6 +76,8 @@ export default function Home() {
   const { tasks, loading: tasksLoading, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks(currentProject?.id ?? null);
   const { statuses: sessionStatuses, refetch: refetchSessionStatuses } = useSessionStatuses(currentProject?.id ?? null);
   const { rules, createRule, updateRule, deleteRule } = useRules(currentProject?.id ?? null, selectedBranch);
+  const { commands, createCommand, updateCommand, deleteCommand } = useCommands(currentProject?.id ?? null, selectedBranch);
+  const mainChatRef = useRef<MainConversationHandle>(null);
 
   // Per-branch real-time workspace statuses, set directly from events.
   // Persists across branch switches so switching away doesn't lose status.
@@ -191,6 +194,10 @@ export default function Home() {
     }
   }, [currentProject, updateProject]);
 
+  const handleExecuteCommand = useCallback((content: string) => {
+    mainChatRef.current?.sendMessage(content);
+  }, []);
+
   const handleMergeRequest = useCallback(() => {
     const prompt = `Please perform the following git operations for this worktree:
 
@@ -292,9 +299,14 @@ Please proceed step by step and let me know if there are any issues or conflicts
                       <WorkspaceTabs
                         assignedTask={assignedTask}
                         rules={rules}
+                        commands={commands}
                         onCreateRule={createRule}
                         onUpdateRule={updateRule}
                         onDeleteRule={deleteRule}
+                        onCreateCommand={createCommand}
+                        onUpdateCommand={updateCommand}
+                        onDeleteCommand={deleteCommand}
+                        onExecuteCommand={handleExecuteCommand}
                         onUpdateTaskTitle={(id, title) => updateTask(id, { title })}
                         onCompleteTask={(id) => {
                           updateTask(id, { status: "done", assigned_branch: null });
@@ -304,7 +316,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                     </div>
                   )}
                   <div className="flex-1 overflow-hidden">
-                    <MainConversation projectId={currentProject?.id ?? null} branch={selectedBranch} />
+                    <MainConversation ref={mainChatRef} projectId={currentProject?.id ?? null} branch={selectedBranch} />
                   </div>
                 </div>
               </ResizablePanel>

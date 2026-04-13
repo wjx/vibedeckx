@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, forwardRef, useImperativeHandle } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -37,12 +37,16 @@ function getToolLabel(tool: string): string {
   }
 }
 
+export interface MainConversationHandle {
+  sendMessage: (text: string) => Promise<void>;
+}
+
 interface MainConversationProps {
   projectId: string | null;
   branch: string | null;
 }
 
-export function MainConversation({ projectId, branch }: MainConversationProps) {
+export const MainConversation = forwardRef<MainConversationHandle, MainConversationProps>(function MainConversation({ projectId, branch }, ref) {
   const {
     session,
     messages,
@@ -54,6 +58,14 @@ export function MainConversation({ projectId, branch }: MainConversationProps) {
     stopGeneration,
     restartSession,
   } = useChatSession(projectId, branch);
+
+  useImperativeHandle(ref, () => ({
+    sendMessage: async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      await sendMessage(trimmed);
+    },
+  }), [sendMessage]);
 
   const [inputValue, setInputValue] = useState("");
   const [eventListeningEnabled, setEventListeningEnabled] = useState(false);
@@ -261,4 +273,4 @@ export function MainConversation({ projectId, branch }: MainConversationProps) {
       </div>
     </div>
   );
-}
+});
