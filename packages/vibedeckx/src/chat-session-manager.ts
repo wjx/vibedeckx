@@ -844,6 +844,7 @@ export class ChatSessionManager {
   private getSystemPrompt(projectId: string, branch: string | null): string {
     const lines = [
       "You are a helpful assistant for a software development workspace.",
+      "CRITICAL RULE: Every action you take MUST be an actual tool invocation. Writing text like 'I'll run X' or 'I've started X' does NOT execute anything — only a tool_use block does. If you need to perform an action, invoke the tool. If you cannot invoke the tool right now, say so honestly instead of pretending you did. Never narrate a tool call without actually making it. Violating this rule means the action silently fails while you falsely report success.",
       "You can check the status of running executors (dev servers, build processes, etc.) using the getExecutorStatus tool.",
       "You can start executors using the runExecutor tool and stop them using the stopExecutor tool.",
       "When the user asks about running processes, errors, build status, or dev server status, use the getExecutorStatus tool.",
@@ -875,7 +876,7 @@ export class ChatSessionManager {
       })(),
       "You can view the coding agent's conversation history using the getAgentConversation tool.",
       "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
-      "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. IMPORTANT: If a rule says to run an executor, you MUST call the runExecutor tool every time — even if that same executor was already run earlier in this session. Never skip the tool call or claim you started an executor without actually calling runExecutor. Each rule match requires a new tool invocation. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
+      "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. IMPORTANT: If a rule says to run an executor, you MUST call the runExecutor tool every time — even if that same executor was already run earlier in this session. Never skip the tool call or claim you started an executor without actually calling runExecutor. Each rule match requires a new tool invocation. When a rule requires multiple sequential actions (e.g. run A then B then C), invoke each tool one at a time — do not narrate future steps, just invoke the next tool. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
       "You can list active terminal sessions using the listTerminals tool.",
       "You can send commands to a terminal using the runInTerminal tool. The command runs visibly in the user's terminal and returns immediately.",
       "After sending a command, terminal output will arrive as a [Terminal Event] message once the command finishes. Wait for it before commenting on results.",
