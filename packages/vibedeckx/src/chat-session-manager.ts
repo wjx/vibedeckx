@@ -748,6 +748,8 @@ export class ChatSessionManager {
               tailOutput,
             });
           }
+          this.remoteExecutorMap.delete(localProcessId);
+          this.storage.remoteExecutorProcesses.delete(localProcessId);
           cleanup();
         }
       } catch { /* ignore parse errors */ }
