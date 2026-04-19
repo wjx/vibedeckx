@@ -58,6 +58,19 @@ export default function Home() {
     window.history.replaceState(null, '', url.toString());
   }, []);
 
+  // Keep urlSessionId in sync with browser back/forward navigation. replaceState
+  // doesn't fire popstate, but a pushState elsewhere + browser back could leave
+  // the URL showing ?session=<A> while React state still holds <B>.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPop = () => {
+      const next = new URLSearchParams(window.location.search).get('session');
+      setUrlSessionIdState(next);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   // Redirect legacy ?project= URLs to new path format
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

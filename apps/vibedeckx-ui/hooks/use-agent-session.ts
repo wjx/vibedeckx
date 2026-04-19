@@ -842,6 +842,17 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         session?.permissionMode,
         overrideAgentType ?? session?.agentType ?? agentType
       );
+      // Proactively clear UI so the stale old conversation doesn't render during the
+      // one-frame gap between this return and the reset effect firing on sessionId
+      // change. Mirrors the clears in the projectId/branch/agentMode/explicitSessionId
+      // reset effect (minus isLoading, which the finally block handles).
+      setSession(null);
+      setStatus("stopped");
+      setIsInitialized(false);
+      setError(null);
+      setRemoteStatus(null);
+      setMessages([]);
+      containerRef.current = { entries: [], status: "stopped" };
       return data.session.id;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Failed to start new conversation";
