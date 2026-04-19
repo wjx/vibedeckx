@@ -1246,15 +1246,10 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
     agentSessions: {
       create: ({ id, project_id, branch, permission_mode, agent_type }) => {
-        // Delete any existing session for this branch (one-to-one binding)
         db.prepare(
-          `DELETE FROM agent_sessions WHERE project_id = @project_id AND branch = @branch`
-        ).run({ project_id, branch });
-
-        db.prepare(
-          `INSERT INTO agent_sessions (id, project_id, branch, status, permission_mode, agent_type) VALUES (@id, @project_id, @branch, 'running', @permission_mode, @agent_type)`
+          `INSERT INTO agent_sessions (id, project_id, branch, status, permission_mode, agent_type)
+           VALUES (@id, @project_id, @branch, 'running', @permission_mode, @agent_type)`
         ).run({ id, project_id, branch, permission_mode: permission_mode ?? 'edit', agent_type: agent_type ?? 'claude-code' });
-
         return db
           .prepare<{ id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE id = @id`)
           .get({ id })!;
@@ -1262,7 +1257,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       getAll: () => {
         return db
-          .prepare<{}, AgentSession>(`SELECT * FROM agent_sessions ORDER BY created_at DESC`)
+          .prepare<{}, AgentSession>(`SELECT * FROM agent_sessions ORDER BY updated_at DESC`)
           .all({});
       },
 
@@ -1274,28 +1269,60 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       getByProjectId: (projectId: string) => {
         return db
-          .prepare<{ project_id: string }, AgentSession>(`SELECT * FROM agent_sessions WHERE project_id = @project_id ORDER BY created_at DESC`)
+          .prepare<{ project_id: string }, AgentSession>(
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id ORDER BY updated_at DESC`
+          )
           .all({ project_id: projectId });
       },
 
       getByBranch: (projectId: string, branch: string) => {
         return db
           .prepare<{ project_id: string; branch: string }, AgentSession>(
-            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch`
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch
+             ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get({ project_id: projectId, branch });
+      },
+
+      listByBranch: (projectId: string, branch: string) => {
+        return db
+          .prepare<{ project_id: string; branch: string }, AgentSession>(
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch
+             ORDER BY updated_at DESC`
+          )
+          .all({ project_id: projectId, branch });
+      },
+
+      getLatestByBranch: (projectId: string, branch: string) => {
+        return db
+          .prepare<{ project_id: string; branch: string }, AgentSession>(
+            `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch
+             ORDER BY updated_at DESC LIMIT 1`
           )
           .get({ project_id: projectId, branch });
       },
 
       updateStatus: (id: string, status: AgentSessionStatus) => {
         db.prepare(
-          `UPDATE agent_sessions SET status = @status WHERE id = @id`
+          `UPDATE agent_sessions SET status = @status, updated_at = CURRENT_TIMESTAMP WHERE id = @id`
         ).run({ id, status });
       },
 
       updatePermissionMode: (id: string, mode: string) => {
         db.prepare(
-          `UPDATE agent_sessions SET permission_mode = @mode WHERE id = @id`
+          `UPDATE agent_sessions SET permission_mode = @mode, updated_at = CURRENT_TIMESTAMP WHERE id = @id`
         ).run({ id, mode });
+      },
+
+      updateTitle: (id: string, title: string | null) => {
+        db.prepare(
+          `UPDATE agent_sessions SET title = @title, updated_at = CURRENT_TIMESTAMP WHERE id = @id`
+        ).run({ id, title });
+      },
+
+      touchUpdatedAt: (id: string) => {
+        db.prepare(`UPDATE agent_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = @id`)
+          .run({ id });
       },
 
       delete: (id: string) => {
@@ -1312,16 +1339,14 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       getEntries: (sessionId: string) => {
         return db
-          .prepare<{ session_id: string }, { entry_index: number; data: string }>(
-            `SELECT entry_index, data FROM agent_session_entries WHERE session_id = @session_id ORDER BY entry_index ASC`
+          .prepare<{ sid: string }, { entry_index: number; data: string }>(
+            `SELECT entry_index, data FROM agent_session_entries WHERE session_id = @sid ORDER BY entry_index ASC`
           )
-          .all({ session_id: sessionId });
+          .all({ sid: sessionId });
       },
 
       deleteEntries: (sessionId: string) => {
-        db.prepare(
-          `DELETE FROM agent_session_entries WHERE session_id = @session_id`
-        ).run({ session_id: sessionId });
+        db.prepare(`DELETE FROM agent_session_entries WHERE session_id = @id`).run({ id: sessionId });
       },
     },
 

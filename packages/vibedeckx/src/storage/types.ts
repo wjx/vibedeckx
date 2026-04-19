@@ -141,7 +141,9 @@ export interface AgentSession {
   status: AgentSessionStatus;
   permission_mode?: string;
   agent_type?: string;
+  title?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Storage {
@@ -239,9 +241,14 @@ export interface Storage {
     getAll: () => AgentSession[];
     getById: (id: string) => AgentSession | undefined;
     getByProjectId: (projectId: string) => AgentSession[];
+    /** @deprecated — use listByBranch + getLatestByBranch */
     getByBranch: (projectId: string, branch: string) => AgentSession | undefined;
+    listByBranch: (projectId: string, branch: string) => AgentSession[];
+    getLatestByBranch: (projectId: string, branch: string) => AgentSession | undefined;
     updateStatus: (id: string, status: AgentSessionStatus) => void;
     updatePermissionMode: (id: string, mode: string) => void;
+    updateTitle: (id: string, title: string | null) => void;
+    touchUpdatedAt: (id: string) => void;
     delete: (id: string) => void;
     upsertEntry: (sessionId: string, entryIndex: number, data: string) => void;
     getEntries: (sessionId: string) => Array<{ entry_index: number; data: string }>;
