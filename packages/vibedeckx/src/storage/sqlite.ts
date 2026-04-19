@@ -80,9 +80,13 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       branch TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'running',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(project_id, branch),
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_branch
+      ON agent_sessions(project_id, branch);
+    CREATE INDEX IF NOT EXISTS idx_agent_sessions_updated_at
+      ON agent_sessions(updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
@@ -286,6 +290,36 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
   // Migration: add agent_type column to agent_sessions
   if (!sessionInfo2.some(col => col.name === "agent_type")) {
     db.exec("ALTER TABLE agent_sessions ADD COLUMN agent_type TEXT DEFAULT 'claude-code'");
+  }
+
+  // Migration: drop UNIQUE(project_id, branch) on agent_sessions (multi-session support)
+  const sessionInfoV3 = db.prepare("PRAGMA table_info(agent_sessions)").all() as { name: string }[];
+  const hasUpdatedAtColumn = sessionInfoV3.some(col => col.name === "updated_at");
+  if (!hasUpdatedAtColumn) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE agent_sessions_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        branch TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'running',
+        permission_mode TEXT DEFAULT 'edit',
+        agent_type TEXT DEFAULT 'claude-code',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      );
+      INSERT INTO agent_sessions_new (id, project_id, branch, status, permission_mode, agent_type, created_at, updated_at)
+        SELECT id, project_id, branch, status, permission_mode, agent_type, created_at, created_at
+        FROM agent_sessions;
+      DROP TABLE agent_sessions;
+      ALTER TABLE agent_sessions_new RENAME TO agent_sessions;
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_branch
+        ON agent_sessions(project_id, branch);
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_updated_at
+        ON agent_sessions(updated_at DESC);
+      COMMIT;
+    `);
   }
 
   // Migration: add pid column to executor_processes
