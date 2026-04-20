@@ -197,15 +197,34 @@ export default function Home() {
     }
   }, [worktrees, worktreesLoading, selectedBranch]);
 
+  // Track previous (projectId, branch) so we can detect switches.
+  // sessionId is scoped to one (projectId, branch); on switch we must drop it,
+  // otherwise the Agent hook would keep loading the prior workspace's session
+  // into the new one (cross-workspace content bleed).
+  const prevBranchRef = useRef(selectedBranch);
+  const prevProjectIdRef = useRef(currentProject?.id);
+
   // Sync state to URL
   useEffect(() => {
     if (projectsLoading) return;
+
+    const branchChanged = prevBranchRef.current !== selectedBranch;
+    const projectChanged = prevProjectIdRef.current !== currentProject?.id;
+    prevBranchRef.current = selectedBranch;
+    prevProjectIdRef.current = currentProject?.id;
+
+    if ((branchChanged || projectChanged) && urlSessionId) {
+      // Clearing state re-triggers this effect; the URL update happens there.
+      setSessionUrlParam(null);
+      return;
+    }
+
     const url = buildUrl({
       projectId: currentProject?.id,
       tab: activeView,
       branch: selectedBranch,
     });
-    // Preserve ?session=<id> on path/branch/tab changes (buildUrl only knows about branch param)
+    // Preserve ?session=<id> on tab changes within the same (projectId, branch).
     if (urlSessionId) {
       const u = new URL(url, window.location.origin);
       u.searchParams.set('session', urlSessionId);
@@ -213,7 +232,7 @@ export default function Home() {
     } else {
       window.history.replaceState(null, '', url);
     }
-  }, [currentProject?.id, activeView, selectedBranch, projectsLoading, urlSessionId]);
+  }, [currentProject?.id, activeView, selectedBranch, projectsLoading, urlSessionId, setSessionUrlParam]);
 
   const handleWorktreeCreated = useCallback((branch: string) => {
     refetchWorktrees();
