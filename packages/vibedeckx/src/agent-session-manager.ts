@@ -879,15 +879,35 @@ export class AgentSessionManager {
 
   /**
    * Delete a session (stop and remove)
+   *
+   * Steps (in order):
+   * 1. stopSession — kills the process and transitions to dormant (no-op if already stopped)
+   * 2. deleteEntries — clear entry rows from DB (skipped for remote sessions)
+   * 3. delete — delete the session row from DB (skipped for remote sessions)
+   * 4. sessions.delete — remove from in-memory map
+   * 5. broadcastRaw({finished: true}) — signal lingering subscribers to disconnect cleanly
    */
   deleteSession(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
-    if (session) {
-      getProvider(session.agentType).onSessionDestroyed?.(sessionId);
+    if (!session) {
+      return false;
     }
+    getProvider(session.agentType).onSessionDestroyed?.(sessionId);
+
+    // 1. Stop the process (safe if already stopped/dormant)
     this.stopSession(sessionId);
+
+    // 2-3. Clear DB rows (skip for remote path-based sessions)
+    if (!session.skipDb) {
+      this.storage.agentSessions.deleteEntries(sessionId);
+      this.storage.agentSessions.delete(sessionId);
+    }
+
+    // 4. Remove from in-memory map
     this.sessions.delete(sessionId);
-    if (!session?.skipDb) this.storage.agentSessions.delete(sessionId);
+
+    // 5. Signal terminal state so lingering subscribers stop reconnecting
+    this.broadcastRaw(sessionId, { finished: true });
     return true;
   }
 
