@@ -775,6 +775,35 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(200).send({ success: true });
     }
   );
+
+  fastify.patch<{
+    Params: { sessionId: string };
+    Body: { title: string | null };
+  }>("/api/agent-sessions/:sessionId/title", async (req, reply) => {
+    const { title } = req.body;
+    if (title !== null && (typeof title !== "string" || title.length > 200)) {
+      return reply.code(400).send({ error: "title must be null or a string up to 200 chars" });
+    }
+
+    if (req.params.sessionId.startsWith("remote-")) {
+      const remoteInfo = fastify.remoteSessionMap.get(req.params.sessionId);
+      if (!remoteInfo) return reply.code(404).send({ error: "Remote session not found" });
+      const result = await proxyAuto(
+        remoteInfo.remoteServerId,
+        remoteInfo.remoteUrl,
+        remoteInfo.remoteApiKey,
+        "PATCH",
+        `/api/agent-sessions/${remoteInfo.remoteSessionId}/title`,
+        { title }
+      );
+      return reply.code(result.status || 200).send(result.data);
+    }
+
+    const session = fastify.storage.agentSessions.getById(req.params.sessionId);
+    if (!session) return reply.code(404).send({ error: "Session not found" });
+    fastify.storage.agentSessions.updateTitle(req.params.sessionId, title);
+    return reply.code(200).send({ success: true, title });
+  });
 };
 
 export default fp(routes, { name: "agent-session-routes" });
