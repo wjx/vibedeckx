@@ -22,7 +22,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Loader } from "@/components/ai-elements/loader";
-import { Bot, Square, AlertCircle, Wifi, WifiOff, RotateCcw, Monitor, Cloud, Languages, X, Loader2, ChevronDown } from "lucide-react";
+import { Bot, Square, AlertCircle, Wifi, WifiOff, SquarePen, Monitor, Cloud, Languages, X, Loader2, ChevronDown } from "lucide-react";
 import { ExecutionModeToggle, type ExecutionModeTarget } from "@/components/ui/execution-mode-toggle";
 import {
   DropdownMenu,
@@ -405,7 +405,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               className="h-7 w-7"
               title="New Conversation"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <SquarePen className="h-3.5 w-3.5" />
             </Button>
             {session.status === "running" && (
               <Button

@@ -17,7 +17,7 @@ import {
   MessageResponse,
 } from "@/components/ai-elements/message";
 import { useChatSession } from "@/hooks/use-chat-session";
-import { MessageSquare, Loader2, Square, Search, Radio, RotateCcw } from "lucide-react";
+import { MessageSquare, Loader2, Square, Search, Radio, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -140,7 +140,7 @@ export const MainConversation = forwardRef<MainConversationHandle, MainConversat
               className="h-7 w-7"
               title="New Conversation"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <SquarePen className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}
