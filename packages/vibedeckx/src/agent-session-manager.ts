@@ -641,6 +641,22 @@ export class AgentSessionManager {
     try {
       this.storage.agentSessions.upsertEntry(session.id, index, JSON.stringify(message));
       this.storage.agentSessions.touchUpdatedAt(session.id);
+      if (message.type === "user") {
+        const dbRow = this.storage.agentSessions.getById(session.id);
+        if (dbRow && (dbRow.title === null || dbRow.title === undefined)) {
+          const text = typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((p: ContentPart) => p.type === "text")
+                .map((p) => (p as { text: string }).text)
+                .join(" ");
+          const trimmed = text.trim();
+          const snippet = trimmed.slice(0, 60) + (trimmed.length > 60 ? "…" : "");
+          if (snippet.length > 0) {
+            this.storage.agentSessions.updateTitle(session.id, snippet);
+          }
+        }
+      }
     } catch (error) {
       console.error(`[AgentSession] Failed to persist entry ${index}:`, error);
     }

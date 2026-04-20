@@ -432,6 +432,14 @@ export async function renameSession(sessionId: string, title: string | null): Pr
   if (!res.ok) throw new Error(`renameSession failed: ${res.status}`);
 }
 
+// Delete an agent session
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await authFetch(`${getApiBase()}/api/agent-sessions/${sessionId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`);
+}
+
 export const api = {
   async getConfig(): Promise<AppConfig> {
     if (_cachedConfig) return _cachedConfig;

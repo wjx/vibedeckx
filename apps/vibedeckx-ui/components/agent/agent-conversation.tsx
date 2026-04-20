@@ -37,9 +37,10 @@ import { useInputHistory } from "@/hooks/use-input-history";
 import { useWorkspaceDraft } from "@/hooks/use-workspace-draft";
 import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
-import { getAgentProviders, translateText } from "@/lib/api";
+import { getAgentProviders, translateText, listBranchSessions } from "@/lib/api";
 import { toast } from "sonner";
 import { UserInputMarkers } from "./user-input-markers";
+import { SessionHistoryDropdown } from "./session-history-dropdown";
 
 /** Only renders the attachment header when there are files attached */
 function AttachmentHeader() {
@@ -370,6 +371,25 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         </div>
         {session && (
           <div className="flex items-center gap-1">
+            {projectId && (
+              <SessionHistoryDropdown
+                projectId={projectId}
+                branch={branch}
+                currentSessionId={session?.id ?? null}
+                onSwitch={(id) => {
+                  setSessionUrlParam?.(id);
+                }}
+                onDelete={(id) => {
+                  if (id === session?.id) {
+                    // Current was deleted — redirect to most-recent remaining, or clear URL
+                    void listBranchSessions(projectId, branch).then((res) => {
+                      const next = res.sessions.find((s) => s.id !== id);
+                      setSessionUrlParam?.(next ? next.id : null);
+                    });
+                  }
+                }}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
