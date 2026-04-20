@@ -1315,7 +1315,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return db
           .prepare<{ project_id: string; branch: string }, AgentSession>(
             `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch
-             ORDER BY updated_at DESC`
+             ORDER BY updated_at DESC, created_at DESC`
           )
           .all({ project_id: projectId, branch });
       },
