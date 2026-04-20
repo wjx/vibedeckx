@@ -52,6 +52,12 @@ export function SessionHistoryDropdown({
     if (open) void refresh();
   }, [open, refresh]);
 
+  // Also fetch on mount / whenever the workspace or current session changes, so
+  // the trigger button can show the current session's label (not just "History").
+  useEffect(() => {
+    void refresh();
+  }, [refresh, currentSessionId]);
+
   const handleRename = async (id: string, next: string) => {
     const title = next.trim().length > 0 ? next.trim() : null;
     try {
@@ -86,11 +92,20 @@ export function SessionHistoryDropdown({
       : new Date(s.created_at).toLocaleString();
   };
 
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const triggerLabel = currentSession ? label(currentSession) : "History";
+
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-          History <ChevronDown className="h-3 w-3" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1 max-w-[200px]"
+          title={triggerLabel}
+        >
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown className="h-3 w-3 flex-shrink-0" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80 max-h-96 overflow-y-auto">
