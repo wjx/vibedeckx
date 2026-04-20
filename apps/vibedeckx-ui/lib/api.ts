@@ -422,6 +422,16 @@ export async function createNewAgentSession(
   return res.json();
 }
 
+// Rename (or clear) the title of an agent session
+export async function renameSession(sessionId: string, title: string | null): Promise<void> {
+  const res = await authFetch(`${getApiBase()}/api/agent-sessions/${sessionId}/title`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`renameSession failed: ${res.status}`);
+}
+
 export const api = {
   async getConfig(): Promise<AppConfig> {
     if (_cachedConfig) return _cachedConfig;
