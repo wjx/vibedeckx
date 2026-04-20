@@ -408,17 +408,16 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             >
               <SquarePen className="h-3.5 w-3.5" />
             </Button>
-            {session.status === "running" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => stopSession()}
-                className="h-7 text-xs"
-              >
-                <Square className="h-3 w-3 mr-1" />
-                Stop
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => stopSession()}
+              disabled={session.status !== "running"}
+              className="h-7 text-xs"
+            >
+              <Square className="h-3 w-3 mr-1" />
+              Stop
+            </Button>
           </div>
         )}
       </div>
