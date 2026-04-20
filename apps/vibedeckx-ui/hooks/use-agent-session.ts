@@ -322,11 +322,24 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const startingRef = useRef(false); // Reentrancy guard for startSession
   const onTaskCompletedRef = useRef(options?.onTaskCompleted);
   const onSessionStartedRef = useRef(options?.onSessionStarted);
+  // connectWebSocket has [] deps so its WS handlers freeze projectId/branch/
+  // explicitSessionId at first render. Reading these via refs ensures cache
+  // invalidation in the handlers targets the CURRENT cache key, not a stale
+  // one (which silently leaked entries and caused a connect/disconnect loop
+  // on "Session not found" — handler deleted a never-existing key, leaving
+  // the real entry behind for the next auto-start to cache-hit on).
+  const projectIdRef = useRef(projectId);
+  const branchRef = useRef(branch);
+  const explicitSessionIdRef = useRef(explicitSessionId);
 
-  // Keep callback refs in sync with latest options (avoids stale closures in WebSocket handler)
+  // Keep callback + identity refs in sync with latest props (avoids stale
+  // closures in WebSocket handler — see comment above).
   useEffect(() => {
     onTaskCompletedRef.current = options?.onTaskCompleted;
     onSessionStartedRef.current = options?.onSessionStarted;
+    projectIdRef.current = projectId;
+    branchRef.current = branch;
+    explicitSessionIdRef.current = explicitSessionId;
   });
 
   // WebSocket reconnection constants
@@ -344,6 +357,18 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
   // Connect WebSocket to session
   const connectWebSocket = useCallback((sessionId: string) => {
+    // Helper: invalidate cache entries for the current workspace context.
+    // Reads identity from refs because connectWebSocket has [] deps and would
+    // otherwise close over stale projectId/branch/explicitSessionId values.
+    const invalidateSessionCache = () => {
+      const pid = projectIdRef.current;
+      if (!pid) return;
+      const br = branchRef.current;
+      sessionCache.delete(getCacheKey(pid, br, explicitSessionIdRef.current));
+      const sid = wsSessionIdRef.current;
+      if (sid) sessionCache.delete(getCacheKey(pid, br, sid));
+    };
+
     // If WS is open/connecting for a DIFFERENT session, close it first
     if (wsRef.current && wsSessionIdRef.current !== sessionId) {
       console.log(`[AgentSession] Closing stale WS for ${wsSessionIdRef.current}, switching to ${sessionId}`);
@@ -410,11 +435,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
             // Invalidate cache when session becomes stopped/error so next startSession does a fresh REST call
             if (containerRef.current.status === "stopped" || containerRef.current.status === "error") {
-              if (projectId) {
-                sessionCache.delete(getCacheKey(projectId, branch, explicitSessionId));
-                const sid = wsSessionIdRef.current;
-                if (sid) sessionCache.delete(getCacheKey(projectId, branch, sid));
-              }
+              invalidateSessionCache();
             }
           }
           return;
@@ -435,11 +456,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         if ("finished" in msg) {
           console.log("[AgentSession] Received finished signal, invalidating cache");
           finishedRef.current = true;
-          if (projectId) {
-            sessionCache.delete(getCacheKey(projectId, branch, explicitSessionId));
-            const sid = wsSessionIdRef.current;
-            if (sid) sessionCache.delete(getCacheKey(projectId, branch, sid));
-          }
+          invalidateSessionCache();
           ws.close(1000, "finished");
           return;
         }
@@ -480,11 +497,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           // If session not found, invalidate cache and clear state so auto-start creates a fresh session
           if (msg.error === "Session not found") {
             console.log("[AgentSession] Session invalid, invalidating cache, will create new session");
-            if (projectId) {
-              sessionCache.delete(getCacheKey(projectId, branch, explicitSessionId));
-              const sid = wsSessionIdRef.current;
-              if (sid) sessionCache.delete(getCacheKey(projectId, branch, sid));
-            }
+            invalidateSessionCache();
             finishedRef.current = true;
             setSession(null);
             setStatus("stopped");
@@ -528,11 +541,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
             return;
           }
           // Invalidate cache so auto-start does a full REST call
-          if (projectId) {
-            sessionCache.delete(getCacheKey(projectId, branch, explicitSessionId));
-            const sid = wsSessionIdRef.current;
-            if (sid) sessionCache.delete(getCacheKey(projectId, branch, sid));
-          }
+          invalidateSessionCache();
           // Clear current session to trigger new session creation
           setSession(null);
           setError(null);
