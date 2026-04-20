@@ -96,6 +96,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
 
       const effectiveStatus = session?.status || "stopped";
 
+      console.log(`[API] /api/path/agent-sessions RESPONSE: sessionId=${sessionId} status=${effectiveStatus} messages.length=${messages.length} (path=${projectPath}, branch=${branch ?? "<null>"}, pseudoProjectId=${pseudoProjectId})`);
+
       return reply.code(200).send({
         session: {
           id: sessionId,
@@ -360,7 +362,12 @@ const routes: FastifyPluginAsync = async (fastify) => {
                 const patch = ConversationPatch.addEntry(i, remoteData.messages[i] as AgentMessage);
                 fastify.remotePatchCache.appendMessage(localSessionId, JSON.stringify({ JsonPatch: patch }), true);
               }
+              console.log(`[API] getOrCreate proxy: seeded cache with ${remoteData.messages.length} msgs for ${localSessionId}`);
+            } else {
+              console.log(`[API] getOrCreate proxy: cache already has ${cacheEntry.messages.length} msgs for ${localSessionId} (remote returned ${remoteData.messages.length}), skipping seed`);
             }
+          } else {
+            console.log(`[API] getOrCreate proxy: remote returned 0 messages for ${localSessionId} — NOT seeding cache. Cache existing size=${fastify.remotePatchCache.getOrCreate(localSessionId).messages.length}`);
           }
 
           return reply.code(200).send({

@@ -596,6 +596,8 @@ const routes: FastifyPluginAsync = async (fastify) => {
           const cache = fastify.remotePatchCache;
           const cacheEntry = cache.getOrCreate(sessionId);
 
+          console.log(`[AgentWS] WS connect: cacheEntry for ${sessionId} has messages.length=${cacheEntry.messages.length} finished=${cacheEntry.finished} remoteWsOpen=${!!cache.getRemoteWs(sessionId)}`);
+
           // --- Phase 1: Replay cached data to this frontend ---
           if (cacheEntry.messages.length > 0) {
             console.log(`[AgentWS] Replaying ${cacheEntry.messages.length} cached msgs for ${sessionId}`);

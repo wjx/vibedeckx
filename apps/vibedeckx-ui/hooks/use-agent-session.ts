@@ -629,7 +629,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         ? await getSessionById(explicitSessionId)
         : await createOrGetSession(projectId, branch, permissionMode, agentType);
 
-      console.log(`[AgentSession] REST response: sessionId=${newSession.id}, msgCount=${initialMessages?.length ?? 0}`);
+      console.log(`[AgentSession] REST response: sessionId=${newSession.id}, msgCount=${initialMessages?.length ?? 0}, status=${newSession.status}, explicitSessionIdRequested=${explicitSessionId ?? "<null>"}`);
 
       // If branch/project changed while the API call was in flight, discard the result
       if (sessionGenerationRef.current !== generation) {

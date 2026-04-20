@@ -80,14 +80,17 @@ export class AgentSessionManager {
     permissionMode: "plan" | "edit" = "edit",
     agentType: AgentType = "claude-code"
   ): string {
+    console.log(`[getOrCreate] ENTER projectId=${projectId} branch=${branch ?? "<null>"} skipDb=${skipDb} sessionsMapSize=${this.sessions.size}`);
     // 1. DB-first resolution (preferred path)
     if (!skipDb) {
       const latestDbRow = this.storage.agentSessions.getLatestByBranch(
         projectId,
         branch ?? ""
       );
+      console.log(`[getOrCreate] DB latestByBranch(${projectId}, ${branch ?? ""}) → ${latestDbRow ? `id=${latestDbRow.id} status=${latestDbRow.status} updatedAt=${latestDbRow.updated_at}` : "NONE"}`);
       if (latestDbRow) {
         const inMemory = this.sessions.get(latestDbRow.id);
+        console.log(`[getOrCreate] inMemory lookup for ${latestDbRow.id} → ${inMemory ? `FOUND (dormant=${inMemory.dormant}, status=${inMemory.status}, entries=${inMemory.store.entries.filter(Boolean).length}, processAlive=${inMemory.process != null && inMemory.process.exitCode === null})` : "NOT FOUND — will fall through to create NEW"}`);
         if (inMemory) {
           return this.reuseExistingSession(inMemory, projectPath, permissionMode);
         }
@@ -103,9 +106,11 @@ export class AgentSessionManager {
       // pseudo-projects don't accumulate many sessions per branch.
       for (const session of this.sessions.values()) {
         if (session.projectId === projectId && session.branch === branch) {
+          console.log(`[getOrCreate] skipDb in-memory match: ${session.id} (entries=${session.store.entries.filter(Boolean).length})`);
           return this.reuseExistingSession(session, projectPath, permissionMode);
         }
       }
+      console.log(`[getOrCreate] skipDb: no in-memory match, will create NEW`);
     }
 
     // Create new session
@@ -249,6 +254,7 @@ export class AgentSessionManager {
     projectPath: string,
     permissionMode: "plan" | "edit"
   ): string {
+    const entriesCount = session.store.entries.filter(Boolean).length;
     if (session.dormant) {
       if (session.permissionMode !== permissionMode) {
         session.permissionMode = permissionMode;
@@ -256,7 +262,7 @@ export class AgentSessionManager {
           this.storage.agentSessions.updatePermissionMode(session.id, permissionMode);
         }
       }
-      console.log(`[AgentSession] Returning dormant session ${session.id}`);
+      console.log(`[AgentSession] Returning dormant session ${session.id} (entries=${entriesCount})`);
       return session.id;
     }
 
@@ -271,12 +277,12 @@ export class AgentSessionManager {
         console.log(`[AgentSession] Session ${session.id} exists with mode ${session.permissionMode}, switching to ${permissionMode}`);
         this.switchMode(session.id, projectPath, permissionMode);
       }
-      console.log(`[AgentSession] Returning existing session ${session.id} (status=${session.status}, processAlive=${processAlive})`);
+      console.log(`[AgentSession] Returning existing session ${session.id} (status=${session.status}, processAlive=${processAlive}, entries=${entriesCount})`);
       return session.id;
     }
 
     // Dead session (process exited, not dormant) — restart so callers always get a running session
-    console.log(`[AgentSession] Session ${session.id} is ${session.status}, restarting`);
+    console.log(`[AgentSession] Session ${session.id} is ${session.status} (entries=${entriesCount} — WILL BE CLEARED), restarting`);
     this.restartSession(session.id, projectPath);
     return session.id;
   }
