@@ -741,7 +741,19 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     }
   }, [session?.id]);
 
-  // Restart session - clears conversation and respawns Claude Code process
+  /**
+   * Restart the current session, optionally switching to a different agent type.
+   *
+   * NOTE: In the multi-session-per-workspace world this is NOT the general
+   * "new conversation" path — use `startNewConversation` for that, which creates
+   * a new sessionId so the old conversation survives as history.
+   *
+   * This is now narrowed to the agent-type dropdown: it keeps the same
+   * sessionId but stops the existing process, clears its entries, and respawns
+   * under the new agent type. Called from `agent-conversation.tsx` when the
+   * user switches between Claude Code and Codex on a session that has not yet
+   * received any messages (the dropdown is disabled otherwise).
+   */
   const restartSession = useCallback(async (agentType?: AgentType) => {
     if (!session?.id) return;
 
