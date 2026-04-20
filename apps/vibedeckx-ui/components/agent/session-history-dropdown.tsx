@@ -122,7 +122,9 @@ export function SessionHistoryDropdown({
                 if (editing) e.preventDefault();
                 else if (!isCurrent) onSwitch(s.id);
               }}
-              className="flex items-center gap-2 group"
+              className={`flex items-center gap-2 group ${
+                isCurrent ? "bg-accent text-accent-foreground" : ""
+              }`}
             >
               <div className="flex-1 min-w-0">
                 {editing ? (
@@ -167,7 +169,6 @@ export function SessionHistoryDropdown({
                         : new Date(s.created_at).toLocaleString()
                     } • ${s.entry_count ?? 0} messages • status: ${s.status}`}
                   >
-                    {isCurrent ? "● " : ""}
                     {label(s)}
                   </div>
                 )}
