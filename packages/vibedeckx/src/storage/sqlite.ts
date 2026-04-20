@@ -79,6 +79,7 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       project_id TEXT NOT NULL,
       branch TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'running',
+      title TEXT DEFAULT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -320,6 +321,12 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
         ON agent_sessions(updated_at DESC);
       COMMIT;
     `);
+  }
+
+  // Migration: add title column to agent_sessions (Phase 2 Task 2.1)
+  const sessionInfoV4 = db.prepare("PRAGMA table_info(agent_sessions)").all() as { name: string }[];
+  if (!sessionInfoV4.some(col => col.name === "title")) {
+    db.exec("ALTER TABLE agent_sessions ADD COLUMN title TEXT DEFAULT NULL");
   }
 
   // Migration: add pid column to executor_processes
