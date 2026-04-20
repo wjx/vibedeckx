@@ -392,6 +392,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
               variant="ghost"
               size="icon"
               onClick={async () => {
+                console.log("[NewConv] click", { liveStatus: status, sessionStatus: session?.status, sessionId: session?.id });
                 if (status === "running") {
                   const ok = window.confirm("Current conversation is running. Stop it and start a new conversation?");
                   if (!ok) return;

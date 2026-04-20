@@ -509,6 +509,7 @@ export class AgentSessionManager {
         break;
 
       case "result":
+        console.log(`[Agent:result] sessionId=${sessionId} subtype=${event.subtype} prevStatus=${session.status}`);
         this.finalizeStreamingEntry(session);
         session.store.currentAssistantIndex = null;
 
@@ -1294,6 +1295,16 @@ export class AgentSessionManager {
    * Broadcast a JSON patch to all subscribers
    */
   private broadcastPatch(sessionId: string, patch: Patch): void {
+    // DEBUG: surface every /status transition — helps localize "dialog still fires"
+    const statusOp = patch.find(p => p.path === "/status");
+    if (statusOp) {
+      const session = this.sessions.get(sessionId);
+      console.log(
+        `[Agent:broadcastPatch] ${sessionId} /status →`,
+        (statusOp.value as { content?: string } | undefined)?.content,
+        `subs=${session?.subscribers.size ?? 0}`,
+      );
+    }
     const msg: AgentWsMessage = { JsonPatch: patch };
     this.broadcastRaw(sessionId, msg);
   }

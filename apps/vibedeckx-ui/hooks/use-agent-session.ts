@@ -265,6 +265,7 @@ function applyPatch(container: PatchContainer, patch: Patch): PatchContainer {
         }
       } else if (path === "/status") {
         if (value?.type === "STATUS") {
+          console.log("[AgentSession] /status patch →", value.content);
           draft.status = value.content;
         }
       }
@@ -431,19 +432,22 @@ export function useAgentSession(projectId: string | null, branch: string | null,
           // During replay, skip React state updates to avoid scroll jump
           if (!isReplayingRef.current) {
             setMessages([...containerRef.current.entries.filter(Boolean)]);
+            console.log("[AgentSession] setStatus(live) →", containerRef.current.status);
             setStatus(containerRef.current.status);
 
             // Invalidate cache when session becomes stopped/error so next startSession does a fresh REST call
             if (containerRef.current.status === "stopped" || containerRef.current.status === "error") {
               invalidateSessionCache();
             }
+          } else {
+            console.log("[AgentSession] /status patch applied during replay (no setStatus), container.status =", containerRef.current.status);
           }
           return;
         }
 
         // Handle Ready signal - history replay complete, flush state
         if ("Ready" in msg) {
-          console.log("[AgentSession] Received Ready signal - history complete");
+          console.log("[AgentSession] Received Ready signal - history complete, status=", containerRef.current.status);
           isReplayingRef.current = false;
           // Flush accumulated state to React in a single update
           setMessages([...containerRef.current.entries.filter(Boolean)]);

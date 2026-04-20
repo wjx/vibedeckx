@@ -116,6 +116,25 @@ function connectPersistentRemoteWs(
     const parsed = tryParseWsMessage(raw);
     if (!parsed) return;
 
+    // DEBUG: trace every message arriving from remote, with status-patch detail
+    const kind = "JsonPatch" in parsed ? "JsonPatch"
+      : "finished" in parsed ? "finished"
+      : "taskCompleted" in parsed ? "taskCompleted"
+      : "Ready" in parsed ? "Ready"
+      : "error" in parsed ? "error"
+      : "other";
+    if (kind === "JsonPatch") {
+      const ops = (parsed as { JsonPatch: Array<{ op: string; path: string; value?: { type?: string; content?: unknown } }> }).JsonPatch;
+      const statusOp = ops.find(o => o.path === "/status");
+      if (statusOp) {
+        console.log(`[AgentWS:remote→local] ${sessionId} /status patch:`, statusOp.value?.content);
+      } else {
+        console.log(`[AgentWS:remote→local] ${sessionId} JsonPatch paths:`, ops.map(o => o.path));
+      }
+    } else {
+      console.log(`[AgentWS:remote→local] ${sessionId} ${kind}`);
+    }
+
     if ("JsonPatch" in parsed) {
       cache.appendMessage(sessionId, raw, true);
       cache.broadcast(sessionId, raw);
