@@ -25,6 +25,30 @@ const sharedServices: FastifyPluginAsync<SharedServicesOptions> = async (fastify
   const remoteExecutorMap = new Map<string, RemoteExecutorInfo>();
 
   const remoteSessionMap = new Map<string, RemoteSessionInfo>();
+
+  // Hydrate remoteSessionMap from the persisted mapping table. URL/api key are
+  // looked up from project_remotes (the authoritative source — no duplication).
+  // Skip rows whose project_remotes row is gone (stale; will be cleaned up the
+  // next time the user explicitly deletes the session).
+  for (const row of opts.storage.remoteSessionMappings.getAll()) {
+    const remote = opts.storage.projectRemotes.getByProjectAndServer(
+      row.project_id,
+      row.remote_server_id,
+    );
+    if (!remote) {
+      console.warn(`[SharedServices] Skipping remote_session_mappings row ${row.local_session_id}: project_remotes(${row.project_id}, ${row.remote_server_id}) not found`);
+      continue;
+    }
+    remoteSessionMap.set(row.local_session_id, {
+      remoteServerId: row.remote_server_id,
+      remoteUrl: remote.server_url ?? "",
+      remoteApiKey: remote.server_api_key || "",
+      remoteSessionId: row.remote_session_id,
+      branch: row.branch ?? null,
+    });
+  }
+  console.log(`[SharedServices] Hydrated ${remoteSessionMap.size} remote session mapping(s) from DB`);
+
   const remotePatchCache = new RemotePatchCache();
   const eventBus = new EventBus();
 

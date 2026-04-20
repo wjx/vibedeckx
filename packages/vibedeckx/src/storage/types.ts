@@ -255,6 +255,11 @@ export interface Storage {
     deleteEntries: (sessionId: string) => void;
     countEntries: () => Array<{ session_id: string; cnt: number }>;
   };
+  remoteSessionMappings: {
+    upsert: (localSessionId: string, projectId: string, remoteServerId: string, remoteSessionId: string, branch: string | null) => void;
+    getAll: () => Array<{ local_session_id: string; project_id: string; remote_server_id: string; remote_session_id: string; branch: string | null }>;
+    delete: (localSessionId: string) => void;
+  };
   settings: {
     get: (key: string) => string | undefined;
     set: (key: string, value: string) => void;

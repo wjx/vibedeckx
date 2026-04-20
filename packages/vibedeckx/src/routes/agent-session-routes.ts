@@ -227,12 +227,27 @@ const routes: FastifyPluginAsync = async (fastify) => {
           console.error("[API] Remote agent-sessions list proxy error:", result.status, result.data);
           return reply.code(result.status || 502).send(result.data);
         }
-        const data = result.data as { sessions: Array<{ id: string; status: string; entry_count?: number; [k: string]: unknown }> };
-        const mapped = data.sessions.map(s => ({
-          ...s,
-          id: `remote-${project.agent_mode}-${project.id}-${s.id}`,
-          entry_count: s.entry_count ?? 0,
-        }));
+        const data = result.data as { sessions: Array<{ id: string; status: string; branch?: string | null; entry_count?: number; [k: string]: unknown }> };
+        const mapped = data.sessions.map(s => {
+          const localSessionId = `remote-${project.agent_mode}-${project.id}-${s.id}`;
+          // Populate remoteSessionMap + persist so the user can navigate to ANY
+          // session in the dropdown (including ones created on the remote
+          // directly or by a previous local-server lifetime), and the mapping
+          // survives restarts.
+          if (!fastify.remoteSessionMap.has(localSessionId)) {
+            fastify.remoteSessionMap.set(localSessionId, {
+              remoteServerId: project.agent_mode,
+              remoteUrl: remoteConfig.server_url ?? "",
+              remoteApiKey: remoteConfig.server_api_key || "",
+              remoteSessionId: s.id,
+              branch: s.branch ?? null,
+            });
+          }
+          fastify.storage.remoteSessionMappings.upsert(
+            localSessionId, project.id, project.agent_mode, s.id, s.branch ?? null,
+          );
+          return { ...s, id: localSessionId, entry_count: s.entry_count ?? 0 };
+        });
         return reply.code(200).send({ sessions: mapped });
       }
 
@@ -334,6 +349,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
             remoteSessionId: remoteData.session.id,
             branch: branch ?? null,
           });
+          fastify.storage.remoteSessionMappings.upsert(
+            localSessionId, project.id, agentMode, remoteData.session.id, branch ?? null,
+          );
 
           // Seed remotePatchCache with REST messages so WS replay has data immediately
           if (remoteData.messages && remoteData.messages.length > 0) {
@@ -441,6 +459,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
             remoteSessionId: remoteData.session.id,
             branch: branch ?? null,
           });
+          fastify.storage.remoteSessionMappings.upsert(
+            localSessionId, project.id, agentMode, remoteData.session.id, branch ?? null,
+          );
 
           // Seed remotePatchCache with REST messages so WS replay has data immediately
           if (remoteData.messages && remoteData.messages.length > 0) {
@@ -826,6 +847,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `/api/agent-sessions/${remoteInfo.remoteSessionId}`
         );
         fastify.remoteSessionMap.delete(req.params.sessionId);
+        fastify.storage.remoteSessionMappings.delete(req.params.sessionId);
         fastify.remotePatchCache.delete(req.params.sessionId);
         return reply.code(result.status || 200).send(result.data);
       }

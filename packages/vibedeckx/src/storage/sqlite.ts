@@ -150,6 +150,19 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       sync_down_config TEXT,
       UNIQUE(project_id, remote_server_id)
     );
+
+    -- Persists the in-memory remoteSessionMap so server restarts don't break
+    -- existing remote-prefixed session URLs. URL/api key are NOT stored here —
+    -- always derived from project_remotes(project_id, remote_server_id) at
+    -- hydration time, so rotating an api key in project_remotes naturally
+    -- propagates without needing to update this table.
+    CREATE TABLE IF NOT EXISTS remote_session_mappings (
+      local_session_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      remote_server_id TEXT NOT NULL,
+      remote_session_id TEXT NOT NULL,
+      branch TEXT
+    );
   `);
 
   // Migration: add pty column to existing executors table if not present
@@ -1367,6 +1380,36 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return db.prepare<{}, { session_id: string; cnt: number }>(
           `SELECT session_id, COUNT(*) as cnt FROM agent_session_entries GROUP BY session_id`
         ).all({});
+      },
+    },
+
+    remoteSessionMappings: {
+      upsert: (localSessionId, projectId, remoteServerId, remoteSessionId, branch) => {
+        db.prepare(
+          `INSERT INTO remote_session_mappings (local_session_id, project_id, remote_server_id, remote_session_id, branch)
+           VALUES (@local_session_id, @project_id, @remote_server_id, @remote_session_id, @branch)
+           ON CONFLICT(local_session_id) DO UPDATE SET
+             project_id = @project_id,
+             remote_server_id = @remote_server_id,
+             remote_session_id = @remote_session_id,
+             branch = @branch`
+        ).run({
+          local_session_id: localSessionId,
+          project_id: projectId,
+          remote_server_id: remoteServerId,
+          remote_session_id: remoteSessionId,
+          branch: branch,
+        });
+      },
+
+      getAll: () => {
+        return db.prepare<{}, { local_session_id: string; project_id: string; remote_server_id: string; remote_session_id: string; branch: string | null }>(
+          `SELECT local_session_id, project_id, remote_server_id, remote_session_id, branch FROM remote_session_mappings`
+        ).all({});
+      },
+
+      delete: (localSessionId: string) => {
+        db.prepare(`DELETE FROM remote_session_mappings WHERE local_session_id = @id`).run({ id: localSessionId });
       },
     },
 
