@@ -237,9 +237,11 @@ export class AgentSessionManager {
   /**
    * Handle reuse of an existing in-memory session found by getOrCreateSession:
    * - dormant: update permission mode if differs (no respawn — wakes lazily)
-   * - running: switchMode if permission mode differs
-   * - dead (status !== "running", not dormant): restart the process so callers
-   *   always get a running session
+   * - running OR process alive (stream-json between-turns: status="stopped"
+   *   but the CLI is still waiting on stdin): switchMode if mode differs,
+   *   leave entries intact
+   * - process actually dead: restart the process so callers always get a
+   *   running session
    * Returns the session id.
    */
   private reuseExistingSession(
@@ -258,16 +260,22 @@ export class AgentSessionManager {
       return session.id;
     }
 
-    if (session.status === "running") {
+    // stream-json CLIs (Claude Code) keep the process alive between turns and
+    // flip status="stopped" via the result-event handler. Treat that state as
+    // "still reusable" — restarting would clear entries and wipe the
+    // conversation. sendUserMessage flips status back to "running" and writes
+    // to stdin on the next turn.
+    const processAlive = session.process != null && session.process.exitCode === null;
+    if (session.status === "running" || processAlive) {
       if (session.permissionMode !== permissionMode) {
         console.log(`[AgentSession] Session ${session.id} exists with mode ${session.permissionMode}, switching to ${permissionMode}`);
         this.switchMode(session.id, projectPath, permissionMode);
       }
-      console.log(`[AgentSession] Returning existing session ${session.id}`);
+      console.log(`[AgentSession] Returning existing session ${session.id} (status=${session.status}, processAlive=${processAlive})`);
       return session.id;
     }
 
-    // Dead session (not dormant, not running) — restart so callers always get a running session
+    // Dead session (process exited, not dormant) — restart so callers always get a running session
     console.log(`[AgentSession] Session ${session.id} is ${session.status}, restarting`);
     this.restartSession(session.id, projectPath);
     return session.id;
