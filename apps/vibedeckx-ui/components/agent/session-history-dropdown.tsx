@@ -24,7 +24,7 @@ interface SessionHistoryDropdownProps {
   branch: string | null;
   currentSessionId: string | null;
   onSwitch: (sessionId: string) => void;
-  onDelete?: (sessionId: string) => void;
+  onDelete?: (sessionId: string, remaining: BranchSessionSummary[]) => void;
 }
 
 export function SessionHistoryDropdown({
@@ -69,8 +69,9 @@ export function SessionHistoryDropdown({
     if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
     try {
       await deleteSession(id);
-      setSessions((prev) => prev.filter((s) => s.id !== id));
-      onDelete?.(id);
+      const remaining = sessions.filter((s) => s.id !== id);
+      setSessions(remaining);
+      onDelete?.(id, remaining);
       toast.success("Deleted");
     } catch (e) {
       toast.error("Delete failed");
@@ -122,6 +123,8 @@ export function SessionHistoryDropdown({
                       className="h-6 text-xs"
                     />
                     <button
+                      type="button"
+                      aria-label="Save rename"
                       onClick={(e) => {
                         e.stopPropagation();
                         void handleRename(s.id, editingValue);
@@ -130,6 +133,8 @@ export function SessionHistoryDropdown({
                       <Check className="h-3 w-3" />
                     </button>
                     <button
+                      type="button"
+                      aria-label="Cancel rename"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingId(null);
@@ -155,6 +160,8 @@ export function SessionHistoryDropdown({
               {!editing && (
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
                   <button
+                    type="button"
+                    aria-label="Rename conversation"
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingId(s.id);
@@ -165,6 +172,8 @@ export function SessionHistoryDropdown({
                     <Pencil className="h-3 w-3" />
                   </button>
                   <button
+                    type="button"
+                    aria-label="Delete conversation"
                     onClick={(e) => {
                       e.stopPropagation();
                       void handleDelete(s.id);

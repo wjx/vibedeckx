@@ -37,7 +37,7 @@ import { useInputHistory } from "@/hooks/use-input-history";
 import { useWorkspaceDraft } from "@/hooks/use-workspace-draft";
 import { useProjectRemotes } from "@/hooks/use-project-remotes";
 import type { Project, ExecutionMode, AgentType, AgentProviderInfo } from "@/lib/api";
-import { getAgentProviders, translateText, listBranchSessions } from "@/lib/api";
+import { getAgentProviders, translateText } from "@/lib/api";
 import { toast } from "sonner";
 import { UserInputMarkers } from "./user-input-markers";
 import { SessionHistoryDropdown } from "./session-history-dropdown";
@@ -379,13 +379,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 onSwitch={(id) => {
                   setSessionUrlParam?.(id);
                 }}
-                onDelete={(id) => {
+                onDelete={(id, remaining) => {
                   if (id === session?.id) {
                     // Current was deleted — redirect to most-recent remaining, or clear URL
-                    void listBranchSessions(projectId, branch).then((res) => {
-                      const next = res.sessions.find((s) => s.id !== id);
-                      setSessionUrlParam?.(next ? next.id : null);
-                    });
+                    const next = remaining[0];  // remaining is already sorted updated_at DESC
+                    setSessionUrlParam?.(next ? next.id : null);
                   }
                 }}
               />
