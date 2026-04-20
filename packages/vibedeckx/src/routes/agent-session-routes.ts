@@ -114,6 +114,36 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // Path-based: list agent sessions by path (optionally filtered by branch).
+  // Used by remote-proxy branch of GET /api/projects/:projectId/agent-sessions.
+  // Resolves project via path — avoids relying on pseudo-project (`path:...`) rows
+  // existing on the remote, which may not be the case if the project was seeded via path.
+  fastify.get<{ Querystring: { path?: string; branch?: string } }>(
+    "/api/path/agent-sessions",
+    async (req, reply) => {
+      const projectPath = req.query.path;
+      if (!projectPath) {
+        return reply.code(400).send({ error: "path is required" });
+      }
+      const existing = fastify.storage.projects.getByPath(projectPath);
+      if (!existing) {
+        // No project registered at that path yet — nothing to list.
+        return reply.code(200).send({ sessions: [] });
+      }
+      const dbSessions = typeof req.query.branch === "string"
+        ? fastify.storage.agentSessions.listByBranch(existing.id, req.query.branch)
+        : fastify.storage.agentSessions.getByProjectId(existing.id);
+
+      const sessions = dbSessions.map(s => {
+        const inMemory = fastify.agentSessionManager.getSession(s.id);
+        if (inMemory) return { ...s, status: inMemory.status };
+        if (s.status === "running") return { ...s, status: "stopped" };
+        return s;
+      });
+      return reply.code(200).send({ sessions });
+    }
+  );
+
   // Path-based: always create a new session (for remote `/new` proxy target)
   fastify.post<{
     Body: { path: string; branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
@@ -171,7 +201,39 @@ const routes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: "Project not found" });
       }
 
-      if (!project.path && project.agent_mode === 'local') {
+      const useRemoteAgent = project.agent_mode !== "local";
+
+      if (useRemoteAgent) {
+        const remoteConfig = fastify.storage.projectRemotes.getByProjectAndServer(project.id, project.agent_mode);
+        if (!remoteConfig) {
+          // Remote misconfigured — return empty so the dropdown just shows nothing rather than 4xx.
+          return reply.code(200).send({ sessions: [] });
+        }
+        const params = new URLSearchParams();
+        params.set("path", remoteConfig.remote_path);
+        if (typeof req.query.branch === "string") {
+          params.set("branch", req.query.branch);
+        }
+        const result = await proxyAuto(
+          project.agent_mode,
+          remoteConfig.server_url ?? "",
+          remoteConfig.server_api_key || "",
+          "GET",
+          `/api/path/agent-sessions?${params.toString()}`
+        );
+        if (!result.ok) {
+          console.error("[API] Remote agent-sessions list proxy error:", result.status, result.data);
+          return reply.code(result.status || 502).send(result.data);
+        }
+        const data = result.data as { sessions: Array<{ id: string; status: string; [k: string]: unknown }> };
+        const mapped = data.sessions.map(s => ({
+          ...s,
+          id: `remote-${project.agent_mode}-${project.id}-${s.id}`,
+        }));
+        return reply.code(200).send({ sessions: mapped });
+      }
+
+      if (!project.path) {
         return reply.code(200).send({ sessions: [] });
       }
 
