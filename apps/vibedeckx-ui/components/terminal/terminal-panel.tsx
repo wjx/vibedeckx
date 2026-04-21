@@ -115,7 +115,7 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center h-10 border-b border-border/60 px-2 gap-1 shrink-0 bg-muted/20">
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             {terminals.map((t) => {
               const isRemote = t.location === "remote" || t.id.startsWith("remote-");
@@ -130,21 +130,21 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
                   key={t.id}
                   onClick={() => setActiveTerminal(t.id)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition-all duration-150",
+                    "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all duration-150 border flex-1 min-w-0 basis-0 max-w-[180px]",
                     activeTerminalId === t.id
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      ? "bg-background text-foreground border-border shadow-sm"
+                      : "text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-background/60 border-border/30 hover:border-border/60"
                   )}
                 >
-                  <TabIcon className="h-3 w-3" />
-                  {t.name}
+                  <TabIcon className="h-3 w-3 shrink-0" />
+                  <span className="truncate flex-1 text-left">{t.name}</span>
                   <span
                     role="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       closeTerminal(t.id);
                     }}
-                    className="ml-1 hover:text-destructive"
+                    className="shrink-0 rounded-sm p-0.5 opacity-60 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                   >
                     <X className="h-3 w-3" />
                   </span>
