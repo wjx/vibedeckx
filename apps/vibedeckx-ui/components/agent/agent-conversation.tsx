@@ -97,7 +97,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const messagesRef = useRef<HTMLDivElement>(null);
-  const inputHistory = useInputHistory(setInput);
+  const inputHistory = useInputHistory(setInput, projectId, branch);
   const { remotes } = useProjectRemotes(project?.id ?? undefined);
 
   // Build execution mode targets from local path + project remotes

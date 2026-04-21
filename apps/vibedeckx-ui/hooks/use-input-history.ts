@@ -1,33 +1,84 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 const MAX_HISTORY = 50;
+const KEY_PREFIX = "vibedeckx:agent-input-history:";
+
+function storageKey(projectId: string | null, branch: string | null): string | null {
+  if (!projectId || !branch) return null;
+  return `${KEY_PREFIX}${projectId}:${branch}`;
+}
+
+function readHistory(key: string | null): string[] {
+  if (!key || typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === "string");
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(key: string | null, history: string[]): void {
+  if (!key || typeof window === "undefined") return;
+  try {
+    if (history.length === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(history));
+  } catch {
+    // ignore quota / privacy-mode errors
+  }
+}
 
 /**
  * Provides terminal-style up/down arrow history navigation for a text input.
  * - ArrowUp (when cursor is at position 0): recalls previous sent message
  * - ArrowDown (when cursor is at end): recalls next sent message or restores draft
+ *
+ * History is scoped per workspace (projectId, branch) and persisted to localStorage.
  */
-export function useInputHistory(setInput: (value: string) => void) {
-  const historyRef = useRef<string[]>([]);
+export function useInputHistory(
+  setInput: (value: string) => void,
+  projectId: string | null,
+  branch: string | null
+) {
+  const currentKey = storageKey(projectId, branch);
+
+  const historyRef = useRef<string[]>(readHistory(currentKey));
   const cursorRef = useRef(-1); // -1 = not navigating history
   const draftRef = useRef(""); // saves current input when history navigation starts
+  const [loadedKey, setLoadedKey] = useState<string | null>(currentKey);
 
-  const push = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const history = historyRef.current;
-    // Skip duplicate of the most recent entry
-    if (history.length > 0 && history[history.length - 1] === trimmed) {
-      cursorRef.current = -1;
-      return;
-    }
-    history.push(trimmed);
-    if (history.length > MAX_HISTORY) {
-      history.shift();
-    }
+  // Reload history during render when the active workspace changes.
+  // Reset navigation state so we don't leak cursor/draft across workspaces.
+  if (loadedKey !== currentKey) {
+    setLoadedKey(currentKey);
+    historyRef.current = readHistory(currentKey);
     cursorRef.current = -1;
-  }, []);
+    draftRef.current = "";
+  }
+
+  const push = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const history = historyRef.current;
+      // Skip duplicate of the most recent entry
+      if (history.length > 0 && history[history.length - 1] === trimmed) {
+        cursorRef.current = -1;
+        return;
+      }
+      history.push(trimmed);
+      if (history.length > MAX_HISTORY) {
+        history.shift();
+      }
+      cursorRef.current = -1;
+      writeHistory(currentKey, history);
+    },
+    [currentKey]
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
