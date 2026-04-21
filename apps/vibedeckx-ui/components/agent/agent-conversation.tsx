@@ -174,10 +174,8 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       if (!session || status !== "running") {
         onStatusChange?.();  // Immediate visual feedback before async session start
         const newSession = await startSession(permissionMode);
-        if (newSession && newSession.status === "running") {
+        if (newSession) {
           sendMessage(content, newSession.id);
-        } else if (newSession) {
-          console.error(`[AgentConversation] Session ${newSession.id} is ${newSession.status}, not sending message`);
         }
       } else {
         sendMessage(content);
@@ -250,10 +248,8 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       onStatusChange?.();
       const newSession = await startSession(permissionMode);
       console.log(`[AgentConversation] handleSubmit: startSession returned`, newSession?.id ?? 'null', newSession?.status);
-      if (newSession && newSession.status === "running") {
+      if (newSession) {
         sendMessage(content, newSession.id);
-      } else if (newSession) {
-        console.error(`[AgentConversation] Session ${newSession.id} is ${newSession.status}, not sending message`);
       }
     } else {
       console.log(`[AgentConversation] handleSubmit: existing session ${session.id}, status=${status}`);
