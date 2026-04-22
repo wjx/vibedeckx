@@ -834,11 +834,17 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const startNewConversation = useCallback(async (overrideAgentType?: AgentType): Promise<string | null> => {
     if (!projectId) return null;
     // Best-effort stop — we don't want to leave an orphan running in the background.
-    if (session?.status === "running" && session.id) {
+    // NOTE: don't guard on status === "running". Between turns, stream-json agents
+    // report status="stopped" while the CLI process is still alive waiting on stdin
+    // (see agent-session-manager.ts around the turn-finished branch). Stopping is
+    // idempotent on the backend, so it's safe to call whenever we have an id.
+    if (session?.id) {
       try {
         await stopSessionApi(session.id);
-      } catch {
-        // Swallow — if stop fails we still want to try creating the new one.
+      } catch (e) {
+        // Don't block creating the new session — but log so we notice if stops
+        // systematically fail (e.g. remoteSessionMap miss after a server restart).
+        console.warn("[AgentSession] startNewConversation: stop of prior session failed:", e);
       }
     }
     setIsLoading(true);

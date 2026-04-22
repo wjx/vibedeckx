@@ -184,6 +184,18 @@ export class AgentSessionManager {
     permissionMode: "plan" | "edit" = "edit",
     agentType: AgentType = "claude-code",
   ): string {
+    // Defense-in-depth: if there's an existing non-dormant session on the same
+    // project+branch, its child process may still be alive (stream-json agents
+    // keep the CLI waiting on stdin between turns while reporting status
+    // "stopped"). Spawning a new process without stopping it would leak the
+    // old one. The frontend is supposed to stop first, but can't reliably tell
+    // from status alone — so we enforce it here.
+    const existing = this.getSessionByBranch(projectId, branch);
+    if (existing && !existing.dormant) {
+      console.log(`[AgentSession] createNewSession: stopping prior session ${existing.id} on same branch to prevent process leak`);
+      this.stopSession(existing.id);
+    }
+
     const sessionId = randomUUID();
     const branchKey = branch ?? "";
 
