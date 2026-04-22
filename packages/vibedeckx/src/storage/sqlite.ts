@@ -1324,7 +1324,7 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
         return db
           .prepare<{ project_id: string; branch: string }, AgentSession>(
             `SELECT * FROM agent_sessions WHERE project_id = @project_id AND branch = @branch
-             ORDER BY updated_at DESC LIMIT 1`
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1`
           )
           .get({ project_id: projectId, branch });
       },
@@ -1332,6 +1332,12 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
       updateStatus: (id: string, status: AgentSessionStatus) => {
         db.prepare(
           `UPDATE agent_sessions SET status = @status, updated_at = CURRENT_TIMESTAMP WHERE id = @id`
+        ).run({ id, status });
+      },
+
+      updateStatusPreservingTimestamp: (id: string, status: AgentSessionStatus) => {
+        db.prepare(
+          `UPDATE agent_sessions SET status = @status WHERE id = @id`
         ).run({ id, status });
       },
 

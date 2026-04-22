@@ -246,6 +246,12 @@ export interface Storage {
     listByBranch: (projectId: string, branch: string) => AgentSession[];
     getLatestByBranch: (projectId: string, branch: string) => AgentSession | undefined;
     updateStatus: (id: string, status: AgentSessionStatus) => void;
+    /**
+     * Update status without touching `updated_at`. Used by startup restore, where
+     * bulk-resetting "running" rows to "stopped" is not a real user-facing event
+     * and must not disturb the ordering used by `getLatestByBranch`.
+     */
+    updateStatusPreservingTimestamp: (id: string, status: AgentSessionStatus) => void;
     updatePermissionMode: (id: string, mode: string) => void;
     updateTitle: (id: string, title: string | null) => void;
     touchUpdatedAt: (id: string) => void;

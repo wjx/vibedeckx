@@ -1293,8 +1293,12 @@ export class AgentSessionManager {
 
       this.sessions.set(dbSession.id, runningSession);
 
-      // Update DB status to stopped (was likely "running" when server crashed)
-      this.storage.agentSessions.updateStatus(dbSession.id, "stopped");
+      // Update DB status to stopped (was likely "running" when server crashed).
+      // Use the timestamp-preserving variant — this is a bulk bookkeeping reset,
+      // not a real status event, and `updateStatus` would rewrite `updated_at`
+      // for every restored row, corrupting the ordering used by
+      // `getLatestByBranch`.
+      this.storage.agentSessions.updateStatusPreservingTimestamp(dbSession.id, "stopped");
 
       restoredCount++;
     }
