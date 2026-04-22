@@ -33,7 +33,33 @@ interface AgentMessageProps {
   messageIndex: number;
 }
 
+function formatTimestamp(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  if (sameDay) return time;
+  const date = d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
+  return `${date} ${time}`;
+}
+
 export function AgentMessageItem({ message, messageIndex }: AgentMessageProps) {
+  const body = renderBody(message, messageIndex);
+  if (!body) return null;
+  return (
+    <div className="group relative">
+      {body}
+      <span className="pointer-events-none absolute right-0 top-3 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        {formatTimestamp(message.timestamp)}
+      </span>
+    </div>
+  );
+}
+
+function renderBody(message: AgentMessage, messageIndex: number) {
   switch (message.type) {
     case "user":
       return <UserMessage content={message.content} />;
