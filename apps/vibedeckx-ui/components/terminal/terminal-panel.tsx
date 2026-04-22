@@ -8,7 +8,6 @@ import { ExecutorOutput } from "@/components/executor/executor-output";
 import { useTerminals } from "@/hooks/use-terminals";
 import { useExecutorLogs } from "@/hooks/use-executor-logs";
 import { useProjectRemotes } from "@/hooks/use-project-remotes";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { Project } from "@/lib/api";
 
 interface TerminalPanelProps {
@@ -115,45 +114,49 @@ export function TerminalPanel({ projectId, selectedBranch, project }: TerminalPa
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center h-10 border-b border-border/60 px-2 gap-1 shrink-0 bg-muted/20">
-        <ScrollArea className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            {terminals.map((t) => {
-              const isRemote = t.location === "remote" || t.id.startsWith("remote-");
-              const TabIcon = hasMultipleTargets
-                ? isRemote
-                  ? Cloud
-                  : Monitor
-                : Terminal;
+        <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
+          {terminals.map((t) => {
+            const isRemote = t.location === "remote" || t.id.startsWith("remote-");
+            const TabIcon = hasMultipleTargets
+              ? isRemote
+                ? Cloud
+                : Monitor
+              : Terminal;
+            const isActive = activeTerminalId === t.id;
 
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTerminal(t.id)}
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTerminal(t.id)}
+                title={t.name}
+                className={cn(
+                  "group flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-all duration-150 border flex-1 min-w-0 basis-0 max-w-[180px]",
+                  isActive
+                    ? "bg-background text-foreground border-border shadow-sm"
+                    : "text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-background/60 border-border/30 hover:border-border/60"
+                )}
+              >
+                <TabIcon className="h-3 w-3 shrink-0" />
+                <span className="truncate flex-1 text-left">{t.name}</span>
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTerminal(t.id);
+                  }}
                   className={cn(
-                    "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all duration-150 border flex-1 min-w-0 basis-0 max-w-[180px]",
-                    activeTerminalId === t.id
-                      ? "bg-background text-foreground border-border shadow-sm"
-                      : "text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-background/60 border-border/30 hover:border-border/60"
+                    "shrink-0 rounded-sm p-0.5 hover:bg-destructive/10 hover:text-destructive",
+                    isActive
+                      ? "opacity-80 hover:opacity-100"
+                      : "opacity-0 group-hover:opacity-80 hover:!opacity-100"
                   )}
                 >
-                  <TabIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate flex-1 text-left">{t.name}</span>
-                  <span
-                    role="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTerminal(t.id);
-                    }}
-                    className="shrink-0 rounded-sm p-0.5 opacity-60 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <X className="h-3 w-3" />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
+                  <X className="h-3 w-3" />
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
         <div className="relative shrink-0" ref={menuRef}>
           <Button
