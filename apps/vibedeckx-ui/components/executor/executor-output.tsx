@@ -1,13 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import { Circle, Square } from "lucide-react";
+import { toast } from "sonner";
 import type { LogMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useTerminalSettings } from "@/hooks/use-terminal-settings";
+
+// Strip ANSI escape sequences (CSI, OSC, and single-char escapes) for
+// clipboard-friendly plain text.
+const ANSI_REGEX =
+  // eslint-disable-next-line no-control-regex
+  /\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+function stripAnsi(input: string): string {
+  return input.replace(ANSI_REGEX, "");
+}
 
 interface ExecutorOutputProps {
   logs: LogMessage[];
@@ -39,6 +51,45 @@ export function ExecutorOutput({
 
   const { settings: terminalSettings } = useTerminalSettings();
   const initialSettingsRef = useRef(terminalSettings);
+
+  const [isCapturing, setIsCapturing] = useState(false);
+  const captureStartRef = useRef(0);
+  const logsRef = useRef(logs);
+  logsRef.current = logs;
+
+  const handleCaptureToggle = async () => {
+    if (!isCapturing) {
+      captureStartRef.current = logsRef.current.length;
+      setIsCapturing(true);
+      return;
+    }
+
+    const current = logsRef.current;
+    // If logs were reset since capture started, fall back to capturing all.
+    const startIdx = Math.min(captureStartRef.current, current.length);
+    const captured = current
+      .slice(startIdx)
+      .map((log) =>
+        log.type === "stdout" || log.type === "stderr" || log.type === "pty"
+          ? log.data
+          : ""
+      )
+      .join("");
+    setIsCapturing(false);
+
+    const text = stripAnsi(captured);
+    if (!text) {
+      toast.info("Capture stopped — no output to copy");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Copied captured output to clipboard");
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
 
   // Initialize terminal
   useEffect(() => {
@@ -195,8 +246,30 @@ convertEol: true, // Convert \n to \r\n for proper line handling on macOS
 
   return (
     <div
-      ref={containerRef}
-      className={cn("h-[300px] rounded-md border bg-zinc-950 overflow-hidden", className)}
-    />
+      className={cn(
+        "relative h-[300px] rounded-md border bg-zinc-950 overflow-hidden",
+        className
+      )}
+    >
+      <div ref={containerRef} className="h-full w-full" />
+      <button
+        type="button"
+        onClick={handleCaptureToggle}
+        title={isCapturing ? "Stop capture & copy to clipboard" : "Start capturing output"}
+        aria-label={isCapturing ? "Stop capture and copy" : "Start capturing output"}
+        className={cn(
+          "absolute top-2 right-3 z-10 flex h-6 w-6 items-center justify-center rounded",
+          "bg-zinc-900/70 backdrop-blur-sm border border-zinc-700/60",
+          "text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors",
+          isCapturing && "text-red-400 border-red-500/70 hover:text-red-300"
+        )}
+      >
+        {isCapturing ? (
+          <Square className="h-3 w-3 fill-current" />
+        ) : (
+          <Circle className="h-3 w-3" />
+        )}
+      </button>
+    </div>
   );
 }
