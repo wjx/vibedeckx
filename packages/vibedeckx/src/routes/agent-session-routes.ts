@@ -6,6 +6,7 @@ import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
+import { writePasteToTempFile } from "../utils/paste-file.js";
 
 // Resolve project path from a session's projectId.
 // Handles both real DB projects and path-based pseudo IDs ("path:/some/path")
@@ -633,6 +634,54 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     return reply.code(200).send({ success: true });
+  });
+
+  // Save a pasted blob of text to a temp file on the agent's execution machine.
+  // For remote sessions, proxies through so the file lands on the remote host.
+  fastify.post<{
+    Params: { sessionId: string };
+    Body: { content: string };
+  }>("/api/agent-sessions/:sessionId/paste", { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
+    const { content } = req.body;
+
+    if (typeof content !== "string" || content.length === 0) {
+      return reply.code(400).send({ error: "content must be a non-empty string" });
+    }
+
+    if (req.params.sessionId.startsWith("remote-")) {
+      const remoteInfo = fastify.remoteSessionMap.get(req.params.sessionId);
+      if (!remoteInfo) {
+        return reply.code(404).send({ error: "Remote session not found" });
+      }
+      const result = await proxyAuto(
+        remoteInfo.remoteServerId,
+        remoteInfo.remoteUrl,
+        remoteInfo.remoteApiKey,
+        "POST",
+        `/api/agent-sessions/${remoteInfo.remoteSessionId}/paste`,
+        { content }
+      );
+      if (!result.ok) {
+        const status = result.status || 502;
+        return reply.code(status).send({
+          error: `Remote proxy failed: ${result.errorCode || "unknown"}`,
+          errorCode: result.errorCode,
+          attempts: result.attempts,
+          totalDurationMs: result.totalDurationMs,
+          detail: result.data,
+        });
+      }
+      return reply.code(result.status || 200).send(result.data);
+    }
+
+    try {
+      const written = await writePasteToTempFile(content);
+      return reply.code(200).send(written);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      req.log?.error({ err }, "[paste] failed to write temp file");
+      return reply.code(500).send({ error: `Failed to write paste: ${msg}` });
+    }
   });
 
   // 停止 Agent Session
