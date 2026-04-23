@@ -217,7 +217,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       const textarea = event.currentTarget;
       const start = textarea.selectionStart ?? input.length;
       const end = textarea.selectionEnd ?? input.length;
-      const size = new Blob([text]).size;
+      const size = new TextEncoder().encode(text).length;
 
       const id = nextPasteId;
       const token = pasteTokenFor(id, size);
