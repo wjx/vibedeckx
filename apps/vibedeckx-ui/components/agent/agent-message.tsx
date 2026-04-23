@@ -123,7 +123,7 @@ function renderTextWithVPaste(text: string) {
     return <MessageResponse>{text ?? ""}</MessageResponse>;
   }
   return (
-    <div className="text-sm text-foreground break-words">
+    <div className="text-sm text-foreground prose prose-sm dark:prose-invert max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
       {segments.map((seg, i) =>
         seg.kind === "text" ? (
           <Fragment key={i}>
