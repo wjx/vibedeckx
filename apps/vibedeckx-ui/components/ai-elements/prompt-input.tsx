@@ -897,7 +897,8 @@ export const PromptInputTextarea = ({
     }
 
     if (onPasteText) {
-      const text = event.clipboardData?.getData("text") ?? "";
+      // clipboardData is non-null: the items guard above ensures it
+      const text = event.clipboardData.getData("text");
       if (text.length > 0) {
         onPasteText(event, text);
       }
