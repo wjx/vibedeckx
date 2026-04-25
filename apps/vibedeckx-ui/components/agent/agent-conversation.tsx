@@ -309,6 +309,21 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       }
     }
 
+    // If the resulting message text is still over the threshold (typed long
+    // content, accumulated small pastes, etc.), wrap the whole thing into a
+    // single paste file so the conversation/UI doesn't carry the bulk inline.
+    if (processedText.length > PASTE_TO_FILE_THRESHOLD) {
+      try {
+        const uploaded = await uploadPaste(processedText, targetSessionId);
+        processedText = `<vpaste path="${uploaded.path}" size="${uploaded.size}" />`;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to upload paste";
+        toast.error("Paste upload failed", { description: msg });
+        setInput(rawText);
+        return;
+      }
+    }
+
     // Clear pastes state now that they've been materialized into the outgoing message.
     const capturedPastes = pastes;
     const capturedNextPasteId = nextPasteId;
