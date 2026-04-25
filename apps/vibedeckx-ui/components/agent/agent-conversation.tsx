@@ -41,6 +41,7 @@ import { getAgentProviders, translateText } from "@/lib/api";
 import { toast } from "sonner";
 import { UserInputMarkers } from "./user-input-markers";
 import { SessionHistoryDropdown } from "./session-history-dropdown";
+import { QuotePopover, formatAsQuote } from "./quote-popover";
 
 /** Only renders the attachment header when there are files attached */
 function AttachmentHeader() {
@@ -123,6 +124,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const textareaWrapperRef = useRef<HTMLDivElement>(null);
   const inputHistory = useInputHistory(setInput, projectId, branch);
   const { remotes } = useProjectRemotes(project?.id ?? undefined);
 
@@ -201,6 +203,21 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     setPermissionMode("edit");
     onStatusChange?.();  // Agent will now implement the plan → signal "working"
   };
+
+  const handleQuote = useCallback((text: string) => {
+    setInput(formatAsQuote(text) + input);
+    requestAnimationFrame(() => {
+      const ta = textareaWrapperRef.current?.querySelector("textarea");
+      if (!ta) return;
+      ta.focus();
+      const len = ta.value.length;
+      try {
+        ta.setSelectionRange(len, len);
+      } catch {
+        // ignore — textarea may have been unmounted
+      }
+    });
+  }, [setInput, input]);
 
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
@@ -592,15 +609,15 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             ) : (
               <AgentConversationContext.Provider value={{ sendMessage, messages, acceptPlan: handleAcceptPlan, permissionMode: session?.permissionMode ?? permissionMode, agentType: session?.agentType ?? agentType, sessionId: session?.id ?? null }}>
                 <div className="space-y-1" ref={messagesRef}>
-                  {messages.map((msg, index) =>
-                    msg.type === "user" ? (
-                      <div key={index} data-user-msg-idx={index}>
-                        <AgentMessageItem message={msg} messageIndex={index} />
-                      </div>
-                    ) : (
-                      <AgentMessageItem key={index} message={msg} messageIndex={index} />
-                    )
-                  )}
+                  {messages.map((msg, index) => (
+                    <div
+                      key={index}
+                      data-message-idx={index}
+                      {...(msg.type === "user" ? { "data-user-msg-idx": index } : {})}
+                    >
+                      <AgentMessageItem message={msg} messageIndex={index} />
+                    </div>
+                  ))}
                   {isLoading && (
                     <div className="flex items-center gap-2 py-4 text-muted-foreground">
                       <Loader className="h-4 w-4" />
@@ -621,6 +638,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
           <ConversationScrollButton />
         </Conversation>
         <UserInputMarkers messages={messages} contentRef={messagesRef} />
+        <QuotePopover containerRef={messagesRef} onQuote={handleQuote} />
       </div>
 
       {/* Input area */}
@@ -664,18 +682,20 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   </PromptInputActionMenuItem>
                 </PromptInputActionMenuContent>
               </PromptInputActionMenu>
-              <PromptInputTextarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onPasteText={handlePasteText}
-                onKeyDown={inputHistory.handleKeyDown}
-                placeholder={
-                  session
-                    ? "Ask the agent to help with your code..."
-                    : "Type your first message to start..."
-                }
-                className="pr-12"
-              />
+              <div ref={textareaWrapperRef} className="contents">
+                <PromptInputTextarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onPasteText={handlePasteText}
+                  onKeyDown={inputHistory.handleKeyDown}
+                  placeholder={
+                    session
+                      ? "Ask the agent to help with your code..."
+                      : "Type your first message to start..."
+                  }
+                  className="pr-12"
+                />
+              </div>
               <PromptInputSubmit
                 className="absolute bottom-1 right-1"
                 disabled={(!input.trim() && !isLoading) || isTranslating || isSubmitting}
