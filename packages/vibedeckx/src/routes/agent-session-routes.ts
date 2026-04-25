@@ -21,6 +21,22 @@ function resolveProjectPath(
   return project?.path ?? null;
 }
 
+// Hard upper bound on the user-typed text portion of a /message body. Image
+// attachments (base64) don't count — they have legitimate large size. Long
+// pastes are expected to go through /paste and arrive here as a tiny
+// <vpaste/> marker. 64 KB chars is well under any agent-context size limit
+// but cuts off accidental/malicious bloat that would re-render slowly.
+const MESSAGE_TEXT_CHAR_LIMIT = 64 * 1024;
+
+function messageTextLength(content: string | ContentPart[]): number {
+  if (typeof content === "string") return content.length;
+  let n = 0;
+  for (const part of content) {
+    if (part.type === "text") n += part.text.length;
+  }
+  return n;
+}
+
 const routes: FastifyPluginAsync = async (fastify) => {
   // Helper: proxy to remote via reverse-connect if available, else outbound
   function proxyAuto(
@@ -588,6 +604,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
     const isValidArray = Array.isArray(content) && content.length > 0;
     if (!isValidString && !isValidArray) {
       return reply.code(400).send({ error: "Content is required" });
+    }
+
+    // Cap the typed-text portion. Long content should be uploaded via /paste
+    // and sent here as a <vpaste/> marker (< 100 bytes per paste).
+    const textLen = messageTextLength(content);
+    if (textLen > MESSAGE_TEXT_CHAR_LIMIT) {
+      return reply.code(413).send({
+        error: `Message text exceeds ${MESSAGE_TEXT_CHAR_LIMIT} characters (got ${textLen}). Use /api/agent-sessions/:id/paste for long content.`,
+      });
     }
 
     if (req.params.sessionId.startsWith("remote-")) {
