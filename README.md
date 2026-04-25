@@ -82,52 +82,6 @@ Three kinds of packages are produced:
 | Platform archive | `vibedeckx-0.1.0-linux-x64.tar.gz` | Precompiled dependencies, ready to use, for GitHub Releases |
 | npm platform package | `vibedeckx-linux-x64-0.1.0.tgz` | Matches `@vibedeckx/linux-x64` published on npmjs |
 
-#### platform vs npm-platform
-
-Both contain the same artifacts (esbuild bundle + precompiled native modules), but they are packaged differently:
-
-**`platform`** — standalone package
-
-Users can run it directly after download without depending on any other package. To support this it needs:
-- An unscoped package name (`vibedeckx`); otherwise `npx` cannot execute it directly
-- A `bin` field pointing at `dist/bin.js` so npm/npx can find the entry point
-- Sourcemaps included to help users troubleshoot
-
-```bash
-# Download and run
-npx -y ./vibedeckx-0.1.0-linux-x64.tar.gz
-```
-
-**`npm-platform`** — dependency package
-
-Not run on its own; installed as an `optionalDependency` of the main `vibedeckx` package. npm picks the package matching the current platform based on the `os`/`cpu` fields. To support this it needs:
-- A scoped package name (`@vibedeckx/linux-x64`) matching the main package's `optionalDependencies`
-- No `bin` field — the entry point is provided by the main package's `bin/vibedeckx.mjs`
-- No sourcemaps, to reduce install size
-
-```
-npx vibedeckx
-  -> Installs vibedeckx (lightweight wrapper, a few KB)
-     -> optionalDependencies automatically install @vibedeckx/linux-x64
-        -> Contains dist/bin.js + dist/ui/ + native node_modules/
-  -> bin/vibedeckx.mjs locates the platform package and runs dist/bin.js
-```
-
-|  | `platform` | `npm-platform` |
-|---|---|---|
-| Packaging | Standalone package, runs directly | Dependency package, installed indirectly via the main package |
-| Package name | `vibedeckx` (unscoped) | `@vibedeckx/linux-x64` (scoped) |
-| `bin` field | Yes | No (provided by main package) |
-| Sourcemaps | Included | Not included |
-| Release target | GitHub Release assets | Packages published on npmjs.com |
-
-`npm-platform` is used to verify the npm install flow locally before publishing:
-
-```bash
-./scripts/pack.sh npm-platform --skip-build
-npm install ./dist-out/vibedeckx-linux-x64-0.1.0.tgz
-```
-
 ### Publishing to npm
 
 Push a `v*` tag to trigger an automated CI release (see the Release section below), or publish manually:
