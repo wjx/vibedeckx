@@ -222,9 +222,7 @@ export function LandingPage({ onSignIn }: { onSignIn: () => void }) {
             transition={{ duration: 0.7, delay: 0.08, ease: [0.2, 0.7, 0.2, 1] }}
             className="vdx-hero-title"
           >
-            <span className="vdx-display vdx-italic">A coding agent,</span>{" "}
-            <span className="vdx-display vdx-italic">alone,</span>{" "}
-            <span className="vdx-display vdx-italic">is not enough.</span>
+            A coding agent, alone, is not enough.
           </motion.h1>
 
           <motion.p
@@ -476,9 +474,9 @@ export function LandingPage({ onSignIn }: { onSignIn: () => void }) {
       {/* Closing */}
       <section className="vdx-closing">
         <p className="vdx-closing-line">
-          <span className="vdx-display vdx-italic">The agent does the work.</span>
+          The agent does the work.
           <br />
-          <span className="vdx-display vdx-italic">Vibedeckx makes sure it ships.</span>
+          Vibedeckx makes sure it ships.
         </p>
         <button onClick={onSignIn} className="vdx-btn-primary vdx-btn-primary--lg">
           Enter the cockpit
@@ -820,10 +818,13 @@ const vdxStyles = `
 
   .vdx-hero-title {
     margin: 26px 0 22px;
-    font-size: clamp(48px, 8vw, 112px);
-    line-height: 0.96;
-    letter-spacing: -0.025em;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-size: clamp(40px, 6.4vw, 88px);
+    font-weight: 500;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
     color: var(--paper);
+    max-width: 18ch;
   }
 
   .vdx-hero-sub {
@@ -1591,11 +1592,13 @@ const vdxStyles = `
     border-top: 1px solid var(--line-soft);
   }
   .vdx-closing-line {
-    font-size: clamp(36px, 5.2vw, 72px);
-    line-height: 1.06;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-size: clamp(28px, 4.2vw, 56px);
+    font-weight: 500;
+    line-height: 1.12;
     color: var(--paper);
     margin-bottom: 36px;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
   }
 
   /* ---- Footer ---- */
