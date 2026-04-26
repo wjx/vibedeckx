@@ -61,8 +61,25 @@ export function requireAuth(req: FastifyRequest, reply: FastifyReply): string | 
   }
 }
 
-export const createServer = async (opts: { storage: Storage; authEnabled?: boolean }) => {
+// Path prefixes / exact paths that exist solely to serve another vibedeckx
+// Server proxying into this instance as its remote provider. Hitting these
+// without --accept-remote means the caller is treating us as a remote we never
+// opted into being — return 404 to make Server-mode invisible as a remote.
+const REMOTE_PROVIDER_PREFIXES = ["/api/path/"];
+const REMOTE_PROVIDER_EXACT = new Set(["/api/browse", "/api/execute-one-shot"]);
+
+function isRemoteProviderPath(url: string): boolean {
+  const pathOnly = url.split("?")[0];
+  if (REMOTE_PROVIDER_EXACT.has(pathOnly)) return true;
+  for (const prefix of REMOTE_PROVIDER_PREFIXES) {
+    if (pathOnly.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+export const createServer = async (opts: { storage: Storage; authEnabled?: boolean; acceptRemote?: boolean }) => {
   const authEnabled = opts.authEnabled ?? false;
+  const acceptRemote = opts.acceptRemote ?? false;
 
   // Validate Clerk env vars when auth is enabled
   if (authEnabled) {
@@ -133,6 +150,20 @@ export const createServer = async (opts: { storage: Storage; authEnabled?: boole
     }
     done();
   });
+
+  // Gate remote-provider endpoints behind --accept-remote. In Server mode
+  // these endpoints are not exposed at all (404), preventing other Servers
+  // from treating us as their remote and inserting bookkeeping rows
+  // (e.g. path:* pseudo-projects) into our database.
+  if (!acceptRemote) {
+    server.addHook("onRequest", (req, reply, done) => {
+      if (req.method === "OPTIONS") return done();
+      if (isRemoteProviderPath(req.url)) {
+        return reply.code(404).send({ error: "Not found. This server is not configured to accept remote clients (start with --accept-remote to enable)." });
+      }
+      done();
+    });
+  }
 
   // Request/response logging for proxied requests (those with X-Request-Id)
   server.addHook("onRequest", (req, _reply, done) => {

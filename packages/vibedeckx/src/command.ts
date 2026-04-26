@@ -26,19 +26,25 @@ const startCommand = buildCommand({
         brief: "Directory for storing database file (default: ~/.vibedeckx)",
         optional: true,
       },
+      "accept-remote": {
+        kind: "boolean",
+        brief: "Allow other vibedeckx servers to use this instance as a remote provider (exposes /api/path/*, /api/browse, /api/execute-one-shot)",
+        optional: true,
+      },
     },
   },
-  func: async (flags: { port: number | undefined; auth: boolean | undefined; "data-dir": string | undefined }) => {
+  func: async (flags: { port: number | undefined; auth: boolean | undefined; "data-dir": string | undefined; "accept-remote": boolean | undefined }) => {
     const port = flags.port ?? DEFAULT_PORT;
     const authEnabled = flags.auth ?? false;
+    const acceptRemote = flags["accept-remote"] ?? false;
 
-    console.log("Starting vibedeckx...");
+    console.log(`Starting vibedeckx${acceptRemote ? " (accepting remote clients)" : ""}...`);
 
     const dbPath = flags["data-dir"]
       ? path.join(flags["data-dir"], "data.sqlite")
       : DB_PATH;
     const storage = await createSqliteStorage(dbPath);
-    const server = await createServer({ storage, authEnabled });
+    const server = await createServer({ storage, authEnabled, acceptRemote });
 
     const url = await server.start(port);
     console.log(`Server running at ${url}`);
@@ -117,7 +123,10 @@ const connectCommand = buildCommand({
       ? path.join(flags["data-dir"], "data.sqlite")
       : DB_PATH;
     const storage = await createSqliteStorage(dbPath);
-    const server = await createServer({ storage });
+    // Reverse-connect mode is inherently a remote-provider role: the inbound
+    // server proxies requests through the tunnel into this instance, so the
+    // path-based endpoints must be exposed.
+    const server = await createServer({ storage, acceptRemote: true });
 
     // Start local server on localhost only (not publicly exposed)
     // Port 0 lets the OS pick a random available port

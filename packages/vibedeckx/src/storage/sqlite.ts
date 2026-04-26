@@ -648,14 +648,20 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
       },
 
       getAll: (userId?: string) => {
+        // Exclude path:* pseudo-projects: these are bookkeeping rows inserted
+        // by /api/path/agent-sessions* to satisfy agent_sessions' FK when this
+        // instance is being used as a remote provider. They have no user-facing
+        // meaning and should never appear in the project list. getById /
+        // getByPath intentionally still see them so FK resolution and remote
+        // session list proxying continue to work.
         if (userId) {
           const rows = db
-            .prepare<{ user_id: string }, ProjectRow>(`SELECT * FROM projects WHERE user_id = @user_id ORDER BY created_at DESC`)
+            .prepare<{ user_id: string }, ProjectRow>(`SELECT * FROM projects WHERE user_id = @user_id AND id NOT LIKE 'path:%' ORDER BY created_at DESC`)
             .all({ user_id: userId });
           return rows.map(toProject);
         }
         const rows = db
-          .prepare<{}, ProjectRow>(`SELECT * FROM projects ORDER BY created_at DESC`)
+          .prepare<{}, ProjectRow>(`SELECT * FROM projects WHERE id NOT LIKE 'path:%' ORDER BY created_at DESC`)
           .all({});
         return rows.map(toProject);
       },
