@@ -191,6 +191,8 @@ export const createServer = async (opts: { storage: Storage; authEnabled?: boole
 
       const requestState = await clerkClient.authenticateRequest(request, {
         acceptsToken: "any",
+        publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+        secretKey: process.env.CLERK_SECRET_KEY,
       });
       requestState.headers.forEach((value: string, key: string) => reply.header(key, value));
       if (requestState.headers.get("location")) {
