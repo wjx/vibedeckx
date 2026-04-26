@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { ClientProviders } from "@/components/auth/client-providers";
 import "./globals.css";
@@ -14,9 +14,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  weight: ["400"],
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "VibeDeckX - AI Autopilot Cockpit",
-  description: "The autopilot cockpit for building apps with AI",
+  title: "Vibedeckx — The orchestrator for coding agents",
+  description:
+    "A self-hosted control plane that schedules coding agents, runs the testing surface around them, and lets you swap providers — Claude Code, Codex, and beyond.",
 };
 
 export default function RootLayout({
@@ -27,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} antialiased`}
       >
         <ClientProviders>
           {children}
