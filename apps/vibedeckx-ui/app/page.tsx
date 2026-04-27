@@ -440,20 +440,22 @@ Please proceed step by step and let me know if there are any issues or conflicts
             {currentProject && <ProjectInfoView project={currentProject} onProjectUpdated={updateProject} />}
           </div>
 
-          {/* Remote Servers View — kept mounted, hidden via CSS */}
-          <div className={activeView !== 'remote-servers' ? 'hidden' : 'flex-1 overflow-hidden'}>
-            <div className="h-full flex flex-col overflow-auto">
-              <div className="border-b border-border/60 px-6 py-4 flex-shrink-0">
-                <h2 className="text-sm font-semibold text-foreground">Remote Servers</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Manage your remote server connections</p>
-              </div>
-              <div className="flex-1 px-6 py-5 flex justify-center">
-                <div className="w-full max-w-2xl">
-                <RemoteServersSettings />
+          {/* Remote Servers View — only mounted when active to avoid background polling */}
+          {activeView === 'remote-servers' && (
+            <div className="flex-1 overflow-hidden">
+              <div className="h-full flex flex-col overflow-auto">
+                <div className="border-b border-border/60 px-6 py-4 flex-shrink-0">
+                  <h2 className="text-sm font-semibold text-foreground">Remote Servers</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Manage your remote server connections</p>
+                </div>
+                <div className="flex-1 px-6 py-5 flex justify-center">
+                  <div className="w-full max-w-2xl">
+                    <RemoteServersSettings />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Settings View — kept mounted, hidden via CSS */}
           <div className={activeView !== 'settings' ? 'hidden' : 'flex-1 overflow-hidden'}>
