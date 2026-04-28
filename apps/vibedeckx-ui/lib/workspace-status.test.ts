@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Worktree, Task } from "@/lib/api";
+import type { Worktree } from "@/lib/api";
 import type { AgentSessionStatus } from "./workspace-status";
 import {
   type WorkspaceStatus,
@@ -19,27 +19,8 @@ function makeWorktree(branch: string | null): Worktree {
   return { branch };
 }
 
-function makeTask(
-  branch: string | null,
-  status: "todo" | "in_progress" | "done" | "cancelled" = "todo"
-): Task {
-  return {
-    id: `task-${branch ?? "main"}`,
-    project_id: "proj-1",
-    title: `Task for ${branch ?? "main"}`,
-    description: null,
-    status,
-    priority: "medium",
-    assigned_branch: branch === null ? "" : branch,
-    position: 0,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  };
-}
-
 const emptyRealtime = new Map<string, WorkspaceStatus>();
 const emptySessions = new Map<string, AgentSessionStatus>();
-const noTasks: Task[] = [];
 
 // ---------------------------------------------------------------------------
 // toBranchKey
@@ -64,251 +45,112 @@ describe("toBranchKey", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeWorkspaceStatuses", () => {
-  it("returns empty map for undefined worktrees", () => {
-    const result = computeWorkspaceStatuses(
-      undefined,
-      emptyRealtime,
-      emptySessions,
-      noTasks,
-      null
-    );
+  it("undefined worktrees → empty map", () => {
+    const result = computeWorkspaceStatuses(undefined, emptyRealtime, emptySessions, null);
     expect(result.size).toBe(0);
   });
 
-  it("returns empty map for empty worktrees array", () => {
-    const result = computeWorkspaceStatuses(
-      [],
-      emptyRealtime,
-      emptySessions,
-      noTasks,
-      null
-    );
+  it("no worktrees → empty map", () => {
+    const result = computeWorkspaceStatuses([], emptyRealtime, emptySessions, null);
     expect(result.size).toBe(0);
   });
 
-  it("returns idle for a worktree with no data", () => {
+  it("worktree with no realtime, no session → idle", () => {
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       emptyRealtime,
       emptySessions,
-      noTasks,
       null
     );
     expect(result.get("feat")).toBe("idle");
   });
 
-  it("returns assigned for a worktree with todo task", () => {
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      emptySessions,
-      [makeTask("feat", "todo")],
-      null
-    );
-    expect(result.get("feat")).toBe("assigned");
-  });
-
-  it("returns assigned for a worktree with in_progress task", () => {
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      emptySessions,
-      [makeTask("feat", "in_progress")],
-      null
-    );
-    expect(result.get("feat")).toBe("assigned");
-  });
-
-  it("returns completed for a worktree with done task", () => {
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      emptySessions,
-      [makeTask("feat", "done")],
-      null
-    );
-    expect(result.get("feat")).toBe("completed");
-  });
-
-  it("returns assigned for a worktree with cancelled task", () => {
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      emptySessions,
-      [makeTask("feat", "cancelled")],
-      null
-    );
-    expect(result.get("feat")).toBe("assigned");
-  });
-
-  it("returns working for a non-selected branch with running session", () => {
+  it("worktree with running session (non-selected) → working", () => {
     const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       emptyRealtime,
       sessions,
-      noTasks,
-      null // selected = main, not "feat"
+      "other"
     );
     expect(result.get("feat")).toBe("working");
   });
 
-  it("ignores running session on selected branch (returns idle)", () => {
+  it("selected branch ignores polling running status (auto-start sessions)", () => {
     const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       emptyRealtime,
       sessions,
-      noTasks,
-      "feat" // selected = feat → session ignored
+      "feat"
     );
     expect(result.get("feat")).toBe("idle");
   });
 
-  it("ignores running session on selected branch when both are null/main", () => {
-    const sessions = new Map<string, AgentSessionStatus>([["", "running"]]);
-    const result = computeWorkspaceStatuses(
-      [makeWorktree(null)],
-      emptyRealtime,
-      sessions,
-      noTasks,
-      null // selected = main (null → ""), worktree branch = null → ""
-    );
-    expect(result.get("")).toBe("idle");
-  });
-
-  it("returns idle for stopped session", () => {
-    const sessions = new Map<string, AgentSessionStatus>([["feat", "stopped"]]);
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      sessions,
-      noTasks,
-      null
-    );
-    expect(result.get("feat")).toBe("idle");
-  });
-
-  it("returns idle for error session", () => {
-    const sessions = new Map<string, AgentSessionStatus>([["feat", "error"]]);
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      sessions,
-      noTasks,
-      null
-    );
-    expect(result.get("feat")).toBe("idle");
-  });
-
-  // Priority: done task > running session
-  it("done task beats running session → completed", () => {
-    const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      sessions,
-      [makeTask("feat", "done")],
-      null
-    );
-    expect(result.get("feat")).toBe("completed");
-  });
-
-  // Priority: running session > assigned task
-  it("running session beats assigned (todo) task → working", () => {
-    const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
-    const result = computeWorkspaceStatuses(
-      [makeWorktree("feat")],
-      emptyRealtime,
-      sessions,
-      [makeTask("feat", "todo")],
-      null
-    );
-    expect(result.get("feat")).toBe("working");
-  });
-
-  // Realtime overrides
-  it("realtime 'working' overrides everything (even done task)", () => {
+  it("realtime working overrides idle session", () => {
     const realtime = new Map<string, WorkspaceStatus>([["feat", "working"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       realtime,
       emptySessions,
-      [makeTask("feat", "done")],
-      null
+      "feat"
     );
     expect(result.get("feat")).toBe("working");
   });
 
-  it("realtime 'completed' overrides everything", () => {
+  it("realtime completed overrides session", () => {
     const realtime = new Map<string, WorkspaceStatus>([["feat", "completed"]]);
     const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       realtime,
       sessions,
-      [makeTask("feat", "todo")],
-      null
+      "other"
     );
     expect(result.get("feat")).toBe("completed");
   });
 
-  it("realtime 'idle' overrides even running session", () => {
+  it("realtime idle overrides running session", () => {
     const realtime = new Map<string, WorkspaceStatus>([["feat", "idle"]]);
     const sessions = new Map<string, AgentSessionStatus>([["feat", "running"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree("feat")],
       realtime,
       sessions,
-      noTasks,
-      null
+      "other"
     );
     expect(result.get("feat")).toBe("idle");
   });
 
-  it("handles multiple worktrees with mixed states", () => {
-    const realtime = new Map<string, WorkspaceStatus>([["feat-a", "working"]]);
-    const sessions = new Map<string, AgentSessionStatus>([
-      ["feat-b", "running"],
-    ]);
-    const tasks = [makeTask("feat-c", "done"), makeTask("feat-d", "todo")];
-
-    const result = computeWorkspaceStatuses(
-      [
-        makeWorktree("feat-a"),
-        makeWorktree("feat-b"),
-        makeWorktree("feat-c"),
-        makeWorktree("feat-d"),
-        makeWorktree("feat-e"),
-      ],
-      realtime,
-      sessions,
-      tasks,
-      null
-    );
-
-    expect(result.get("feat-a")).toBe("working"); // realtime
-    expect(result.get("feat-b")).toBe("working"); // session running
-    expect(result.get("feat-c")).toBe("completed"); // done task
-    expect(result.get("feat-d")).toBe("assigned"); // todo task
-    expect(result.get("feat-e")).toBe("idle"); // no data
-  });
-
-  it("maps null branch worktree to '' key", () => {
+  it("null branch worktree maps to empty-string key", () => {
+    const realtime = new Map<string, WorkspaceStatus>([["", "working"]]);
     const result = computeWorkspaceStatuses(
       [makeWorktree(null)],
-      emptyRealtime,
+      realtime,
       emptySessions,
-      noTasks,
-      "other"
+      null
     );
-    expect(result.has("")).toBe(true);
-    expect(result.get("")).toBe("idle");
+    expect(result.get("")).toBe("working");
+  });
+
+  it("multiple worktrees evaluated independently", () => {
+    const worktrees = [
+      makeWorktree("feat-a"),
+      makeWorktree("feat-b"),
+      makeWorktree("feat-c"),
+    ];
+    const realtime = new Map<string, WorkspaceStatus>([["feat-a", "completed"]]);
+    const sessions = new Map<string, AgentSessionStatus>([["feat-b", "running"]]);
+    const result = computeWorkspaceStatuses(worktrees, realtime, sessions, "feat-c");
+
+    expect(result.get("feat-a")).toBe("completed");
+    expect(result.get("feat-b")).toBe("working");
+    expect(result.get("feat-c")).toBe("idle");
   });
 });
 
 // ---------------------------------------------------------------------------
-// Event handler helpers
+// applyStatusWorking
 // ---------------------------------------------------------------------------
 
 describe("applyStatusWorking", () => {
@@ -336,6 +178,10 @@ describe("applyStatusWorking", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// applyStatusCompleted
+// ---------------------------------------------------------------------------
+
 describe("applyStatusCompleted", () => {
   it("sets completed for a branch", () => {
     const result = applyStatusCompleted(new Map(), "feat");
@@ -348,6 +194,10 @@ describe("applyStatusCompleted", () => {
     expect(result.get("feat")).toBe("completed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// clearRealtimeStatus
+// ---------------------------------------------------------------------------
 
 describe("clearRealtimeStatus", () => {
   it("removes entry for a branch", () => {
@@ -376,171 +226,104 @@ describe("clearRealtimeStatus", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// applyGlobalSessionStatus
+// ---------------------------------------------------------------------------
+
 describe("applyGlobalSessionStatus", () => {
-  it("running → sets working, no refetch", () => {
+  it("running → sets working", () => {
     const result = applyGlobalSessionStatus(new Map(), "feat", "running");
-    expect(result.realtimeStatuses.get("feat")).toBe("working");
-    expect(result.shouldRefetchTasks).toBe(false);
+    expect(result.get("feat")).toBe("working");
   });
 
-  it("stopped → clears entry, triggers refetch", () => {
+  it("stopped → clears entry", () => {
     const prev = new Map<string, WorkspaceStatus>([["feat", "working"]]);
     const result = applyGlobalSessionStatus(prev, "feat", "stopped");
-    expect(result.realtimeStatuses.has("feat")).toBe(false);
-    expect(result.shouldRefetchTasks).toBe(true);
+    expect(result.has("feat")).toBe(false);
   });
 
   it("stopped → preserves completed (taskCompleted-then-stopped race)", () => {
     const prev = new Map<string, WorkspaceStatus>([["feat", "completed"]]);
     const result = applyGlobalSessionStatus(prev, "feat", "stopped");
-    expect(result.realtimeStatuses.get("feat")).toBe("completed");
-    expect(result.shouldRefetchTasks).toBe(true);
+    expect(result.get("feat")).toBe("completed");
   });
 
   it("error → clears entry even if completed", () => {
     const prev = new Map<string, WorkspaceStatus>([["feat", "completed"]]);
     const result = applyGlobalSessionStatus(prev, "feat", "error");
-    expect(result.realtimeStatuses.has("feat")).toBe(false);
-    expect(result.shouldRefetchTasks).toBe(true);
+    expect(result.has("feat")).toBe(false);
   });
 
-  it("error → clears entry, triggers refetch", () => {
+  it("error → clears entry", () => {
     const prev = new Map<string, WorkspaceStatus>([["feat", "working"]]);
     const result = applyGlobalSessionStatus(prev, "feat", "error");
-    expect(result.realtimeStatuses.has("feat")).toBe(false);
-    expect(result.shouldRefetchTasks).toBe(true);
+    expect(result.has("feat")).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Event sequence simulations (the critical bug-prone area)
+// Event sequence simulations
 // ---------------------------------------------------------------------------
 
 describe("event sequence simulations", () => {
   const worktrees = [makeWorktree("feat-a"), makeWorktree("feat-b")];
 
-  it("start → working", () => {
-    // Agent starts on feat-a (selected)
+  it("send message → working", () => {
     let realtime = applyStatusWorking(new Map(), "feat-a");
-    const result = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      noTasks,
-      "feat-a"
-    );
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
     expect(result.get("feat-a")).toBe("working");
   });
 
-  it("start → complete on selected branch → completed", () => {
+  it("taskCompleted → stopped (selected branch, no task) → completed (green survives)", () => {
     let realtime = applyStatusWorking(new Map(), "feat-a");
-    // Task completes on the selected branch
     realtime = applyStatusCompleted(realtime, "feat-a");
-    const result = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      [makeTask("feat-a", "done")],
-      "feat-a"
-    );
+    realtime = applyGlobalSessionStatus(realtime, "feat-a", "stopped");
+
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
     expect(result.get("feat-a")).toBe("completed");
   });
 
-  it("start → complete on NON-selected branch → session stops → realtime cleared → fallback picks up done task → completed", () => {
-    // 1. Agent starts on feat-b (non-selected; selected is feat-a)
-    let realtime = applyStatusWorking(new Map(), "feat-b");
-
-    // 2. Task completes on feat-b (task marked done in DB)
-    const tasks = [makeTask("feat-b", "done")];
-
-    // 3. Session finishes → global event: stopped → clear realtime
-    const result = applyGlobalSessionStatus(realtime, "feat-b", "stopped");
-    realtime = result.realtimeStatuses;
-    expect(result.shouldRefetchTasks).toBe(true);
-
-    // 4. Realtime cleared → fallback picks up done task
-    const statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      tasks,
-      "feat-a" // selected is feat-a
-    );
-    expect(statuses.get("feat-b")).toBe("completed");
-  });
-
-  it("taskCompleted → stopped on selected branch with no assigned task → completed", () => {
-    // Reproduces the bug where backend emits session:status=stopped right
-    // after taskCompleted, previously erasing the green dot.
-
-    // 1. User sends a message → working
-    let realtime = applyStatusWorking(new Map(), "feat-a");
-
-    // 2. Agent finishes turn successfully → completed (via WS taskCompleted)
-    realtime = applyStatusCompleted(realtime, "feat-a");
-
-    // 3. Backend immediately emits session:status=stopped (post-taskCompleted)
-    const result = applyGlobalSessionStatus(realtime, "feat-a", "stopped");
-    realtime = result.realtimeStatuses;
-
-    // 4. Even with no assigned task, the dot must stay green
-    const statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      noTasks,
-      "feat-a"
-    );
-    expect(statuses.get("feat-a")).toBe("completed");
-  });
-
-  it("session stops without task completion → assigned", () => {
-    let realtime = applyStatusWorking(new Map(), "feat-b");
-    const tasks = [makeTask("feat-b", "in_progress")];
-
-    // Session stops
-    const result = applyGlobalSessionStatus(realtime, "feat-b", "stopped");
-    realtime = result.realtimeStatuses;
-
-    const statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      tasks,
-      "feat-a"
-    );
-    expect(statuses.get("feat-b")).toBe("assigned");
-  });
-
-  it("session stops, no task → idle", () => {
-    let realtime = applyStatusWorking(new Map(), "feat-b");
-
-    const result = applyGlobalSessionStatus(realtime, "feat-b", "stopped");
-    realtime = result.realtimeStatuses;
-
-    const statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      noTasks,
-      "feat-a"
-    );
-    expect(statuses.get("feat-b")).toBe("idle");
-  });
-
-  it("reset task → clear realtime → idle", () => {
-    let realtime = new Map<string, WorkspaceStatus>([["feat-a", "completed"]]);
-    // User resets task: clears realtime and unassigns task
+  it("user clicks New Conversation → realtime cleared → idle", () => {
+    let realtime = applyStatusCompleted(new Map(), "feat-a");
+    // simulating handleNewConversation in page.tsx
     realtime = clearRealtimeStatus(realtime, "feat-a");
 
-    const statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      noTasks, // task was unassigned
-      "feat-a"
-    );
-    expect(statuses.get("feat-a")).toBe("idle");
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
+    expect(result.get("feat-a")).toBe("idle");
+  });
+
+  it("session stopped without completion → idle", () => {
+    let realtime = applyStatusWorking(new Map(), "feat-a");
+    realtime = applyGlobalSessionStatus(realtime, "feat-a", "stopped");
+
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
+    expect(result.get("feat-a")).toBe("idle");
+  });
+
+  it("session error → idle", () => {
+    let realtime = applyStatusWorking(new Map(), "feat-a");
+    realtime = applyGlobalSessionStatus(realtime, "feat-a", "error");
+
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
+    expect(result.get("feat-a")).toBe("idle");
+  });
+
+  it("non-selected branch starts running via SSE → working", () => {
+    let realtime = applyGlobalSessionStatus(new Map(), "feat-b", "running");
+    const result = computeWorkspaceStatuses(worktrees, realtime, emptySessions, "feat-a");
+    expect(result.get("feat-b")).toBe("working");
+  });
+
+  it("page reload (empty realtime) + non-selected branch session running → working", () => {
+    const sessions = new Map<string, AgentSessionStatus>([["feat-b", "running"]]);
+    const result = computeWorkspaceStatuses(worktrees, emptyRealtime, sessions, "feat-a");
+    expect(result.get("feat-b")).toBe("working");
+  });
+
+  it("page reload (empty realtime) → all idle when no sessions running", () => {
+    const result = computeWorkspaceStatuses(worktrees, emptyRealtime, emptySessions, "feat-a");
+    expect(result.get("feat-a")).toBe("idle");
+    expect(result.get("feat-b")).toBe("idle");
   });
 
   it("multiple events same branch (working → completed → working)", () => {
@@ -552,34 +335,5 @@ describe("event sequence simulations", () => {
 
     realtime = applyStatusWorking(realtime, "feat-a");
     expect(realtime.get("feat-a")).toBe("working");
-  });
-
-  it("realtime cleared → fallback re-evaluated correctly", () => {
-    // feat-b has realtime "working" overriding a done task
-    let realtime = new Map<string, WorkspaceStatus>([["feat-b", "working"]]);
-    const tasks = [makeTask("feat-b", "done")];
-
-    // Before clearing: realtime wins
-    let statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      tasks,
-      "feat-a"
-    );
-    expect(statuses.get("feat-b")).toBe("working");
-
-    // Clear realtime
-    realtime = clearRealtimeStatus(realtime, "feat-b");
-
-    // After clearing: fallback picks up done task
-    statuses = computeWorkspaceStatuses(
-      worktrees,
-      realtime,
-      emptySessions,
-      tasks,
-      "feat-a"
-    );
-    expect(statuses.get("feat-b")).toBe("completed");
   });
 });

@@ -114,8 +114,8 @@ export default function Home() {
 
   // Compute workspace statuses for all worktrees
   const workspaceStatuses = useMemo(
-    () => computeWorkspaceStatuses(worktrees, realtimeWorkspaceStatuses, sessionStatuses, tasks, selectedBranch),
-    [worktrees, sessionStatuses, tasks, selectedBranch, realtimeWorkspaceStatuses]
+    () => computeWorkspaceStatuses(worktrees, realtimeWorkspaceStatuses, sessionStatuses, selectedBranch),
+    [worktrees, sessionStatuses, selectedBranch, realtimeWorkspaceStatuses]
   );
 
   // Agent started working → blue
@@ -134,16 +134,18 @@ export default function Home() {
     refetchSessionStatuses();
   }, [refetchSessionStatuses]);
 
+  // New Conversation → reset to idle (agent isn't doing anything yet)
+  const handleNewConversation = useCallback(() => {
+    setRealtimeWorkspaceStatuses(prev => clearRealtimeStatus(prev, selectedBranch));
+  }, [selectedBranch]);
+
   // Global SSE events — updates sidebar status for non-selected workspaces
   const handleGlobalSessionStatus = useCallback((branch: string | null, status: "running" | "stopped" | "error") => {
-    setRealtimeWorkspaceStatuses(prev => {
-      const result = applyGlobalSessionStatus(prev, branch, status);
-      if (result.shouldRefetchTasks) {
-        refetchTasks();
-      }
-      return result.realtimeStatuses;
-    });
+    setRealtimeWorkspaceStatuses(prev => applyGlobalSessionStatus(prev, branch, status));
     refetchSessionStatuses();
+    if (status !== "running") {
+      refetchTasks();
+    }
   }, [refetchSessionStatuses, refetchTasks]);
 
   const handleGlobalSessionFinished = useCallback((branch: string | null) => {
@@ -405,6 +407,7 @@ Please proceed step by step and let me know if there are any issues or conflicts
                         onTaskCompleted={handleTaskCompleted}
                         onSessionStarted={handleSessionStarted}
                         onStatusChange={handleStatusChange}
+                        onNewConversation={handleNewConversation}
                       />
                     }
                   />

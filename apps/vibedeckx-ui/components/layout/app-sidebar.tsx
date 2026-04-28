@@ -29,9 +29,6 @@ function StatusDot({ status }: { status?: WorkspaceStatus }) {
   if (!status || status === "idle") {
     return <span className="h-2 w-2 rounded-full bg-muted-foreground/30 shrink-0" />;
   }
-  if (status === "assigned") {
-    return <span className="h-2 w-2 rounded-full bg-yellow-500 shrink-0" />;
-  }
   if (status === "working") {
     return <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shrink-0" />;
   }

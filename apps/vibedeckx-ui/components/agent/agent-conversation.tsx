@@ -83,6 +83,7 @@ interface AgentConversationProps {
   onTaskCompleted?: () => void;
   onSessionStarted?: () => void;
   onStatusChange?: () => void;
+  onNewConversation?: () => void;
 }
 
 export interface AgentConversationHandle {
@@ -113,7 +114,7 @@ function pasteTokenFor(id: number, bytes: number): string {
 }
 
 export const AgentConversation = forwardRef<AgentConversationHandle, AgentConversationProps>(
-  function AgentConversation({ projectId, branch, sessionId, setSessionUrlParam, project, onAgentModeChange, onTaskCompleted, onSessionStarted, onStatusChange }, ref) {
+  function AgentConversation({ projectId, branch, sessionId, setSessionUrlParam, project, onAgentModeChange, onTaskCompleted, onSessionStarted, onStatusChange, onNewConversation }, ref) {
   const [input, setInput] = useWorkspaceDraft(projectId, branch);
   const [pastes, setPastes] = useState<PasteEntry[]>([]);
   const [nextPasteId, setNextPasteId] = useState(1);
@@ -556,6 +557,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   if (!ok) return;
                 }
                 const newId = await startNewConversation();
+                onNewConversation?.();
                 if (newId && setSessionUrlParam) {
                   setSessionUrlParam(newId);
                 }
