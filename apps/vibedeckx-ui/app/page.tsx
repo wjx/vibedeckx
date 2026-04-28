@@ -160,9 +160,18 @@ export default function Home() {
     refetchTasks();
   }, [refetchTasks]);
 
+  // Global taskCompleted → green for the event's branch (NOT selectedBranch).
+  // Fires for any project session, including non-selected workspaces.
+  const handleGlobalSessionTaskCompleted = useCallback((branch: string | null) => {
+    setRealtimeWorkspaceStatuses(prev => applyStatusCompleted(prev, branch));
+    refetchTasks();
+    refetchSessionStatuses();
+  }, [refetchTasks, refetchSessionStatuses]);
+
   useGlobalEvents(currentProject?.id ?? null, {
     onSessionStatus: handleGlobalSessionStatus,
     onSessionFinished: handleGlobalSessionFinished,
+    onSessionTaskCompleted: handleGlobalSessionTaskCompleted,
     onTaskChanged: handleGlobalTaskChanged,
   });
 
