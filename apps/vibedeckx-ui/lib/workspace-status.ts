@@ -15,21 +15,17 @@ export function toBranchKey(branch: string | null): string {
  *
  * Two-tier fallback:
  * 1. Realtime statuses (event-driven, highest priority)
- * 2. Session polling status
- *
- * The selected branch's polling status is ignored because auto-start creates
- * idle "running" sessions on the selected branch.
+ * 2. Session polling status — idle "running" sessions are filtered upstream
+ *    in `useSessionStatuses`, so anything that reaches here as "running"
+ *    represents real activity.
  */
 export function computeWorkspaceStatuses(
   worktrees: Worktree[] | undefined,
   realtimeStatuses: Map<string, WorkspaceStatus>,
-  sessionStatuses: Map<string, AgentSessionStatus>,
-  selectedBranch: string | null
+  sessionStatuses: Map<string, AgentSessionStatus>
 ): Map<string, WorkspaceStatus> {
   const map = new Map<string, WorkspaceStatus>();
   if (!worktrees) return map;
-
-  const selectedKey = toBranchKey(selectedBranch);
 
   for (const wt of worktrees) {
     const branchKey = toBranchKey(wt.branch);
@@ -40,8 +36,7 @@ export function computeWorkspaceStatuses(
       continue;
     }
 
-    const sessionStatus =
-      branchKey === selectedKey ? undefined : sessionStatuses.get(branchKey);
+    const sessionStatus = sessionStatuses.get(branchKey);
     map.set(branchKey, sessionStatus === "running" ? "working" : "idle");
   }
   return map;

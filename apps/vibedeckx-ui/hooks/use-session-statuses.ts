@@ -27,6 +27,7 @@ interface SessionRecord {
   id: string;
   branch: string;
   status: AgentSessionStatus;
+  entry_count: number;
 }
 
 /**
@@ -34,6 +35,10 @@ interface SessionRecord {
  * `POLL_INTERVAL_MS`). Returns a Map<branch, AgentSessionStatus> for all
  * sessions on the project; when multiple sessions share a branch, "running"
  * takes precedence over other statuses.
+ *
+ * Empty "running" sessions (auto-started or created via "New Conversation"
+ * without any user input) are downgraded to "stopped" so the workspace dot
+ * doesn't light up for an idle process.
  */
 export function useSessionStatuses(projectId: string | null) {
   const [statuses, setStatuses] = useState<Map<string, AgentSessionStatus>>(new Map());
@@ -54,8 +59,10 @@ export function useSessionStatuses(projectId: string | null) {
       const data = await res.json() as { sessions: SessionRecord[] };
       const map = new Map<string, AgentSessionStatus>();
       for (const s of data.sessions) {
-        if (!map.has(s.branch) || s.status === "running") {
-          map.set(s.branch, s.status);
+        const effective: AgentSessionStatus =
+          s.status === "running" && s.entry_count === 0 ? "stopped" : s.status;
+        if (!map.has(s.branch) || effective === "running") {
+          map.set(s.branch, effective);
         }
       }
       setStatuses(map);

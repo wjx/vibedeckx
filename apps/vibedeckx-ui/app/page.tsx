@@ -114,8 +114,8 @@ export default function Home() {
 
   // Compute workspace statuses for all worktrees
   const workspaceStatuses = useMemo(
-    () => computeWorkspaceStatuses(worktrees, realtimeWorkspaceStatuses, sessionStatuses, selectedBranch),
-    [worktrees, sessionStatuses, selectedBranch, realtimeWorkspaceStatuses]
+    () => computeWorkspaceStatuses(worktrees, realtimeWorkspaceStatuses, sessionStatuses),
+    [worktrees, sessionStatuses, realtimeWorkspaceStatuses]
   );
 
   // Agent started working → blue
@@ -123,12 +123,13 @@ export default function Home() {
     setRealtimeWorkspaceStatuses(prev => applyStatusWorking(prev, selectedBranch));
   }, [selectedBranch]);
 
-  // Task completed → green (+ sync DB data in background)
+  // WS taskCompleted → just sync DB data; the realtime "completed" write is
+  // driven by the global SSE handler below (uses the event's branch, not
+  // selectedBranch, so it stays correct if the user navigated away mid-turn).
   const handleTaskCompleted = useCallback(() => {
-    setRealtimeWorkspaceStatuses(prev => applyStatusCompleted(prev, selectedBranch));
     refetchTasks();
     refetchSessionStatuses();
-  }, [selectedBranch, refetchTasks, refetchSessionStatuses]);
+  }, [refetchTasks, refetchSessionStatuses]);
 
   const handleSessionStarted = useCallback(() => {
     refetchSessionStatuses();

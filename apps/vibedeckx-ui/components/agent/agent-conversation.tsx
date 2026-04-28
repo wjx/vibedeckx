@@ -183,6 +183,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   // Notify parent when agent starts working (status "running" + user has sent messages).
   // Skips auto-started idle sessions that have no messages yet.
   const prevWorkingRef = useRef(false);
+  // Reset on workspace switch so navigating to a branch with an already-active
+  // session re-fires onStatusChange (the previous branch may have left the ref true).
+  useEffect(() => {
+    prevWorkingRef.current = false;
+  }, [branch, projectId]);
   useEffect(() => {
     const isWorking = status === "running" && messages.length > 0;
     if (isWorking && !prevWorkingRef.current) {
