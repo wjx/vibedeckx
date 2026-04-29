@@ -192,6 +192,21 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
             newMap.set(data.executorId, { processId: data.processId, target: data.target ?? "local" });
             return newMap;
           });
+          // Optimistically refresh "Last run" fields so the hover label updates
+          // immediately instead of waiting for the next executor-list refetch
+          // (which only happens on workspace switch).
+          setExecutors((prev) =>
+            prev.map((e) =>
+              e.id === data.executorId
+                ? {
+                    ...e,
+                    last_process_id: data.processId,
+                    last_process_started_at: new Date().toISOString(),
+                    last_process_target: data.target ?? "local",
+                  }
+                : e,
+            ),
+          );
         } else if (data.type === "executor:stopped") {
           console.log(`[useExecutors] Processing executor:stopped, removing from runningProcesses`);
           setRunningProcesses((prev) => {
@@ -287,6 +302,21 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
         newMap.set(executorId, { processId, target });
         return newMap;
       });
+      // Mirror the SSE handler's optimistic "Last run" update so locally
+      // initiated starts also refresh the hover label without waiting for
+      // the next executor-list refetch.
+      setExecutors((prev) =>
+        prev.map((e) =>
+          e.id === executorId
+            ? {
+                ...e,
+                last_process_id: processId,
+                last_process_started_at: new Date().toISOString(),
+                last_process_target: target,
+              }
+            : e,
+        ),
+      );
       return processId;
     } catch (error) {
       console.error("Failed to start executor:", error);
