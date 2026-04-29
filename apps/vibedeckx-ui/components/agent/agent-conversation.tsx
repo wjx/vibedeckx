@@ -211,8 +211,9 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
 
   useImperativeHandle(ref, () => ({
     submitMessage: async (content: string) => {
+      onStatusChange?.();  // Optimistic "working" overlay — overrides any prior
+      // "idle" overlay set by New Conversation so the dot turns blue immediately.
       if (!session || status !== "running") {
-        onStatusChange?.();  // Immediate visual feedback before async session start
         const newSession = await startSession(permissionMode);
         if (newSession) {
           sendMessage(content, newSession.id);
@@ -221,7 +222,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         sendMessage(content);
       }
     }
-  }), [session, status, startSession, sendMessage, permissionMode]);
+  }), [session, status, startSession, sendMessage, permissionMode, onStatusChange]);
 
   const handlePasteText = useCallback(
     (event: ClipboardEvent<HTMLTextAreaElement>, text: string) => {
@@ -291,12 +292,16 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     setInput("");
     inputHistory.push(trimmedRaw);
 
+    // Always overlay "working" — even when the session is already running, the
+    // optimistic update overrides the "idle" overlay set by New Conversation
+    // so the workspace dot turns blue the moment the user hits send.
+    onStatusChange?.();
+
     // Resolve which session id to use. If no session yet, the session will be
     // created below and materialization must happen against that new id.
     let targetSessionId: string | undefined = session?.id;
     let startedSession: AgentSession | null = null;
     if (!session || status !== "running") {
-      onStatusChange?.();
       startedSession = await startSession(permissionMode);
       if (!startedSession) {
         // Restore input on failure so the user doesn't lose their pastes.
