@@ -197,6 +197,12 @@ export interface Executor {
   pty: boolean;
   position: number;
   created_at: string;
+  // Most recent local executor_processes row for this executor. Used by the
+  // UI to reconnect to a finished process's log buffer (within backend
+  // retention) after a workspace switch unmounts the ExecutorItem, and to
+  // show "Last run: <datetime>" on hover.
+  last_process_id?: string | null;
+  last_process_started_at?: string | null;
 }
 
 export type ExecutorProcessStatus = 'running' | 'completed' | 'failed' | 'killed';

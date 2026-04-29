@@ -228,6 +228,7 @@ export interface Storage {
     create: (opts: { id: string; executor_id: string; pid?: number }) => ExecutorProcess;
     getById: (id: string) => ExecutorProcess | undefined;
     getRunning: () => ExecutorProcess[];
+    getLastByExecutorId: (executorId: string) => ExecutorProcess | undefined;
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
     updatePid: (id: string, pid: number) => void;
   };

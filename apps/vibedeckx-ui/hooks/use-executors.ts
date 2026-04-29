@@ -61,6 +61,12 @@ export function pruneLastStartedProcess(
 export interface ExecutorWithProcess extends Executor {
   currentProcessId: string | null;
   isRunning: boolean;
+  // Fallback handle for the most recent run, surfaced only when the current
+  // executor mode is local (the only scope where we persist process history).
+  // Lets the UI replay the buffered log output and show "Last run: <date>"
+  // even after the process has finished.
+  lastProcessId: string | null;
+  lastStartedAt: string | null;
 }
 
 export function useExecutors(projectId: string | null, groupId: string | null | undefined, executorMode?: string) {
@@ -391,10 +397,15 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
     const match = entries?.find(e => e.target === targetMode);
     const lastStarted = lastStartedProcess.get(executor.id);
     const lastStartedMatch = lastStarted?.target === targetMode ? lastStarted : undefined;
+    // Persisted last-run only applies to local mode — the backend only tracks
+    // executor_processes rows for local processes.
+    const isLocal = targetMode === "local";
     return {
       ...executor,
       currentProcessId: match?.processId ?? lastStartedMatch?.processId ?? null,
       isRunning: !!match,
+      lastProcessId: isLocal ? executor.last_process_id ?? null : null,
+      lastStartedAt: isLocal ? executor.last_process_started_at ?? null : null,
     };
   });
 

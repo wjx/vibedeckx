@@ -57,8 +57,11 @@ export function ExecutorItem({
   onProcessFinished,
 }: ExecutorItemProps) {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  // Seed from the running process when available, otherwise from the persisted
+  // last-run id. The fallback lets us reconnect to the buffered output of a
+  // finished process after a workspace switch unmounts and remounts this item.
   const [localProcessId, setLocalProcessId] = useState<string | null>(
-    executor.currentProcessId
+    executor.currentProcessId ?? executor.lastProcessId
   );
   const processFinishedCalledRef = useRef(false);
   const prevProcessIdRef = useRef<string | null>(executor.currentProcessId);
@@ -98,6 +101,15 @@ export function ExecutorItem({
     }
   }, [executor.currentProcessId, onOpenChange]);
 
+  // Adopt the persisted last-run id once it arrives (e.g., after the executors
+  // refetch resolves post-mount). No auto-open: a finished run shouldn't pop
+  // the panel.
+  useEffect(() => {
+    if (executor.currentProcessId) return;
+    if (!executor.lastProcessId) return;
+    setLocalProcessId((prev) => prev ?? executor.lastProcessId);
+  }, [executor.currentProcessId, executor.lastProcessId]);
+
   // Handle process finished - only call once per process
   useEffect(() => {
     if (status === "closed" && exitCode !== null && !processFinishedCalledRef.current) {
@@ -123,6 +135,13 @@ export function ExecutorItem({
 
   const isRunning = executor.isRunning;
 
+  const lastRunLabel = executor.lastStartedAt
+    ? new Date(executor.lastStartedAt).toLocaleString(undefined, {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    : null;
+
   return (
     <>
       <Collapsible open={isOpen} onOpenChange={onOpenChange}>
@@ -132,7 +151,7 @@ export function ExecutorItem({
           className={cn("border rounded-lg", isDragging && "shadow-lg bg-background")}
         >
           <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50">
+            <div className="group flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -165,6 +184,14 @@ export function ExecutorItem({
                 </Badge>
               </div>
               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                {lastRunLabel && (
+                  <span
+                    className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                    title={new Date(executor.lastStartedAt!).toLocaleString()}
+                  >
+                    Last run: {lastRunLabel}
+                  </span>
+                )}
                 {isRunning ? (
                   <Button
                     size="sm"

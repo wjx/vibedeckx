@@ -21,7 +21,19 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const executors = req.query.groupId
         ? fastify.storage.executors.getByGroupId(req.query.groupId)
         : fastify.storage.executors.getByProjectId(req.params.projectId);
-      return reply.code(200).send({ executors });
+
+      // Attach the most recent local process for each executor so the UI can
+      // reconnect to its log buffer (within retention) after a workspace
+      // switch unmounts the ExecutorItem.
+      const augmented = executors.map((executor) => {
+        const last = fastify.storage.executorProcesses.getLastByExecutorId(executor.id);
+        return {
+          ...executor,
+          last_process_id: last?.id ?? null,
+          last_process_started_at: last?.started_at ?? null,
+        };
+      });
+      return reply.code(200).send({ executors: augmented });
     }
   );
 

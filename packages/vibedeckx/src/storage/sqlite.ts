@@ -1239,6 +1239,14 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           .all({});
       },
 
+      getLastByExecutorId: (executorId: string) => {
+        return db
+          .prepare<{ executor_id: string }, ExecutorProcess>(
+            `SELECT * FROM executor_processes WHERE executor_id = @executor_id ORDER BY started_at DESC LIMIT 1`
+          )
+          .get({ executor_id: executorId });
+      },
+
       updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => {
         const finishedAt = status !== 'running' ? new Date().toISOString() : null;
         db.prepare(
