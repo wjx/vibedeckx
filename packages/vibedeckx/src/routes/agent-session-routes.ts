@@ -4,6 +4,7 @@ import type { AgentMessage, AgentType, ContentPart } from "../agent-types.js";
 import { ConversationPatch } from "../conversation-patch.js";
 import { getAllProviders } from "../providers/index.js";
 import { proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { projectIdFromRemoteSessionId } from "./remote-status-bridge.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 import { writePasteToTempFile } from "../utils/paste-file.js";
@@ -660,6 +661,16 @@ const routes: FastifyPluginAsync = async (fastify) => {
           detail: result.data,
         });
       }
+      // Emit branch:activity working — remote's own EventBus would also emit
+      // this event but we don't subscribe to remote SSE; deriving from the
+      // proxy success is the cheapest reliable signal.
+      fastify.eventBus?.emit({
+        type: "branch:activity",
+        projectId: projectIdFromRemoteSessionId(req.params.sessionId, remoteInfo),
+        branch: remoteInfo.branch ?? null,
+        activity: "working",
+        since: Date.now(),
+      });
       return reply.code(result.status || 200).send(result.data);
     }
 

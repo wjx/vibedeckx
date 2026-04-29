@@ -571,6 +571,13 @@ export class AgentSessionManager {
             input_tokens: event.input_tokens,
             output_tokens: event.output_tokens,
           });
+          this.eventBus?.emit({
+            type: "branch:activity",
+            projectId: session.projectId,
+            branch: session.branch,
+            activity: "completed",
+            since: completedAt,
+          });
 
           // Turn finished — process stays alive (stream-json) waiting for next
           // input, but status now reflects "between turns" so UI affordances
@@ -709,7 +716,15 @@ export class AgentSessionManager {
       this.storage.agentSessions.upsertEntry(session.id, index, JSON.stringify(message));
       this.storage.agentSessions.touchUpdatedAt(session.id);
       if (message.type === "user") {
-        this.storage.agentSessions.markUserMessage(session.id, Date.now());
+        const now = Date.now();
+        this.storage.agentSessions.markUserMessage(session.id, now);
+        this.eventBus?.emit({
+          type: "branch:activity",
+          projectId: session.projectId,
+          branch: session.branch,
+          activity: "working",
+          since: now,
+        });
         const dbRow = this.storage.agentSessions.getById(session.id);
         if (dbRow && (dbRow.title === null || dbRow.title === undefined)) {
           const text = typeof message.content === "string"

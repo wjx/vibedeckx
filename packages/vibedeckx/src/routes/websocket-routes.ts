@@ -156,15 +156,24 @@ function connectPersistentRemoteWs(
       // (mirrors the executor:stopped pattern for remote executors)
       if (eventBus) {
         const tc = parsed.taskCompleted as Record<string, unknown> | undefined;
+        const projectId = projectIdFromRemoteSessionId(sessionId, remoteInfo);
+        const branch = remoteInfo.branch ?? null;
         eventBus.emit({
           type: "session:taskCompleted",
-          projectId: projectIdFromRemoteSessionId(sessionId, remoteInfo),
-          branch: remoteInfo.branch ?? null,
+          projectId,
+          branch,
           sessionId,
           duration_ms: tc?.duration_ms as number | undefined,
           cost_usd: tc?.cost_usd as number | undefined,
           input_tokens: tc?.input_tokens as number | undefined,
           output_tokens: tc?.output_tokens as number | undefined,
+        });
+        eventBus.emit({
+          type: "branch:activity",
+          projectId,
+          branch,
+          activity: "completed",
+          since: Date.now(),
         });
       }
     } else if ("error" in parsed) {
