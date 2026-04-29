@@ -147,31 +147,15 @@ export default function Home() {
     });
   }, [selectedBranch]);
 
-  // Legacy SSE handlers — phase 6 will drop them entirely. Phase 5 keeps
-  // them only for the task table refresh side effect; the workspace dot
-  // is no longer driven by these events.
-  const handleGlobalSessionStatus = useCallback((_branch: string | null, status: "running" | "stopped" | "error") => {
-    if (status !== "running") {
-      refetchTasks();
-    }
-  }, [refetchTasks]);
-
-  const handleGlobalSessionFinished = useCallback(() => {
-    refetchTasks();
-  }, [refetchTasks]);
-
+  // task:* events drive the Tasks panel. Session-status / -finished /
+  // -taskCompleted SSE events are no longer consumed here — useBranchActivity
+  // owns the workspace dot, and the only task auto-mutation
+  // (auto-mark-done-on-success) emits task:updated downstream.
   const handleGlobalTaskChanged = useCallback(() => {
     refetchTasks();
   }, [refetchTasks]);
 
-  const handleGlobalSessionTaskCompleted = useCallback(() => {
-    refetchTasks();
-  }, [refetchTasks]);
-
   useGlobalEvents(currentProject?.id ?? null, {
-    onSessionStatus: handleGlobalSessionStatus,
-    onSessionFinished: handleGlobalSessionFinished,
-    onSessionTaskCompleted: handleGlobalSessionTaskCompleted,
     onTaskChanged: handleGlobalTaskChanged,
   });
 
