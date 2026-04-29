@@ -14,6 +14,8 @@
   "scripts": {
     "build": "node esbuild.config.mjs && chmod +x ./dist/bin.js",
     "dev": "tsc -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "postinstall": "npm rebuild node-pty || echo 'node-pty rebuild failed, PTY features may not work'"
   },
@@ -44,6 +46,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.28.0"
+    "esbuild": "^0.28.0",
+    "vitest": "^4.0.18"
   }
 }
