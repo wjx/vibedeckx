@@ -1061,9 +1061,7 @@ export class ChatSessionManager {
             .describe("Number of recent output lines to include per executor"),
         }),
         execute: async ({ tailLines }) => {
-          const group = branch
-            ? storage.executorGroups.getByBranch(projectId, branch)
-            : undefined;
+          const group = storage.executorGroups.getByBranch(projectId, branch ?? "");
 
           if (!group) {
             return { executors: [], message: "No executor group found for this workspace." };
@@ -1106,9 +1104,7 @@ export class ChatSessionManager {
             .describe("Remote server name or ID to run the executor on. If omitted, uses project executor_mode or runs locally."),
         }),
         execute: async ({ executorName, remote }) => {
-          const group = branch
-            ? storage.executorGroups.getByBranch(projectId, branch)
-            : undefined;
+          const group = storage.executorGroups.getByBranch(projectId, branch ?? "");
 
           if (!group) {
             return { success: false, message: "No executor group found for this workspace." };
@@ -1299,9 +1295,7 @@ export class ChatSessionManager {
             .describe("Remote server name or ID where the executor is running. If omitted, auto-detects."),
         }),
         execute: async ({ executorName, remote }) => {
-          const group = branch
-            ? storage.executorGroups.getByBranch(projectId, branch)
-            : undefined;
+          const group = storage.executorGroups.getByBranch(projectId, branch ?? "");
 
           if (!group) {
             return { success: false, message: "No executor group found for this workspace." };
