@@ -181,20 +181,22 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   }, [projectId, branch]);
 
   // Notify parent when agent starts working (status "running" + user has sent messages).
-  // Skips auto-started idle sessions that have no messages yet.
+  // Checks for a user-typed message specifically — auto-pushed system entries
+  // (e.g. session init, "Session stopped by user") must not flip the dot to blue.
   const prevWorkingRef = useRef(false);
-  // Reset on workspace switch so navigating to a branch with an already-active
-  // session re-fires onStatusChange (the previous branch may have left the ref true).
+  // Reset on workspace switch and on session change (e.g. New Conversation) so a
+  // freshly-loaded running session with no user input doesn't inherit a stale true.
   useEffect(() => {
     prevWorkingRef.current = false;
-  }, [branch, projectId]);
+  }, [branch, projectId, session?.id]);
+  const hasUserMessage = messages.some((m) => m.type === "user");
   useEffect(() => {
-    const isWorking = status === "running" && messages.length > 0;
+    const isWorking = status === "running" && hasUserMessage;
     if (isWorking && !prevWorkingRef.current) {
       onStatusChange?.();
     }
     prevWorkingRef.current = isWorking;
-  }, [status, messages.length, onStatusChange]);
+  }, [status, hasUserMessage, onStatusChange]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);
