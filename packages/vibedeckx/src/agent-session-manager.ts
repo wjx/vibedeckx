@@ -248,6 +248,18 @@ export class AgentSessionManager {
     // Spawn agent process
     this.spawnAgent(session, absoluteWorktreePath);
     console.log(`[AgentSession] createNewSession: id=${sessionId}, projectId=${projectId}, branch=${branchKey}`);
+
+    // The new session has fresh updated_at and no timestamps, so the branch
+    // resets to idle (see computeBranchActivity). Emit so SSE consumers don't
+    // sit on a stale "completed" until the next user message arrives.
+    this.eventBus?.emit({
+      type: "branch:activity",
+      projectId,
+      branch,
+      activity: "idle",
+      since: Date.now(),
+    });
+
     return sessionId;
   }
 

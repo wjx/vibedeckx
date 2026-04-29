@@ -518,6 +518,16 @@ const routes: FastifyPluginAsync = async (fastify) => {
             }
           }
 
+          // Mirror createNewSession's branch:activity:idle on the local
+          // EventBus so SSE consumers don't sit on stale "completed" until
+          // the next user message reaches the remote.
+          fastify.eventBus?.emit({
+            type: "branch:activity",
+            projectId: req.params.projectId,
+            branch: branch ?? null,
+            activity: "idle",
+            since: Date.now(),
+          });
           return reply.code(200).send({
             session: { ...remoteData.session, id: localSessionId, projectId: req.params.projectId },
             messages: remoteData.messages,
