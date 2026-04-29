@@ -9,6 +9,7 @@ function session(opts: Partial<AgentSession> & { branch: string; id?: string }):
     branch: opts.branch,
     status: opts.status ?? "running",
     created_at: opts.created_at ?? "2026-01-01 00:00:00.000",
+    updated_at: opts.updated_at ?? opts.created_at ?? "2026-01-01 00:00:00.000",
     last_user_message_at: opts.last_user_message_at ?? null,
     last_completed_at: opts.last_completed_at ?? null,
   };
@@ -59,24 +60,42 @@ describe("computeBranchActivity", () => {
     expect(result.get("feat-a")?.activity).toBe("completed");
   });
 
-  it("aggregates across sessions on the same branch (New Conversation)", () => {
-    // Session A: completed earlier. Session B (newer): user just messaged.
-    // Branch should be "working" because B's user-message is newer than A's
-    // completion.
+  // ---- Latest-session semantics (the New Conversation case) ---------------
+
+  it("New Conversation: newer empty session resets branch to idle", () => {
+    // Session A completed earlier; user clicks New Conversation, creating B.
+    // B has no timestamps but a newer updated_at → branch is idle, NOT
+    // "completed" leftover from A.
     const result = computeBranchActivity([
-      session({ id: "A", branch: "feat-a", last_user_message_at: 1000, last_completed_at: 2000 }),
-      session({ id: "B", branch: "feat-a", last_user_message_at: 3000, last_completed_at: null }),
+      session({ id: "A", branch: "feat-a", updated_at: "2026-01-01 00:00:00.000",
+                last_user_message_at: 1000, last_completed_at: 2000 }),
+      session({ id: "B", branch: "feat-a", updated_at: "2026-01-01 00:00:01.000" }),
     ]);
-    expect(result.get("feat-a")).toEqual({ activity: "working", since: 3000 });
+    expect(result.get("feat-a")).toEqual({ activity: "idle", since: 0 });
   });
 
-  it("aggregates across sessions: older user msg, newer completion → completed", () => {
+  it("user messages on new session → working from that session's timestamp", () => {
     const result = computeBranchActivity([
-      session({ id: "A", branch: "feat-a", last_user_message_at: 5000, last_completed_at: null }),
-      session({ id: "B", branch: "feat-a", last_user_message_at: null, last_completed_at: 6000 }),
+      session({ id: "A", branch: "feat-a", updated_at: "2026-01-01 00:00:00.000",
+                last_user_message_at: 1000, last_completed_at: 2000 }),
+      session({ id: "B", branch: "feat-a", updated_at: "2026-01-01 00:00:01.000",
+                last_user_message_at: 5000 }),
     ]);
-    expect(result.get("feat-a")).toEqual({ activity: "completed", since: 6000 });
+    expect(result.get("feat-a")).toEqual({ activity: "working", since: 5000 });
   });
+
+  it("user messages on older session bumps it to latest", () => {
+    // A was older but a fresh user message touched its updated_at; B has no
+    // recent activity. Branch follows A's state.
+    const result = computeBranchActivity([
+      session({ id: "A", branch: "feat-a", updated_at: "2026-01-01 00:00:02.000",
+                last_user_message_at: 7000 }),
+      session({ id: "B", branch: "feat-a", updated_at: "2026-01-01 00:00:01.000" }),
+    ]);
+    expect(result.get("feat-a")).toEqual({ activity: "working", since: 7000 });
+  });
+
+  // ---- Multi-branch & null branch ------------------------------------------
 
   it("multiple branches → independent states", () => {
     const result = computeBranchActivity([
@@ -106,8 +125,22 @@ describe("computeBranchActivity", () => {
       branch: "feat-a",
       status: "running",
       created_at: "2026-01-01 00:00:00.000",
-      // last_user_message_at and last_completed_at intentionally omitted
+      // last_user_message_at, last_completed_at, updated_at omitted
     };
     expect(computeBranchActivity([s]).get("feat-a")?.activity).toBe("idle");
+  });
+
+  it("falls back to created_at when updated_at is missing", () => {
+    const result = computeBranchActivity([
+      session({ id: "A", branch: "feat-a",
+                created_at: "2026-01-01 00:00:00.000",
+                updated_at: undefined,
+                last_user_message_at: 1000 }),
+      session({ id: "B", branch: "feat-a",
+                created_at: "2026-01-01 00:00:01.000",
+                updated_at: undefined }),
+    ]);
+    // B has newer created_at, no timestamps → idle
+    expect(result.get("feat-a")?.activity).toBe("idle");
   });
 });
