@@ -170,9 +170,18 @@ const createDatabase = (dbPath: string): BetterSqlite3Database => {
       project_id TEXT NOT NULL,
       remote_server_id TEXT NOT NULL,
       remote_session_id TEXT NOT NULL,
-      branch TEXT
+      branch TEXT,
+      title_resolved INTEGER NOT NULL DEFAULT 0
     );
   `);
+
+  // Migration: add title_resolved flag to remote_session_mappings so the
+  // local-side AI title generator only fires once per remote session, even
+  // across server restarts.
+  const remoteMappingInfo = db.prepare("PRAGMA table_info(remote_session_mappings)").all() as { name: string }[];
+  if (!remoteMappingInfo.some(col => col.name === "title_resolved")) {
+    db.exec("ALTER TABLE remote_session_mappings ADD COLUMN title_resolved INTEGER NOT NULL DEFAULT 0");
+  }
 
   // Migration: add pty column to existing executors table if not present
   const tableInfo = db.prepare("PRAGMA table_info(executors)").all() as { name: string }[];
@@ -1526,6 +1535,18 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
 
       delete: (localSessionId: string) => {
         db.prepare(`DELETE FROM remote_session_mappings WHERE local_session_id = @id`).run({ id: localSessionId });
+      },
+
+      isTitleResolved: (localSessionId: string) => {
+        const row = db.prepare<{ id: string }, { title_resolved: number }>(
+          `SELECT title_resolved FROM remote_session_mappings WHERE local_session_id = @id`
+        ).get({ id: localSessionId });
+        return row?.title_resolved === 1;
+      },
+
+      markTitleResolved: (localSessionId: string) => {
+        db.prepare(`UPDATE remote_session_mappings SET title_resolved = 1 WHERE local_session_id = @id`)
+          .run({ id: localSessionId });
       },
     },
 

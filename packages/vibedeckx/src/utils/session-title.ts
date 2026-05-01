@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import type { Storage } from "../storage/types.js";
+import type { ContentPart } from "../agent-types.js";
 import { getChatProviderConfig, resolveChatModel } from "./chat-model.js";
 
 const TITLE_MAX_CHARS = 60;
@@ -16,6 +17,18 @@ export function isChatModelConfigured(storage: Storage): boolean {
     return Boolean(config.openrouterApiKey || process.env.OPENROUTER_API_KEY);
   }
   return Boolean(config.deepseekApiKey || process.env.DEEPSEEK_API_KEY);
+}
+
+/**
+ * Pull the plain-text portion out of a user message's `content` field, which
+ * may be either a raw string or an array of TextPart/ImagePart blocks.
+ */
+export function extractUserText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text)
+    .join(" ");
 }
 
 /**

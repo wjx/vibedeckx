@@ -15,7 +15,7 @@ import { ConversationPatch, type Patch, type AgentWsMessage } from "./conversati
 import type { EventBus } from "./event-bus.js";
 import { EntryIndexProvider, EntryTracker } from "./entry-index-provider.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
-import { generateSessionTitle, snippetTitle } from "./utils/session-title.js";
+import { generateSessionTitle, snippetTitle, extractUserText } from "./utils/session-title.js";
 
 // ============ Session Store Types ============
 
@@ -60,6 +60,17 @@ export class AgentSessionManager {
 
   setEventBus(eventBus: EventBus): void {
     this.eventBus = eventBus;
+  }
+
+  /**
+   * Idempotency guard for one-shot title generation per session. Returns
+   * true if the caller is the first to claim the slot (and should proceed
+   * with generation), false if another path has already taken it.
+   */
+  markTitleResolved(sessionId: string): boolean {
+    if (this.titleResolved.has(sessionId)) return false;
+    this.titleResolved.add(sessionId);
+    return true;
   }
 
   /**
@@ -741,14 +752,9 @@ export class AgentSessionManager {
           since: now,
         });
         const dbRow = this.storage.agentSessions.getById(session.id);
-        if (
-          dbRow &&
-          (dbRow.title === null || dbRow.title === undefined) &&
-          !this.titleResolved.has(session.id)
-        ) {
+        if (dbRow && (dbRow.title === null || dbRow.title === undefined)) {
           const text = extractUserText(message.content);
-          if (text.trim().length > 0) {
-            this.titleResolved.add(session.id);
+          if (text.trim().length > 0 && this.markTitleResolved(session.id)) {
             void this.ensureSessionTitle(session, text);
           }
         }
@@ -1419,10 +1425,3 @@ export class AgentSessionManager {
   }
 }
 
-function extractUserText(content: string | ContentPart[]): string {
-  if (typeof content === "string") return content;
-  return content
-    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join(" ");
-}
