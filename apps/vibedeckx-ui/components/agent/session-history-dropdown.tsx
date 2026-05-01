@@ -140,17 +140,17 @@ export function SessionHistoryDropdown({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-xs gap-1 max-w-[200px]"
+          className="h-7 text-xs gap-1 w-[200px] justify-start"
           title={triggerTitle}
         >
           {triggerPending ? (
             <span
-              className="shimmer-bar h-3 w-32 rounded-sm"
+              className="shimmer-bar block h-3 flex-1 rounded-sm"
               role="status"
               aria-label="Generating title"
             />
           ) : (
-            <span className="truncate">{triggerLabel}</span>
+            <span className="truncate flex-1 text-left">{triggerLabel}</span>
           )}
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
         </Button>
