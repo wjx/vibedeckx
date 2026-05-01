@@ -141,7 +141,7 @@
       var(--muted) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer-sweep 1.6s ease-in-out infinite;
+    animation: shimmer-sweep 2.4s ease-in-out infinite;
   }
 }
 

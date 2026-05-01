@@ -145,7 +145,7 @@ export function SessionHistoryDropdown({
         >
           {triggerPending ? (
             <span
-              className="shimmer-bar h-3 w-32 rounded-full"
+              className="shimmer-bar h-3 w-32 rounded-sm"
               role="status"
               aria-label="Generating title"
             />
@@ -210,7 +210,7 @@ export function SessionHistoryDropdown({
                 ) : isTitlePending(s.id) ? (
                   <div className="py-0.5" title="Generating title…">
                     <span
-                      className="shimmer-bar block h-3 w-40 rounded-full"
+                      className="shimmer-bar block h-3 w-40 rounded-sm"
                       role="status"
                       aria-label="Generating title"
                     />
