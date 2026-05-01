@@ -15,6 +15,7 @@ import { ConversationPatch, type Patch, type AgentWsMessage } from "./conversati
 import type { EventBus } from "./event-bus.js";
 import { EntryIndexProvider, EntryTracker } from "./entry-index-provider.js";
 import { resolveWorktreePath } from "./utils/worktree-paths.js";
+import { generateSessionTitle, snippetTitle } from "./utils/session-title.js";
 
 // ============ Session Store Types ============
 
@@ -50,6 +51,8 @@ export class AgentSessionManager {
   private sessions: Map<string, RunningSession> = new Map();
   private storage: Storage;
   private eventBus: EventBus | null = null;
+  /** Sessions for which title generation is currently in flight or already done. */
+  private titleResolved: Set<string> = new Set();
 
   constructor(storage: Storage) {
     this.storage = storage;
@@ -738,17 +741,15 @@ export class AgentSessionManager {
           since: now,
         });
         const dbRow = this.storage.agentSessions.getById(session.id);
-        if (dbRow && (dbRow.title === null || dbRow.title === undefined)) {
-          const text = typeof message.content === "string"
-            ? message.content
-            : message.content
-                .filter((p: ContentPart) => p.type === "text")
-                .map((p) => (p as { text: string }).text)
-                .join(" ");
-          const trimmed = text.trim();
-          const snippet = trimmed.slice(0, 60) + (trimmed.length > 60 ? "…" : "");
-          if (snippet.length > 0) {
-            this.storage.agentSessions.updateTitle(session.id, snippet);
+        if (
+          dbRow &&
+          (dbRow.title === null || dbRow.title === undefined) &&
+          !this.titleResolved.has(session.id)
+        ) {
+          const text = extractUserText(message.content);
+          if (text.trim().length > 0) {
+            this.titleResolved.add(session.id);
+            void this.ensureSessionTitle(session, text);
           }
         }
       }
@@ -1356,6 +1357,34 @@ export class AgentSessionManager {
   /**
    * Broadcast a JSON patch to all subscribers
    */
+  /**
+   * Generate a title for a freshly-started session from its first user message.
+   * Tries the configured chat model first; on failure or when no model is
+   * configured, falls back to a truncated snippet. Writes the title once and
+   * notifies subscribers so the session list can refresh.
+   */
+  private async ensureSessionTitle(session: RunningSession, userText: string): Promise<void> {
+    const fallback = snippetTitle(userText);
+    let title: string | null = null;
+    try {
+      title = await generateSessionTitle(this.storage, userText);
+    } catch (error) {
+      console.warn(`[AgentSession] Title generation threw for ${session.id}:`, error);
+    }
+    const finalTitle = title && title.length > 0 ? title : fallback;
+    if (!finalTitle) return;
+
+    try {
+      const dbRow = this.storage.agentSessions.getById(session.id);
+      // Respect any title the user (or another writer) has set in the meantime.
+      if (!dbRow || (dbRow.title !== null && dbRow.title !== undefined)) return;
+      this.storage.agentSessions.updateTitle(session.id, finalTitle);
+      this.broadcastRaw(session.id, { titleUpdated: { title: finalTitle } });
+    } catch (error) {
+      console.error(`[AgentSession] Failed to persist generated title for ${session.id}:`, error);
+    }
+  }
+
   private broadcastPatch(sessionId: string, patch: Patch): void {
     // DEBUG: surface every /status transition — helps localize "dialog still fires"
     const statusOp = patch.find(p => p.path === "/status");
@@ -1388,4 +1417,12 @@ export class AgentSessionManager {
       }
     }
   }
+}
+
+function extractUserText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text)
+    .join(" ");
 }

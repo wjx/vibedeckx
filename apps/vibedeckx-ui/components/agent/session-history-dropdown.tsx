@@ -24,6 +24,9 @@ interface SessionHistoryDropdownProps {
   branch: string | null;
   currentSessionId: string | null;
   currentEntryCount?: number;
+  /** Bumping this value forces a session-list refresh (used after the
+   *  backend writes an AI-generated title). */
+  refreshKey?: number;
   onSwitch: (sessionId: string) => void;
   onDelete?: (sessionId: string, remaining: BranchSessionSummary[]) => void;
 }
@@ -33,6 +36,7 @@ export function SessionHistoryDropdown({
   branch,
   currentSessionId,
   currentEntryCount,
+  refreshKey,
   onSwitch,
   onDelete,
 }: SessionHistoryDropdownProps) {
@@ -76,6 +80,13 @@ export function SessionHistoryDropdown({
     }
     prevEntryRef.current = { sessionId: currentSessionId, count };
   }, [currentSessionId, currentEntryCount, refresh]);
+
+  // Refresh when an external trigger (e.g. an AI-generated title arriving over
+  // the agent WebSocket) signals that the persisted title may have changed.
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    void refresh();
+  }, [refreshKey, refresh]);
 
   const handleRename = async (id: string, next: string) => {
     const title = next.trim().length > 0 ? next.trim() : null;

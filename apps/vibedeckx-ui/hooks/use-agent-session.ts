@@ -62,7 +62,8 @@ type AgentWsMessage =
   | { finished: true }
   | { error: string }
   | { taskCompleted: { duration_ms?: number; cost_usd?: number; input_tokens?: number; output_tokens?: number } }
-  | { remoteStatus: RemoteConnectionStatus; attempt?: number };
+  | { remoteStatus: RemoteConnectionStatus; attempt?: number }
+  | { titleUpdated: { title: string } };
 
 // Container for patch target
 interface PatchContainer {
@@ -331,6 +332,7 @@ interface UseAgentSessionOptions {
   sessionId?: string | null; // Explicit session to load; when undefined/null -> latest-for-branch behavior
   onTaskCompleted?: () => void;
   onSessionStarted?: () => void;
+  onTitleUpdated?: (title: string) => void;
 }
 
 export function useAgentSession(projectId: string | null, branch: string | null, agentMode?: string, agentType?: AgentType, options?: UseAgentSessionOptions) {
@@ -360,6 +362,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const startingRef = useRef(false); // Reentrancy guard for startSession
   const onTaskCompletedRef = useRef(options?.onTaskCompleted);
   const onSessionStartedRef = useRef(options?.onSessionStarted);
+  const onTitleUpdatedRef = useRef(options?.onTitleUpdated);
   // connectWebSocket has [] deps so its WS handlers freeze projectId/branch/
   // explicitSessionId at first render. Reading these via refs ensures cache
   // invalidation in the handlers targets the CURRENT cache key, not a stale
@@ -375,6 +378,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   useEffect(() => {
     onTaskCompletedRef.current = options?.onTaskCompleted;
     onSessionStartedRef.current = options?.onSessionStarted;
+    onTitleUpdatedRef.current = options?.onTitleUpdated;
     projectIdRef.current = projectId;
     branchRef.current = branch;
     explicitSessionIdRef.current = explicitSessionId;
@@ -527,6 +531,12 @@ export function useAgentSession(projectId: string | null, branch: string | null,
         // Handle remote connection status (for remote sessions)
         if ("remoteStatus" in msg) {
           setRemoteStatus(msg.remoteStatus);
+          return;
+        }
+
+        // Handle session title (set asynchronously after the first user message)
+        if ("titleUpdated" in msg) {
+          onTitleUpdatedRef.current?.(msg.titleUpdated.title);
           return;
         }
 

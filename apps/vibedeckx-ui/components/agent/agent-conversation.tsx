@@ -124,6 +124,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
+  const [titleRefreshKey, setTitleRefreshKey] = useState(0);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaWrapperRef = useRef<HTMLDivElement>(null);
   const inputHistory = useInputHistory(setInput, projectId, branch);
@@ -153,7 +154,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     startNewConversation,
     switchMode,
     acceptPlan,
-  } = useAgentSession(projectId, branch, project?.agent_mode, agentType, { sessionId, onTaskCompleted, onSessionStarted });
+  } = useAgentSession(projectId, branch, project?.agent_mode, agentType, {
+    sessionId,
+    onTaskCompleted,
+    onSessionStarted,
+    onTitleUpdated: () => setTitleRefreshKey((k) => k + 1),
+  });
 
   // Fetch available agent providers on mount
   useEffect(() => {
@@ -529,6 +535,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 branch={branch}
                 currentSessionId={session?.id ?? null}
                 currentEntryCount={messages.length}
+                refreshKey={titleRefreshKey}
                 onSwitch={(id) => {
                   setSessionUrlParam?.(id);
                 }}
