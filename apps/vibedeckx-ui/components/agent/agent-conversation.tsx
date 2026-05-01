@@ -130,6 +130,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   // the snippet title that the remote backend wrote synchronously. Cleared as
   // soon as the AI result arrives over the WebSocket (`onTitleUpdated`).
   const [pendingTitleSessionId, setPendingTitleSessionId] = useState<string | null>(null);
+  // The AI-generated title arrives over WS, but the dropdown's session list
+  // refresh is async — for ~100–300ms after WS arrival the cached row still
+  // holds the snippet, causing a brief snippet flash before the AI title
+  // shows. Using the WS-delivered title as an optimistic override bridges
+  // that gap. Cleared once refresh syncs (or on session switch / timeout).
+  const [aiTitleOverride, setAiTitleOverride] = useState<{ sessionId: string; title: string } | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaWrapperRef = useRef<HTMLDivElement>(null);
   const inputHistory = useInputHistory(setInput, projectId, branch);
@@ -163,7 +169,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     sessionId,
     onTaskCompleted,
     onSessionStarted,
-    onTitleUpdated: () => {
+    onTitleUpdated: (title: string) => {
+      const sid = session?.id;
+      if (sid && title) {
+        setAiTitleOverride({ sessionId: sid, title });
+      }
       setTitleRefreshKey((k) => k + 1);
       setPendingTitleSessionId(null);
     },
@@ -221,6 +231,27 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
       setPendingTitleSessionId(null);
     }
   }, [session?.id, pendingTitleSessionId]);
+
+  // Clear the title override on session switch — the override only matters
+  // for the session that just received it, and the new session's list
+  // refresh will populate its own (already-final) title.
+  useEffect(() => {
+    if (aiTitleOverride && session?.id !== aiTitleOverride.sessionId) {
+      setAiTitleOverride(null);
+    }
+  }, [session?.id, aiTitleOverride]);
+
+  // Safety net: drop the override after a short window. By then the session
+  // list refresh has long completed; keeping it longer would mask manual
+  // renames performed right after AI generation.
+  useEffect(() => {
+    if (!aiTitleOverride) return;
+    const captured = aiTitleOverride;
+    const timer = setTimeout(() => {
+      setAiTitleOverride((prev) => (prev === captured ? null : prev));
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [aiTitleOverride]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);
@@ -573,6 +604,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 currentEntryCount={messages.length}
                 refreshKey={titleRefreshKey}
                 pendingTitleSessionId={pendingTitleSessionId}
+                aiTitleOverride={aiTitleOverride}
                 onSwitch={(id) => {
                   setSessionUrlParam?.(id);
                 }}

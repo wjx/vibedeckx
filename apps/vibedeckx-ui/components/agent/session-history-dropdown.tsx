@@ -30,6 +30,11 @@ interface SessionHistoryDropdownProps {
   /** When set, the matching session renders a "Generating title…" loader
    *  instead of its persisted title. Cleared once the AI title arrives. */
   pendingTitleSessionId?: string | null;
+  /** WS-delivered AI title for a session whose row in `sessions` may still
+   *  hold the older snippet title. Used as an optimistic display value to
+   *  bridge the gap between WS arrival and the async list refresh — without
+   *  it the snippet briefly flashes before the AI title settles in. */
+  aiTitleOverride?: { sessionId: string; title: string } | null;
   onSwitch: (sessionId: string) => void;
   onDelete?: (sessionId: string, remaining: BranchSessionSummary[]) => void;
 }
@@ -41,6 +46,7 @@ export function SessionHistoryDropdown({
   currentEntryCount,
   refreshKey,
   pendingTitleSessionId,
+  aiTitleOverride,
   onSwitch,
   onDelete,
 }: SessionHistoryDropdownProps) {
@@ -120,6 +126,9 @@ export function SessionHistoryDropdown({
   };
 
   const label = (s: BranchSessionSummary): string => {
+    if (aiTitleOverride && aiTitleOverride.sessionId === s.id) {
+      return aiTitleOverride.title;
+    }
     if (s.title && s.title.trim().length > 0) return s.title;
     return s.updated_at
       ? new Date(s.updated_at).toLocaleString()
