@@ -48,6 +48,39 @@ describe("computeBranchActivity", () => {
     expect(result.get("feat-a")).toEqual({ activity: "working", since: 3000 });
   });
 
+  it("user-stopped mid-turn (status=stopped, user > completed) → stopped", () => {
+    // User clicked Stop while the agent was processing their message: the
+    // turn was abandoned, not completed. Distinct from idle (which means
+    // "fresh, never had activity") — `stopped` says "you have unfinished
+    // work here, come back to it."
+    const result = computeBranchActivity([
+      session({ branch: "feat-a", status: "stopped",
+                last_user_message_at: 1000, last_completed_at: null }),
+    ]);
+    expect(result.get("feat-a")).toEqual({ activity: "stopped", since: 1000 });
+  });
+
+  it("errored mid-turn (status=error, user > completed) → stopped", () => {
+    // Agent process crashed before completing the user's turn. Same surface
+    // as user-stopped: abandoned work, not "still working".
+    const result = computeBranchActivity([
+      session({ branch: "feat-a", status: "error",
+                last_user_message_at: 3000, last_completed_at: 2000 }),
+    ]);
+    expect(result.get("feat-a")).toEqual({ activity: "stopped", since: 3000 });
+  });
+
+  it("naturally completed (status=stopped, completed >= user) → completed", () => {
+    // After successful completion, agent-session-manager flips status to
+    // "stopped" too. The completed-branch should still win because
+    // last_completed_at >= last_user_message_at.
+    const result = computeBranchActivity([
+      session({ branch: "feat-a", status: "stopped",
+                last_user_message_at: 1000, last_completed_at: 2000 }),
+    ]);
+    expect(result.get("feat-a")?.activity).toBe("completed");
+  });
+
   // ---- Edge cases ----------------------------------------------------------
 
   it("equal user_message_at and completed_at → completed (completion wins on tie)", () => {

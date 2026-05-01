@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getAuthToken } from "@/lib/api";
 
-export type BranchActivity = "idle" | "working" | "completed";
+export type BranchActivity = "idle" | "working" | "completed" | "stopped";
 
 interface BranchActivityEntry {
   branch: string | null;

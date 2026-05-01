@@ -32,6 +32,12 @@ function StatusDot({ status }: { status?: WorkspaceStatus }) {
   if (status === "working") {
     return <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shrink-0" />;
   }
+  if (status === "stopped") {
+    // Amber = "interrupted, unfinished work" — visually distinct from idle
+    // (gray "fresh") and completed (green "done"). Cues the user that this
+    // workspace has a half-finished turn waiting for them.
+    return <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />;
+  }
   // completed
   return <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />;
 }

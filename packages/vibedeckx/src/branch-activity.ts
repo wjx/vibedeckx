@@ -5,7 +5,7 @@ import type { AgentSession } from "./storage/types.js";
  * workspace status indicators (idle / working / completed dot color) — see
  * `plans/branch-activity-refactor.md`.
  */
-export type BranchActivity = "idle" | "working" | "completed";
+export type BranchActivity = "idle" | "working" | "completed" | "stopped";
 
 export interface BranchActivityState {
   activity: BranchActivity;
@@ -16,10 +16,16 @@ export interface BranchActivityState {
 /**
  * Compute branch activity from agent_sessions. For each branch, picks the
  * session with the most recent `updated_at` and derives the state from its
- * timestamps:
- *   - working   if last_user_message_at > (last_completed_at ?? 0)
+ * timestamps + status:
+ *   - working   if status === "running" AND last_user_message_at > (last_completed_at ?? 0)
+ *   - stopped   if status !== "running" AND last_user_message_at > (last_completed_at ?? 0)
+ *               (user clicked Stop, or process errored mid-turn)
  *   - completed if last_completed_at >= last_user_message_at (and any > 0)
- *   - idle      otherwise (no timestamps recorded yet)
+ *   - idle      no timestamps yet (fresh session, never received any messages)
+ *
+ * `stopped` exists as a distinct state from `idle` so the sidebar dot can
+ * surface "you abandoned work here, come back to it" — visually different
+ * from a fresh workspace that never had any activity.
  *
  * Picking the latest session (rather than aggregating across all sessions)
  * gives "New Conversation" the correct reset semantics: creating a fresh
@@ -55,7 +61,11 @@ export function computeBranchActivity(
     if (lastUser === 0 && lastCompleted === 0) {
       result.set(branch, { activity: "idle", since: 0 });
     } else if (lastUser > lastCompleted) {
-      result.set(branch, { activity: "working", since: lastUser });
+      if (s.status === "running") {
+        result.set(branch, { activity: "working", since: lastUser });
+      } else {
+        result.set(branch, { activity: "stopped", since: lastUser });
+      }
     } else {
       result.set(branch, { activity: "completed", since: lastCompleted });
     }

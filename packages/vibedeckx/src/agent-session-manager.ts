@@ -979,6 +979,17 @@ export class AgentSessionManager {
       if (!session.skipDb) this.storage.agentSessions.updateStatus(sessionId, "stopped");
       this.broadcastPatch(sessionId, ConversationPatch.updateStatus("stopped"));
       this.eventBus?.emit({ type: "session:status", projectId: session.projectId, branch: session.branch, sessionId: session.id, status: "stopped" });
+      // Workspace dot follows branch:activity; the user's last message never
+      // reached completion, so emit "stopped" (a distinct state from idle —
+      // the workspace had work that was abandoned, surfaced as amber so the
+      // user can come back to it).
+      this.eventBus?.emit({
+        type: "branch:activity",
+        projectId: session.projectId,
+        branch: session.branch,
+        activity: "stopped",
+        since: Date.now(),
+      });
       // Don't send { finished: true } — keep the WebSocket connection alive
       // so the UI stays "Connected" and the user can continue the conversation.
       return true;
