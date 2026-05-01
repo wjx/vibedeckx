@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ChevronDown, Pencil, Trash2, Check, X, Loader2 } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, Check, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -131,11 +131,8 @@ export function SessionHistoryDropdown({
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const triggerPending = currentSessionId !== null && isTitlePending(currentSessionId);
-  const triggerLabel = triggerPending
-    ? "Generating title…"
-    : currentSession
-    ? label(currentSession)
-    : "History";
+  const triggerLabel = currentSession ? label(currentSession) : "History";
+  const triggerTitle = triggerPending ? "Generating title…" : triggerLabel;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -144,12 +141,17 @@ export function SessionHistoryDropdown({
           variant="ghost"
           size="sm"
           className="h-7 text-xs gap-1 max-w-[200px]"
-          title={triggerLabel}
+          title={triggerTitle}
         >
-          {triggerPending && (
-            <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
+          {triggerPending ? (
+            <span
+              className="shimmer-bar h-3 w-32 rounded-full"
+              role="status"
+              aria-label="Generating title"
+            />
+          ) : (
+            <span className="truncate">{triggerLabel}</span>
           )}
-          <span className="truncate">{triggerLabel}</span>
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
         </Button>
       </DropdownMenuTrigger>
@@ -206,12 +208,12 @@ export function SessionHistoryDropdown({
                     </button>
                   </div>
                 ) : isTitlePending(s.id) ? (
-                  <div
-                    className="truncate text-xs flex items-center gap-1.5 text-muted-foreground"
-                    title="Generating title…"
-                  >
-                    <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
-                    <span>Generating title…</span>
+                  <div className="py-0.5" title="Generating title…">
+                    <span
+                      className="shimmer-bar block h-3 w-40 rounded-full"
+                      role="status"
+                      aria-label="Generating title"
+                    />
                   </div>
                 ) : (
                   <div

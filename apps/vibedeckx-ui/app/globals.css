@@ -128,6 +128,32 @@
   .overflow-wrap-anywhere {
     overflow-wrap: anywhere;
   }
+
+  /* Skeleton loader bar with a soft highlight sweeping left-to-right.
+   * The highlight is built by mixing 12% foreground into the muted base,
+   * so it stays visible (slightly darker in light mode, slightly lighter
+   * in dark mode) without hard-coding theme-specific colors. */
+  .shimmer-bar {
+    background: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      color-mix(in oklch, var(--muted), var(--foreground) 12%) 50%,
+      var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-sweep 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-bar {
+    animation: none;
+  }
 }
 
 /* Custom scrollbar styling */
