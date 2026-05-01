@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ChevronDown, Pencil, Trash2, Check, X } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, Check, X, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +27,9 @@ interface SessionHistoryDropdownProps {
   /** Bumping this value forces a session-list refresh (used after the
    *  backend writes an AI-generated title). */
   refreshKey?: number;
+  /** When set, the matching session renders a "Generating title…" loader
+   *  instead of its persisted title. Cleared once the AI title arrives. */
+  pendingTitleSessionId?: string | null;
   onSwitch: (sessionId: string) => void;
   onDelete?: (sessionId: string, remaining: BranchSessionSummary[]) => void;
 }
@@ -37,6 +40,7 @@ export function SessionHistoryDropdown({
   currentSessionId,
   currentEntryCount,
   refreshKey,
+  pendingTitleSessionId,
   onSwitch,
   onDelete,
 }: SessionHistoryDropdownProps) {
@@ -122,8 +126,16 @@ export function SessionHistoryDropdown({
       : new Date(s.created_at).toLocaleString();
   };
 
+  const isTitlePending = (sessionId: string) =>
+    pendingTitleSessionId !== null && pendingTitleSessionId === sessionId;
+
   const currentSession = sessions.find((s) => s.id === currentSessionId);
-  const triggerLabel = currentSession ? label(currentSession) : "History";
+  const triggerPending = currentSessionId !== null && isTitlePending(currentSessionId);
+  const triggerLabel = triggerPending
+    ? "Generating title…"
+    : currentSession
+    ? label(currentSession)
+    : "History";
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -134,6 +146,9 @@ export function SessionHistoryDropdown({
           className="h-7 text-xs gap-1 max-w-[200px]"
           title={triggerLabel}
         >
+          {triggerPending && (
+            <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
+          )}
           <span className="truncate">{triggerLabel}</span>
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
         </Button>
@@ -189,6 +204,14 @@ export function SessionHistoryDropdown({
                     >
                       <X className="h-3 w-3" />
                     </button>
+                  </div>
+                ) : isTitlePending(s.id) ? (
+                  <div
+                    className="truncate text-xs flex items-center gap-1.5 text-muted-foreground"
+                    title="Generating title…"
+                  >
+                    <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
+                    <span>Generating title…</span>
                   </div>
                 ) : (
                   <div

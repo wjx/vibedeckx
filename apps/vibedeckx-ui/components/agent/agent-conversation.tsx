@@ -125,6 +125,11 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
   const [agentType, setAgentType] = useState<AgentType>("claude-code");
   const [providers, setProviders] = useState<AgentProviderInfo[]>([]);
   const [titleRefreshKey, setTitleRefreshKey] = useState(0);
+  // Tracks the session whose AI title is currently being generated. When set,
+  // the SessionHistoryDropdown renders a "Generating title…" loader instead of
+  // the snippet title that the remote backend wrote synchronously. Cleared as
+  // soon as the AI result arrives over the WebSocket (`onTitleUpdated`).
+  const [pendingTitleSessionId, setPendingTitleSessionId] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaWrapperRef = useRef<HTMLDivElement>(null);
   const inputHistory = useInputHistory(setInput, projectId, branch);
@@ -158,7 +163,10 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     sessionId,
     onTaskCompleted,
     onSessionStarted,
-    onTitleUpdated: () => setTitleRefreshKey((k) => k + 1),
+    onTitleUpdated: () => {
+      setTitleRefreshKey((k) => k + 1);
+      setPendingTitleSessionId(null);
+    },
   });
 
   // Fetch available agent providers on mount
@@ -185,6 +193,34 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     setPastes([]);
     setNextPasteId(1);
   }, [projectId, branch]);
+
+  // Arm the "title pending" state the moment the user's first message becomes
+  // visible in the active session. The AI title generator runs on the local
+  // backend and broadcasts `titleUpdated` 1–2s later; until then we show a
+  // loader instead of the snippet/timestamp the dropdown would otherwise pull
+  // from listBranchSessions.
+  const prevMessagesCountRef = useRef<{ sessionId: string | null; count: number }>({
+    sessionId: null,
+    count: 0,
+  });
+  useEffect(() => {
+    const sid = session?.id ?? null;
+    const prev = prevMessagesCountRef.current;
+    if (sid && prev.sessionId === sid && prev.count === 0 && messages.length > 0) {
+      setPendingTitleSessionId(sid);
+    }
+    prevMessagesCountRef.current = { sessionId: sid, count: messages.length };
+  }, [session?.id, messages.length]);
+
+  // Drop the loader when switching away from a session whose AI title hasn't
+  // resolved yet — the WS for that session is gone, so we'd never get the
+  // titleUpdated event on this client. The session list refresh on switch
+  // already shows whatever title the backend persisted.
+  useEffect(() => {
+    if (pendingTitleSessionId && session?.id !== pendingTitleSessionId) {
+      setPendingTitleSessionId(null);
+    }
+  }, [session?.id, pendingTitleSessionId]);
 
   const handlePermissionModeChange = async (newMode: "plan" | "edit") => {
     setPermissionMode(newMode);
@@ -536,6 +572,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                 currentSessionId={session?.id ?? null}
                 currentEntryCount={messages.length}
                 refreshKey={titleRefreshKey}
+                pendingTitleSessionId={pendingTitleSessionId}
                 onSwitch={(id) => {
                   setSessionUrlParam?.(id);
                 }}
