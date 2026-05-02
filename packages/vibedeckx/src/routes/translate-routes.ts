@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import { generateText } from "ai";
 import { resolveChatModel } from "../utils/chat-model.js";
 import { requireAuth } from "../server.js";
+import { resolveUserId } from "../utils/resolve-user-id.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -31,6 +32,14 @@ Rules:
 
 Text:
 ${text}`,
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: "translate",
+            metadata: {
+              userId: resolveUserId(userId),
+              tags: ["vibedeckx", "translate"],
+            },
+          },
         });
 
         return reply.code(200).send({ translatedText: translatedText.trim() });
