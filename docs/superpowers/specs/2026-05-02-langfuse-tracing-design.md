@@ -106,7 +106,7 @@ experimental_telemetry: {
   functionId: "<one of: chat-session | session-title | translate | task-suggest>",
   metadata: {
     sessionId: <ChatSession.id>,    // chat-session only — groups multi-turn in Langfuse Sessions view
-    userId: <Clerk userId>,
+    userId: <see userId resolution below>,
     tags: ["vibedeckx", "<functionId>"],
     projectId: <projectId>,         // custom — surfaces in Langfuse trace metadata
     branch: <branch ?? "(default)">,
@@ -117,12 +117,39 @@ experimental_telemetry: {
 `sessionId` only goes on chat-session traces. The other three are one-shot
 short tasks; giving them a sessionId would group unrelated traces.
 
-`userId` is always a real Clerk user id. Every AI-SDK-using route is already
-gated by `requireAuth`, which returns early on missing auth — so we never
-reach a `streamText` / `generateText` call without a real userId. There is no
-anonymous fallback needed.
+### userId resolution
+
+`requireAuth` (server.ts:43) has three possible returns:
+
+| `requireAuth` return | When | userId for telemetry |
+|---|---|---|
+| real Clerk userId | `--auth` started + valid Clerk session | the Clerk userId verbatim |
+| `undefined` (no-auth mode) | server started without `--auth` (CLI default) | `"local"` |
+| `undefined` (API key path) | `--auth` started + `x-vibedeckx-api-key` header (remote proxy) | `"api-key"` |
+| `null` | `--auth` required but failed | route already returned 401, AI SDK call never reached |
+
+So at every telemetry call site we apply this resolution helper:
+
+```ts
+function resolveUserId(req: FastifyRequest, authResult: string | undefined): string {
+  if (typeof authResult === "string") return authResult;
+  if (req.headers["x-vibedeckx-api-key"]) return "api-key";
+  return "local";
+}
+```
+
+Three discoverable buckets in the Langfuse Users view: real users (auth
+mode), `"local"` (the common CLI default), `"api-key"` (remote-proxy
+callers). `null` never reaches the AI SDK because the route returned early.
+
+For chat sessions, the resolved userId is stored on `ChatSession.userId` at
+session creation and reused across turns, so the resolution helper only runs
+once per session — not per message.
 
 ### userId propagation
+
+The resolution above produces a single string per call site. Below is how
+that string flows from the route into each AI SDK call.
 
 #### chat-session (multi-turn, persistent in-memory)
 
