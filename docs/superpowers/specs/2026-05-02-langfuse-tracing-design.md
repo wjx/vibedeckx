@@ -125,22 +125,28 @@ short tasks; giving them a sessionId would group unrelated traces.
 |---|---|---|
 | real Clerk userId | `--auth` started + valid Clerk session | the Clerk userId verbatim |
 | `undefined` (no-auth mode) | server started without `--auth` (CLI default) | `"local"` |
-| `undefined` (API key path) | `--auth` started + `x-vibedeckx-api-key` header (remote proxy) | `"api-key"` |
+| `undefined` (API key path) | `--auth` started + `x-vibedeckx-api-key` (remote proxy) | `"local"` |
 | `null` | `--auth` required but failed | route already returned 401, AI SDK call never reached |
 
-So at every telemetry call site we apply this resolution helper:
+The remote-proxy case collapses into `"local"` — the remote server cannot
+see the original user's identity (it lives on the proxying server) and
+forwarding it through the proxy is out of scope. From the remote server's
+Langfuse, both no-auth and proxied requests appear under the same `"local"`
+bucket, which is accurate: neither has a real authenticated user from this
+server's perspective.
+
+Resolution helper:
 
 ```ts
-function resolveUserId(req: FastifyRequest, authResult: string | undefined): string {
-  if (typeof authResult === "string") return authResult;
-  if (req.headers["x-vibedeckx-api-key"]) return "api-key";
-  return "local";
+function resolveUserId(authResult: string | undefined): string {
+  return typeof authResult === "string" ? authResult : "local";
 }
 ```
 
-Three discoverable buckets in the Langfuse Users view: real users (auth
-mode), `"local"` (the common CLI default), `"api-key"` (remote-proxy
-callers). `null` never reaches the AI SDK because the route returned early.
+Two discoverable buckets in the Langfuse Users view: real Clerk userIds
+(auth mode), and `"local"` (everything else — common CLI default and
+remote-proxy alike). `null` never reaches the AI SDK because the route
+returned 401 early.
 
 For chat sessions, the resolved userId is stored on `ChatSession.userId` at
 session creation and reused across turns, so the resolution helper only runs
