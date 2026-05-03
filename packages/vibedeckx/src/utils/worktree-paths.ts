@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { execSync } from "child_process";
 
 const WORKTREE_BASE_DIR = "/var/tmp/vibedeckx/worktrees";
-const WORKTREE_LIST_TTL_MS = 5_000;
+const WORKTREE_LIST_TTL_MS = 10_000;
 
 interface CachedWorktreeList {
   entries: Array<{ path: string; branch: string | null }>;
@@ -47,7 +47,7 @@ function readWorktreeListFromGit(projectPath: string): Array<{ path: string; bra
   return entries;
 }
 
-/** Parse `git worktree list --porcelain`, cached per projectPath for ~5s. */
+/** Parse `git worktree list --porcelain`, cached per projectPath for ~10s. */
 export function parseGitWorktreeList(projectPath: string): Array<{ path: string; branch: string | null }> {
   const now = Date.now();
   const cached = worktreeListCache.get(projectPath);
