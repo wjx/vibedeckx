@@ -100,7 +100,7 @@ async function browseDirectory(dirPath: string): Promise<{ path: string; items: 
 const routes: FastifyPluginAsync = async (fastify) => {
   // Browse directory (path-based, for remote execution)
   fastify.get<{
-    Querystring: { path: string; branch?: string };
+    Querystring: { path: string; branch?: string; relativePath?: string };
   }>("/api/path/browse", async (req, reply) => {
     const projectPath = req.query.path;
     if (!projectPath) {
@@ -108,7 +108,14 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     const branch = req.query.branch;
-    const cwd = resolveWorktreePath(projectPath, branch ?? null);
+    const relativePath = req.query.relativePath || "";
+    const basePath = resolveWorktreePath(projectPath, branch ?? null);
+
+    if (!isPathSafe(basePath, relativePath || ".")) {
+      return reply.code(403).send({ error: "Path traversal not allowed" });
+    }
+
+    const cwd = relativePath ? path.resolve(basePath, relativePath) : basePath;
 
     try {
       const result = await browseDirectory(cwd);
@@ -221,11 +228,9 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (!remoteConfig) {
         return reply.code(400).send({ error: "Project has no remote configuration" });
       }
-      const remotePath = relativePath
-        ? path.posix.join(remoteConfig.remotePath, relativePath)
-        : remoteConfig.remotePath;
-      const params = [`path=${encodeURIComponent(remotePath)}`];
+      const params = [`path=${encodeURIComponent(remoteConfig.remotePath)}`];
       if (branch) params.push(`branch=${encodeURIComponent(branch)}`);
+      if (relativePath) params.push(`relativePath=${encodeURIComponent(relativePath)}`);
       const result = await proxyToRemoteAuto(
         remoteConfig.serverId,
         remoteConfig.url,
