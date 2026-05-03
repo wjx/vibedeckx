@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Conversation,
   ConversationContent,
@@ -16,11 +17,41 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
-import { useChatSession } from "@/hooks/use-chat-session";
+import { useChatSession, type AgentMessage } from "@/hooks/use-chat-session";
 import { MessageSquare, Loader2, Square, Search, Radio, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+
+/**
+ * Re-engage stick-to-bottom when programmatic messages (executor events) arrive.
+ *
+ * The use-stick-to-bottom library's ResizeObserver path uses
+ * `preserveScrollPosition: true`, which silently no-ops if the internal
+ * `isAtBottom` flag has already been flipped to false (a tall executor-event
+ * message exceeds the 70px nearBottom threshold and the lib gives up). We
+ * detect newly-added executor events here and force a re-stick.
+ */
+function ExecutorEventReStick({ messages }: { messages: AgentMessage[] }) {
+  const { scrollToBottom } = useStickToBottomContext();
+  const prevLengthRef = useRef(messages.length);
+
+  useEffect(() => {
+    const prev = prevLengthRef.current;
+    prevLengthRef.current = messages.length;
+    if (messages.length <= prev) return;
+
+    for (let i = prev; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.type === "user" && msg.content.startsWith("[Executor Event:")) {
+        scrollToBottom({ animation: "instant" });
+        return;
+      }
+    }
+  }, [messages, scrollToBottom]);
+
+  return null;
+}
 
 function getToolLabel(tool: string): string {
   switch (tool) {
@@ -148,6 +179,7 @@ export const MainConversation = forwardRef<MainConversationHandle, MainConversat
 
       {/* Messages area */}
       <Conversation className="flex-1 min-h-0" initial="instant">
+        <ExecutorEventReStick messages={messages} />
         <ConversationContent className="gap-4 p-4">
           {isLoading && messages.length === 0 && (
             <div className="flex items-center justify-center py-8">
