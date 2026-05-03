@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { api, type BrowseEntry, type FileContentResponse } from "@/lib/api";
 
 interface UseFileBrowserOptions {
@@ -38,6 +39,9 @@ export function useFileBrowser({ projectId, branch, target }: UseFileBrowserOpti
       console.error("Failed to browse root directory:", err);
       if (key !== fetchKeyRef.current) return;
       setRootEntries([]);
+      toast.error("Failed to browse files", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       if (key === fetchKeyRef.current) setRootLoading(false);
     }
@@ -68,6 +72,9 @@ export function useFileBrowser({ projectId, branch, target }: UseFileBrowserOpti
         });
       } catch (err) {
         console.error("Failed to browse directory:", err);
+        toast.error(`Failed to open ${dirPath}`, {
+          description: err instanceof Error ? err.message : String(err),
+        });
       } finally {
         setLoadingDirs(prev => {
           const next = new Set(prev);
