@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { mkdir } from "fs/promises";
 import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
-import { resolveWorktreePath, getWorktreeBaseForProject, getWorktreeBranches, parseGitWorktreeList } from "../utils/worktree-paths.js";
+import { resolveWorktreePath, getWorktreeBaseForProject, getWorktreeBranches, parseGitWorktreeList, pruneWorktrees, invalidateWorktreeListCache } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 import type { Project } from "../storage/types.js";
@@ -83,6 +83,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
+      pruneWorktrees(projectPath);
       const worktrees = getWorktreeBranches(projectPath);
       return reply.code(200).send({ worktrees });
     } catch (error) {
@@ -137,6 +138,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
+      invalidateWorktreeListCache(projectPath);
 
       console.log(`[worktree] ${requestId} Created: branch=${trimmedBranch}`);
 
@@ -193,6 +195,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
+      invalidateWorktreeListCache(projectPath);
 
       if (branchToDelete) {
         try {
@@ -245,6 +248,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
+      pruneWorktrees(project.path);
       const worktrees = getWorktreeBranches(project.path);
       return reply.code(200).send({ worktrees });
     } catch (error) {
@@ -428,6 +432,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
+      invalidateWorktreeListCache(project.path!);
 
       if (branchToDelete) {
         try {
@@ -632,6 +637,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
+      invalidateWorktreeListCache(project.path!);
 
       return { branch: trimmedBranch };
     };
