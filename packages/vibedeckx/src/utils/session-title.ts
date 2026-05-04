@@ -3,8 +3,25 @@ import type { Storage } from "../storage/types.js";
 import type { ContentPart } from "../agent-types.js";
 import { getChatProviderConfig, resolveChatModel } from "./chat-model.js";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyLanguageModel = any;
+
 const TITLE_MAX_CHARS = 60;
 const AI_TIMEOUT_MS = 15_000;
+const MAX_INPUT_CHARS = 2000;
+
+const SYSTEM_PROMPT =
+  "You write very short, descriptive titles for chat conversations. " +
+  "Reply with the title only — no quotes, no trailing punctuation, no markdown, no prefixes like 'Title:'. " +
+  "Use the same language as the user's message. Keep it under 8 words and 50 characters.";
+
+function buildPrompt(userMessage: string): string {
+  const trimmed = userMessage.trim();
+  const input = trimmed.length > MAX_INPUT_CHARS
+    ? trimmed.slice(0, MAX_INPUT_CHARS) + "…"
+    : trimmed;
+  return `Generate a title for a conversation that begins with this user message:\n\n${input}`;
+}
 
 /**
  * Whether the user has configured an API key for the active chat provider
@@ -57,42 +74,35 @@ function sanitizeTitle(raw: string): string {
 }
 
 /**
- * Ask the configured chat model to summarize the user's first message into a
- * short conversation title. Returns null on any failure (timeout, network,
- * empty output) so the caller can fall back to a snippet.
+ * Run the title-generation prompt against any AI SDK language model. Returns
+ * null on timeout, network error, or empty output. Exported so eval harnesses
+ * can reuse the exact prompt against arbitrary models.
  */
-export async function generateSessionTitle(
-  storage: Storage,
+export async function generateSessionTitleWithModel(
+  model: AnyLanguageModel,
   userMessage: string,
-  userId: string,
+  options: { userId?: string } = {},
 ): Promise<string | null> {
-  if (!isChatModelConfigured(storage)) return null;
-  const trimmed = userMessage.trim();
-  if (trimmed.length === 0) return null;
+  if (userMessage.trim().length === 0) return null;
 
-  // Cap the prompt so a giant first message doesn't blow up the token budget.
-  const MAX_INPUT_CHARS = 2000;
-  const input = trimmed.length > MAX_INPUT_CHARS
-    ? trimmed.slice(0, MAX_INPUT_CHARS) + "…"
-    : trimmed;
+  const telemetry = options.userId
+    ? {
+        isEnabled: true,
+        functionId: "session-title",
+        metadata: {
+          userId: options.userId,
+          tags: ["vibedeckx", "session-title"],
+        },
+      }
+    : undefined;
 
   try {
     const result = await Promise.race([
       generateText({
-        model: resolveChatModel(storage),
-        system:
-          "You write very short, descriptive titles for chat conversations. " +
-          "Reply with the title only — no quotes, no trailing punctuation, no markdown, no prefixes like 'Title:'. " +
-          "Use the same language as the user's message. Keep it under 8 words and 50 characters.",
-        prompt: `Generate a title for a conversation that begins with this user message:\n\n${input}`,
-        experimental_telemetry: {
-          isEnabled: true,
-          functionId: "session-title",
-          metadata: {
-            userId,
-            tags: ["vibedeckx", "session-title"],
-          },
-        },
+        model,
+        system: SYSTEM_PROMPT,
+        prompt: buildPrompt(userMessage),
+        experimental_telemetry: telemetry,
       }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("title generation timed out")), AI_TIMEOUT_MS),
@@ -106,4 +116,18 @@ export async function generateSessionTitle(
     console.warn("[SessionTitle] AI generation failed:", (error as Error).message);
     return null;
   }
+}
+
+/**
+ * Ask the configured chat model to summarize the user's first message into a
+ * short conversation title. Returns null on any failure (timeout, network,
+ * empty output) so the caller can fall back to a snippet.
+ */
+export async function generateSessionTitle(
+  storage: Storage,
+  userMessage: string,
+  userId: string,
+): Promise<string | null> {
+  if (!isChatModelConfigured(storage)) return null;
+  return generateSessionTitleWithModel(resolveChatModel(storage), userMessage, { userId });
 }
