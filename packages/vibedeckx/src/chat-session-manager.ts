@@ -1236,7 +1236,7 @@ export class ChatSessionManager {
               executorName: executor.name,
               command: executor.command,
               target: resolvedRemote,
-              message: `Started "${executor.name}" on remote server "${resolvedRemote}" (${executor.command}).`,
+              message: `Started "${executor.name}" on remote server "${resolvedRemote}".`,
             };
           }
 
@@ -1273,7 +1273,7 @@ export class ChatSessionManager {
               processId,
               executorName: executor.name,
               command: executor.command,
-              message: `Started "${executor.name}" (${executor.command}).`,
+              message: `Started "${executor.name}".`,
             };
           } catch (err) {
             const msg = err instanceof Error ? err.message : "Unknown error";
