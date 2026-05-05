@@ -61,10 +61,10 @@ export function pruneLastStartedProcess(
 export interface ExecutorWithProcess extends Executor {
   currentProcessId: string | null;
   isRunning: boolean;
-  // Fallback handle for the most recent run, surfaced only when the current
-  // executor mode is local (the only scope where we persist process history).
-  // Lets the UI replay the buffered log output and show "Last run: <date>"
-  // even after the process has finished.
+  // Fallback handle and timestamp for the most recent run on the currently
+  // selected target (local or a specific remote). Both are derived from
+  // executor.last_runs[targetMode], so they reflect what happened on this
+  // target only — never the global most-recent across all targets.
   lastProcessId: string | null;
   lastStartedAt: string | null;
 }
@@ -192,20 +192,24 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
             newMap.set(data.executorId, { processId: data.processId, target: data.target ?? "local" });
             return newMap;
           });
-          // Optimistically refresh "Last run" fields so the hover label updates
-          // immediately instead of waiting for the next executor-list refetch
-          // (which only happens on workspace switch).
+          // Optimistically refresh "Last run" for this target so the hover
+          // label updates immediately instead of waiting for the next
+          // executor-list refetch (which only happens on workspace switch).
           setExecutors((prev) =>
-            prev.map((e) =>
-              e.id === data.executorId
-                ? {
-                    ...e,
-                    last_process_id: data.processId,
-                    last_process_started_at: new Date().toISOString(),
-                    last_process_target: data.target ?? "local",
-                  }
-                : e,
-            ),
+            prev.map((e) => {
+              if (e.id !== data.executorId) return e;
+              const targetKey = data.target ?? "local";
+              return {
+                ...e,
+                last_runs: {
+                  ...(e.last_runs ?? {}),
+                  [targetKey]: {
+                    started_at: new Date().toISOString(),
+                    process_id: data.processId,
+                  },
+                },
+              };
+            }),
           );
         } else if (data.type === "executor:stopped") {
           console.log(`[useExecutors] Processing executor:stopped, removing from runningProcesses`);
@@ -306,16 +310,19 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
       // initiated starts also refresh the hover label without waiting for
       // the next executor-list refetch.
       setExecutors((prev) =>
-        prev.map((e) =>
-          e.id === executorId
-            ? {
-                ...e,
-                last_process_id: processId,
-                last_process_started_at: new Date().toISOString(),
-                last_process_target: target,
-              }
-            : e,
-        ),
+        prev.map((e) => {
+          if (e.id !== executorId) return e;
+          return {
+            ...e,
+            last_runs: {
+              ...(e.last_runs ?? {}),
+              [target]: {
+                started_at: new Date().toISOString(),
+                process_id: processId,
+              },
+            },
+          };
+        }),
       );
       return processId;
     } catch (error) {
@@ -427,17 +434,15 @@ export function useExecutors(projectId: string | null, groupId: string | null | 
     const match = entries?.find(e => e.target === targetMode);
     const lastStarted = lastStartedProcess.get(executor.id);
     const lastStartedMatch = lastStarted?.target === targetMode ? lastStarted : undefined;
-    // Reconnect handle is only valid when the persisted last run targeted the
-    // same mode — connecting to a wrong-target processId would error out on
-    // the WS route. The display timestamp shows regardless so users see when
-    // the executor last ran in any mode.
-    const lastTargetMatches = executor.last_process_target === targetMode;
+    // Per-target lookup: both the reconnect handle and the display timestamp
+    // come from the same entry, so neither leaks across targets.
+    const lastRun = executor.last_runs?.[targetMode];
     return {
       ...executor,
       currentProcessId: match?.processId ?? lastStartedMatch?.processId ?? null,
       isRunning: !!match,
-      lastProcessId: lastTargetMatches ? executor.last_process_id ?? null : null,
-      lastStartedAt: executor.last_process_started_at ?? null,
+      lastProcessId: lastRun?.process_id ?? null,
+      lastStartedAt: lastRun?.started_at ?? null,
     };
   });
 

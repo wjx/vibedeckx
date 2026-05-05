@@ -1297,6 +1297,25 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
           .get({ executor_id: executorId });
       },
 
+      getLastByExecutorIds: (executorIds: string[]) => {
+        if (executorIds.length === 0) return [];
+        const params: Record<string, string> = {};
+        const placeholders = executorIds.map((id, i) => {
+          const key = `id${i}`;
+          params[key] = id;
+          return `@${key}`;
+        }).join(',');
+        return db
+          .prepare<Record<string, string>, ExecutorProcess>(
+            `SELECT id, executor_id, pid, status, exit_code, started_at, finished_at FROM (
+               SELECT *, ROW_NUMBER() OVER (PARTITION BY executor_id ORDER BY started_at DESC) AS rn
+               FROM executor_processes
+               WHERE executor_id IN (${placeholders})
+             ) WHERE rn = 1`
+          )
+          .all(params);
+      },
+
       updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => {
         const finishedAt = status !== 'running' ? new Date().toISOString() : null;
         db.prepare(
@@ -1364,6 +1383,30 @@ export const createSqliteStorage = async (dbPath: string): Promise<Storage> => {
                ORDER BY started_at DESC LIMIT 1`
           )
           .get({ executor_id: executorId });
+      },
+
+      getLastByExecutorIdsGroupedByServer: (executorIds: string[]) => {
+        if (executorIds.length === 0) return [];
+        const params: Record<string, string> = {};
+        const placeholders = executorIds.map((id, i) => {
+          const key = `id${i}`;
+          params[key] = id;
+          return `@${key}`;
+        }).join(',');
+        // ROW_NUMBER partitioned by (executor_id, remote_server_id) gives us
+        // the most recent row for every (executor, server) pair in one shot.
+        return db
+          .prepare<Record<string, string>, RemoteExecutorProcessRow>(
+            `SELECT * FROM (
+               SELECT *, ROW_NUMBER() OVER (
+                 PARTITION BY executor_id, remote_server_id
+                 ORDER BY started_at DESC
+               ) AS rn
+               FROM remote_executor_processes
+               WHERE executor_id IN (${placeholders})
+             ) WHERE rn = 1`
+          )
+          .all(params);
       },
 
       getRunning: () => {

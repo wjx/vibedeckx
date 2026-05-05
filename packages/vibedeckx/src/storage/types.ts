@@ -248,6 +248,8 @@ export interface Storage {
     getById: (id: string) => ExecutorProcess | undefined;
     getRunning: () => ExecutorProcess[];
     getLastByExecutorId: (executorId: string) => ExecutorProcess | undefined;
+    /** Most recent row per executor for the given IDs. At most one row per executorId in the result. */
+    getLastByExecutorIds: (executorIds: string[]) => ExecutorProcess[];
     updateStatus: (id: string, status: ExecutorProcessStatus, exitCode?: number) => void;
     updatePid: (id: string, pid: number) => void;
   };
@@ -264,6 +266,12 @@ export interface Storage {
     getById(localProcessId: string): RemoteExecutorProcessRow | undefined;
     /** Most recent row for an executor, regardless of status — used for "Last run" lookup. */
     getLastByExecutorId(executorId: string): RemoteExecutorProcessRow | undefined;
+    /**
+     * Most recent row per (executor_id, remote_server_id) pair across the given
+     * executor IDs. Used by the executor list endpoint to assemble per-target
+     * "Last run" data in a single query.
+     */
+    getLastByExecutorIdsGroupedByServer(executorIds: string[]): RemoteExecutorProcessRow[];
     /** Only rows currently marked 'running' — used for restoration on startup/reconnect. */
     getRunning(): RemoteExecutorProcessRow[];
     /** All rows including finished — primarily for legacy callers. */

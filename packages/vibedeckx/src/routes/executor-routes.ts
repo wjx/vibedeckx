@@ -35,30 +35,50 @@ const routes: FastifyPluginAsync = async (fastify) => {
         ? fastify.storage.executors.getByGroupId(req.query.groupId)
         : fastify.storage.executors.getByProjectId(req.params.projectId);
 
-      // Attach the most recent process across local + remote tables so the UI
-      // can reconnect to its log buffer (within retention) after a workspace
-      // switch unmounts the ExecutorItem, and show "Last run" on hover.
-      // last_process_target distinguishes which target the row came from so
-      // the frontend only auto-reconnects when the current executor mode
-      // matches.
-      const augmented = executors.map((executor) => {
-        const local = fastify.storage.executorProcesses.getLastByExecutorId(executor.id);
-        const remote = fastify.storage.remoteExecutorProcesses.getLastByExecutorId(executor.id);
-        const localStarted = local?.started_at ?? null;
-        const remoteStarted = remote?.started_at ?? null;
-        // Pick whichever is more recent. Lex compare on ISO-8601 / SQLite
-        // TIMESTAMP literals is correct across both formats.
-        const pickRemote = !!remoteStarted && (!localStarted || remoteStarted > localStarted);
-        const last_process_id = pickRemote ? remote!.local_process_id : local?.id ?? null;
-        const rawStartedAt = pickRemote ? remoteStarted : localStarted;
-        const last_process_target = pickRemote ? remote!.remote_server_id : (local ? 'local' : null);
-        return {
-          ...executor,
-          last_process_id,
-          last_process_started_at: normalizeSqlTimestamp(rawStartedAt),
-          last_process_target,
+      // Build a per-target "Last run" map for each executor so the UI can show
+      // the correct timestamp when the user switches between local/remote tabs
+      // (and reconnect to the buffered log of a finished process). Skip the
+      // local query entirely for projects with no local path, and the remote
+      // query for projects with no configured remotes.
+      const executorIds = executors.map((e) => e.id);
+      const hasLocal = !!project.path;
+      const hasRemotes =
+        fastify.storage.projectRemotes.getByProject(req.params.projectId).length > 0;
+
+      const localRows = hasLocal && executorIds.length > 0
+        ? fastify.storage.executorProcesses.getLastByExecutorIds(executorIds)
+        : [];
+      const remoteRows = hasRemotes && executorIds.length > 0
+        ? fastify.storage.remoteExecutorProcesses.getLastByExecutorIdsGroupedByServer(executorIds)
+        : [];
+
+      const lastRunsByExecutor = new Map<string, Record<string, { started_at: string; process_id: string }>>();
+      const ensure = (executorId: string) => {
+        let entry = lastRunsByExecutor.get(executorId);
+        if (!entry) {
+          entry = {};
+          lastRunsByExecutor.set(executorId, entry);
+        }
+        return entry;
+      };
+      for (const row of localRows) {
+        const startedAt = normalizeSqlTimestamp(row.started_at);
+        if (!startedAt) continue;
+        ensure(row.executor_id).local = { started_at: startedAt, process_id: row.id };
+      }
+      for (const row of remoteRows) {
+        const startedAt = normalizeSqlTimestamp(row.started_at);
+        if (!startedAt) continue;
+        ensure(row.executor_id)[row.remote_server_id] = {
+          started_at: startedAt,
+          process_id: row.local_process_id,
         };
-      });
+      }
+
+      const augmented = executors.map((executor) => ({
+        ...executor,
+        last_runs: lastRunsByExecutor.get(executor.id) ?? {},
+      }));
       return reply.code(200).send({ executors: augmented });
     }
   );

@@ -197,15 +197,12 @@ export interface Executor {
   pty: boolean;
   position: number;
   created_at: string;
-  // Most recent process across local + remote tables for this executor.
-  // Used by the UI to reconnect to a finished process's log buffer (within
-  // backend retention) after a workspace switch unmounts the ExecutorItem,
-  // and to show "Last run: <datetime>" on hover. `last_process_target` is
-  // either "local" or a remote_server_id; the frontend only auto-reconnects
-  // when it matches the current executor mode.
-  last_process_id?: string | null;
-  last_process_started_at?: string | null;
-  last_process_target?: string | null;
+  // Per-target "Last run" data, keyed by target identifier ("local" or a
+  // remote_server_id). The UI looks up the entry for the currently selected
+  // target to (1) show the "Last run: <datetime>" label and (2) reconnect to
+  // the buffered log of a finished process after a workspace switch. Targets
+  // the executor has never run on are simply absent from the map.
+  last_runs?: Record<string, { started_at: string; process_id: string }>;
 }
 
 export type ExecutorProcessStatus = 'running' | 'completed' | 'failed' | 'killed';
