@@ -846,7 +846,7 @@ export const api = {
       return [];
     }
     const data = await res.json();
-    return data.commits;
+    return Array.isArray(data?.commits) ? data.commits : [];
   },
 
   // Remote Project API

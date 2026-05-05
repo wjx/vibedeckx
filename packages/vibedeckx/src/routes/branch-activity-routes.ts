@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { computeBranchActivity, type BranchActivityState } from "../branch-activity.js";
-import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 
@@ -94,7 +94,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           if (result.status === 404) {
             return reply.code(200).send({ branches: [] } satisfies BranchActivityResponse);
           }
-          return reply.code(result.status || 502).send(result.data);
+          return reply.code(proxyStatus(result)).send(result.data);
         }
         return reply.code(200).send(result.data);
       }

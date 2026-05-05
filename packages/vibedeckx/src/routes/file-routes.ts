@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs/promises";
 import { createReadStream } from "fs";
 import { Readable } from "stream";
-import { proxyToRemoteAuto, proxyToRemoteRaw } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemoteAuto, proxyToRemoteRaw } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -240,7 +240,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {
@@ -313,7 +313,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {
@@ -393,7 +393,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           undefined,
           { reverseConnectManager: rcm }
         );
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       // Outbound: direct HTTP fetch for raw streaming response
@@ -404,7 +404,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       );
 
       if (!result.ok) {
-        return reply.code(result.status || 500).send({ error: "Failed to download file from remote" });
+        return reply.code(proxyStatus(result, 500)).send({ error: "Failed to download file from remote" });
       }
 
       const fileName = path.basename(filePath);

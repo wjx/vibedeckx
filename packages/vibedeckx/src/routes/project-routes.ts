@@ -6,7 +6,7 @@ import { exec } from "child_process";
 import { readdir } from "fs/promises";
 import type { Project, SyncButtonConfig } from "../storage/types.js";
 import { selectFolder } from "../dialog.js";
-import { proxyToRemote } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemote } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -258,7 +258,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         cwd: remoteCwd,
       });
       if (!result.ok) {
-        return reply.code(result.status || 500).send(result.data);
+        return reply.code(proxyStatus(result, 500)).send(result.data);
       }
       return reply.code(200).send(result.data);
     }

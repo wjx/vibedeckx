@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
-import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
 import type { Project } from "../storage/types.js";
@@ -208,7 +208,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       }
 
       console.error(`[terminal-routes] Remote terminal creation failed: status=${result.status}, error=${result.errorCode}, data=${JSON.stringify(result.data).slice(0, 300)}`);
-      return reply.code(result.status || 502).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     // Local terminal
@@ -254,7 +254,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         fastify.storage.remoteExecutorProcesses.delete(terminalId);
 
         if (!result.ok) {
-          return reply.code(result.status || 502).send(result.data);
+          return reply.code(proxyStatus(result)).send(result.data);
         }
 
         return reply.code(200).send({ success: true });

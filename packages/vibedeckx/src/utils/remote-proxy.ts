@@ -22,6 +22,16 @@ export interface ProxyResult {
   totalDurationMs?: number;
 }
 
+/**
+ * Resolves the HTTP status to forward from a proxy result.
+ * status === 0 means the request never reached the remote (network error,
+ * timeout, abort) — coerce to `fallback` (default 502) so callers can't
+ * accidentally mask a connection failure as success via `status || 200`.
+ */
+export function proxyStatus(result: { status: number }, fallback: number = 502): number {
+  return result.status > 0 ? result.status : fallback;
+}
+
 export interface ProxyOptions {
   requestId?: string;
   timeoutMs?: number;

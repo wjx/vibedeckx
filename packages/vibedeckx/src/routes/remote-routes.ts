@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { randomUUID } from "crypto";
-import { proxyToRemote } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemote } from "../utils/remote-proxy.js";
 import "../server-types.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
@@ -49,7 +49,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
     if (result.ok) {
       return reply.code(200).send(result.data);
     } else {
-      return reply.code(result.status || 502).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
   });
 

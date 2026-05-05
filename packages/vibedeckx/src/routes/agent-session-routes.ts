@@ -3,7 +3,7 @@ import fp from "fastify-plugin";
 import type { AgentMessage, AgentType, ContentPart } from "../agent-types.js";
 import { ConversationPatch } from "../conversation-patch.js";
 import { getAllProviders } from "../providers/index.js";
-import { proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { projectIdFromRemoteSessionId } from "./remote-status-bridge.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -309,7 +309,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         );
         if (!result.ok) {
           console.error("[API] Remote agent-sessions list proxy error:", result.status, result.data);
-          return reply.code(result.status || 502).send(result.data);
+          return reply.code(proxyStatus(result)).send(result.data);
         }
         const data = result.data as { sessions: Array<{ id: string; status: string; branch?: string | null; entry_count?: number; [k: string]: unknown }> };
         const mapped = data.sessions.map(s => {
@@ -462,7 +462,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
             messages: remoteData.messages,
           });
         }
-        return reply.code(result.status || 502).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       } catch (error) {
         console.error("[API] Remote agent session proxy error:", error);
         return reply.code(502).send({ error: `Remote agent error: ${String(error)}` });
@@ -577,7 +577,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
             messages: remoteData.messages,
           });
         }
-        return reply.code(result.status || 502).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       } catch (error) {
         console.error("[API] Remote agent session proxy error (new):", error);
         return reply.code(502).send({ error: `Remote agent error: ${String(error)}` });
@@ -642,7 +642,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
             session: { ...remoteData.session, id: req.params.sessionId },
           });
         }
-        return reply.code(result.status || 502).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const session = fastify.agentSessionManager.getSession(req.params.sessionId);
@@ -709,7 +709,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         { content }
       );
       if (!result.ok) {
-        const status = result.status || 502;
+        const status = proxyStatus(result);
         return reply.code(status).send({
           error: `Remote proxy failed: ${result.errorCode || "unknown"}`,
           errorCode: result.errorCode,
@@ -737,7 +737,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         remoteInfo,
         userId,
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     // For dormant sessions, we need projectPath to spawn the process
@@ -790,7 +790,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         { content }
       );
       if (!result.ok) {
-        const status = result.status || 502;
+        const status = proxyStatus(result);
         return reply.code(status).send({
           error: `Remote proxy failed: ${result.errorCode || "unknown"}`,
           errorCode: result.errorCode,
@@ -799,7 +799,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           detail: result.data,
         });
       }
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     try {
@@ -828,7 +828,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           "POST",
           `/api/agent-sessions/${remoteInfo.remoteSessionId}/stop`
         );
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const stopped = fastify.agentSessionManager.stopSession(req.params.sessionId);
@@ -857,7 +857,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           req.body
         );
         fastify.remotePatchCache.replaceAll(req.params.sessionId, [], 0);
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const session = fastify.agentSessionManager.getSession(req.params.sessionId);
@@ -904,7 +904,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `/api/agent-sessions/${remoteInfo.remoteSessionId}/switch-mode`,
           { mode }
         );
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const session = fastify.agentSessionManager.getSession(req.params.sessionId);
@@ -950,7 +950,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `/api/agent-sessions/${remoteInfo.remoteSessionId}/accept-plan`,
           { planContent }
         );
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const session = fastify.agentSessionManager.getSession(req.params.sessionId);
@@ -1003,7 +1003,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `/api/agent-sessions/${remoteInfo.remoteSessionId}/approve`,
           { requestId, decision }
         );
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const session = fastify.agentSessionManager.getSession(req.params.sessionId);
@@ -1042,7 +1042,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         fastify.remoteSessionMap.delete(req.params.sessionId);
         fastify.storage.remoteSessionMappings.delete(req.params.sessionId);
         fastify.remotePatchCache.delete(req.params.sessionId);
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const deleted = fastify.agentSessionManager.deleteSession(req.params.sessionId);
@@ -1073,7 +1073,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         `/api/agent-sessions/${remoteInfo.remoteSessionId}/title`,
         { title }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     const session = fastify.storage.agentSessions.getById(req.params.sessionId);

@@ -3,7 +3,7 @@ import fp from "fastify-plugin";
 import path from "path";
 import { readFileSync } from "fs";
 import { parseDiffOutput, type DiffFile, type DiffLine } from "../utils/diff-parser.js";
-import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -246,7 +246,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {
@@ -317,7 +317,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {

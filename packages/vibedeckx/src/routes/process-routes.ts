@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import path from "path";
 import { randomUUID } from "crypto";
-import { proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemote, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { resolveWorktreePath } from "../utils/worktree-paths.js";
 import type { ExecutorType, PromptProvider } from "../storage/types.js";
 import { requireAuth } from "../server.js";
@@ -147,7 +147,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.code(200).send({ processId: localProcessId });
       }
-      return reply.code(result.status || 502).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {
@@ -199,7 +199,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
           // the buffered output via getById fallback in the WS route.
           fastify.storage.remoteExecutorProcesses.markFinished(req.params.processId, 0, 'killed');
         }
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       const stopped = fastify.processManager.stop(req.params.processId);

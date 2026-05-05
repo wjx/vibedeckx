@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { mkdir } from "fs/promises";
-import { proxyToRemoteAuto } from "../utils/remote-proxy.js";
+import { proxyStatus, proxyToRemoteAuto } from "../utils/remote-proxy.js";
 import { resolveWorktreePath, getWorktreeBaseForProject, getWorktreeBranches, parseGitWorktreeList, pruneWorktrees, invalidateWorktreeListCache } from "../utils/worktree-paths.js";
 import { requireAuth } from "../server.js";
 import "../server-types.js";
@@ -240,7 +240,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     }
 
     if (!project.path) {
@@ -285,7 +285,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         undefined,
         { reverseConnectManager: fastify.reverseConnectManager }
       );
-      return reply.code(result.status || 200).send(result.data);
+      return reply.code(proxyStatus(result)).send(result.data);
     };
 
     if (target === "remote") {
@@ -364,7 +364,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (remoteConfigs.length === 1) {
         // Single remote: backward-compatible flat response
         const result = await deleteOnRemote(remoteConfigs[0]);
-        return reply.code(result.status || 200).send(result.data);
+        return reply.code(proxyStatus(result)).send(result.data);
       }
 
       // Multiple remotes: delete from all in parallel
@@ -574,7 +574,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
       if (remoteConfigs.length === 1) {
         // Single remote: backward-compatible flat response
         const result = await createOnRemote(remoteConfigs[0]);
-        return reply.code(result.status || 201).send(result.data);
+        return reply.code(proxyStatus(result, 201)).send(result.data);
       }
 
       // Multiple remotes: create on all in parallel
