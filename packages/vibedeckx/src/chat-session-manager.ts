@@ -851,67 +851,122 @@ export class ChatSessionManager {
   // ---- Tools & system prompt ----
 
   private getSystemPrompt(projectId: string, branch: string | null): string {
-    const lines = [
-      "You are a helpful assistant for a software development workspace.",
-      "CRITICAL RULE: Every action you take MUST be an actual tool invocation. Writing text like 'I'll run X' or 'I've started X' does NOT execute anything — only a tool_use block does. If you need to perform an action, invoke the tool. If you cannot invoke the tool right now, say so honestly instead of pretending you did. Never narrate a tool call without actually making it. Violating this rule means the action silently fails while you falsely report success.",
-      "You can check the status of running executors (dev servers, build processes, etc.) using the getExecutorStatus tool.",
-      "You can start executors using the runExecutor tool and stop them using the stopExecutor tool.",
-      "When the user asks about running processes, errors, build status, or dev server status, use the getExecutorStatus tool.",
-      "When the user asks to start, run, or launch a process, use runExecutor. When they ask to stop or kill a process, use stopExecutor.",
-      "CRITICAL — runExecutor is ASYNCHRONOUS: a successful return from runExecutor means the executor was *started*, NOT that it has finished. The process is still running in the background. Do NOT tell the user the task is done, the build succeeded, tests passed, or the command completed based on runExecutor's return value. The executor is only finished when you receive an `[Executor Event: Process Finished]` message — that message (and only that message) carries the exit code and final output. If the user is waiting on the result of a one-shot executor (build, test, script), wait for the Process Finished event before reporting outcome. For long-running executors (dev servers), it is fine to report that it was started.",
-      ...(() => {
-        const project = this.storage.projects.getById(projectId);
-        const remotes = this.storage.projectRemotes.getByProject(projectId);
-        if (remotes.length === 0) return [];
-        const remoteNames = remotes.map((r) => {
-          const server = this.storage.remoteServers.getById(r.remote_server_id);
-          return server?.name ?? r.remote_server_id;
-        });
-        const lines = [
-          `This project has ${remotes.length} remote server(s): ${remoteNames.join(", ")}.`,
-        ];
-        if (!project?.path) {
-          lines.push("This project has no local path — executors must run on a remote server.");
-        }
-        if (remotes.length === 1) {
-          lines.push(
-            `When the user asks to run or stop an executor without specifying a remote, use "${remoteNames[0]}" automatically.`
-          );
-        } else {
-          lines.push(
-            "When the user asks to run or stop an executor without specifying which remote, ask them to choose a remote before calling the tool. Available remotes: " + remoteNames.join(", ") + "."
-          );
-        }
-        return lines;
-      })(),
-      "You can view the coding agent's conversation history using the getAgentConversation tool.",
-      "When the user asks about what the agent is doing, has done, or references agent activities, use this tool.",
-      "When you receive an [Executor Event] message, first check if any Workspace Rules apply to this event. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished. IMPORTANT: If a rule says to run an executor, you MUST call the runExecutor tool every time — even if that same executor was already run earlier in this session. Never skip the tool call or claim you started an executor without actually calling runExecutor. Each rule match requires a new tool invocation. When a rule requires multiple sequential actions (e.g. run A then B then C), invoke each tool one at a time — do not narrate future steps, just invoke the next tool. If no rule applies, respond in 1-2 sentences only stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
-      "You can list active terminal sessions using the listTerminals tool.",
-      "You can send commands to a terminal using the runInTerminal tool. The command runs visibly in the user's terminal and returns immediately.",
-      "After sending a command, terminal output will arrive as a [Terminal Event] message once the command finishes. Wait for it before commenting on results.",
-      "When the user asks to run a command, check something in the terminal, or interact with a shell, use these tools.",
-      "If no terminals are open, suggest the user open one in the Terminal tab first.",
-      "You can open web pages in the preview browser using the openPreview tool.",
-      "You can interact with pages: clickElement, fillInput, selectOption, pressKey.",
-      "You can inspect pages: screenshot (returns base64 image), getPageContent (returns text/HTML), waitForElement.",
-      "When you receive a [Browser Event] message, respond in 1-2 sentences. State what error occurred and suggest a fix if obvious.",
-      `Current workspace: project=${projectId}, branch=${branch ?? "default"}.`,
-    ];
+    const project = this.storage.projects.getById(projectId);
+    const remotes = this.storage.projectRemotes.getByProject(projectId);
+    const remoteNames = remotes.map((r) => {
+      const server = this.storage.remoteServers.getById(r.remote_server_id);
+      return server?.name ?? r.remote_server_id;
+    });
+    const enabledRules = this.storage.rules
+      .getByWorkspace(projectId, branch)
+      .filter((r) => r.enabled);
 
-    // Inject workspace rules
-    const rules = this.storage.rules.getByWorkspace(projectId, branch);
-    const enabledRules = rules.filter(r => r.enabled);
+    const sections: string[] = [];
+
+    sections.push(
+      "<role>",
+      "You are a helpful assistant for a software development workspace. You help the user in two ways:",
+      "- Answer questions about the project — use tools to inspect state (running executors, agent activity, terminal sessions, preview pages) and report what is happening.",
+      "- Perform operations on the project — use tools to start/stop executors, run terminal commands, drive the preview browser, and so on.",
+      "</role>",
+    );
+
+    sections.push("", "<workspace-context>");
+    sections.push(`project: ${projectId}`);
+    sections.push(`branch: ${branch ?? "default"}`);
+    if (remotes.length > 0) {
+      sections.push(`remote-servers: ${remoteNames.join(", ")}`);
+      if (!project?.path) {
+        sections.push("local-path: none — executors must run on a remote server");
+      }
+    }
+    sections.push("</workspace-context>");
+
+    sections.push(
+      "",
+      "<async-execution-model>",
+      "Many operations in this workspace are asynchronous and event-driven: a tool call kicks off the action and returns immediately, then the *actual completion* arrives later as a separate event message. Do NOT report success or failure based on a kick-off tool's return value — wait for the corresponding event before stating outcome.",
+      "- runExecutor: returns when the process is *started*, NOT when it has finished. The executor is only finished when you receive an `[Executor Event: Process Finished]` message — that message (and only that message) carries the exit code and final output. For one-shot executors (build, test, script), wait for the Process Finished event before reporting outcome. For long-running executors (dev servers), it is fine to report that it was started.",
+      "- runInTerminal: returns when the command is *sent* to the terminal. The output arrives as a `[Terminal Event]` message once the command finishes — wait for it before commenting on results.",
+      "- Browser commands: may produce `[Browser Event]` messages on errors or page lifecycle changes — handle them when they arrive.",
+      "</async-execution-model>",
+      "",
+      "<critical-rules>",
+      "Every action you take MUST be an actual tool invocation. Writing text like \"I'll run X\" or \"I've started X\" does NOT execute anything — only a tool_use block does. If you need to perform an action, invoke the tool. If you cannot invoke the tool right now, say so honestly instead of pretending you did. Never narrate a tool call without actually making it. Violating this rule means the action silently fails while you falsely report success.",
+      "</critical-rules>",
+    );
+
+    sections.push("", "<tools>");
+
+    sections.push(
+      "  <executor-tools>",
+      "  - getExecutorStatus: check status of running executors (dev servers, build processes, etc.). Use when the user asks about running processes, errors, build status, or dev server status.",
+      "  - runExecutor: start an executor. Use when the user asks to start, run, or launch a process. Asynchronous — see async-execution-model.",
+      "  - stopExecutor: stop an executor. Use when the user asks to stop or kill a process.",
+    );
+    if (remotes.length === 1) {
+      sections.push(
+        `  - Remote selection: when no remote is specified, use "${remoteNames[0]}" automatically.`,
+      );
+    } else if (remotes.length > 1) {
+      sections.push(
+        `  - Remote selection: when no remote is specified, ask the user to choose before calling the tool. Available remotes: ${remoteNames.join(", ")}.`,
+      );
+    }
+    sections.push("  </executor-tools>");
+
+    sections.push(
+      "  <agent-tools>",
+      "  - getAgentConversation: view the coding agent's conversation history. Use when the user asks about what the agent is doing, has done, or references agent activities.",
+      "  </agent-tools>",
+    );
+
+    sections.push(
+      "  <terminal-tools>",
+      "  - listTerminals: list active terminal sessions. If none are open, suggest the user open one in the Terminal tab first.",
+      "  - runInTerminal: send a command to a terminal. The command runs visibly in the user's terminal. Asynchronous — see async-execution-model.",
+      "  - Use these when the user asks to run a command, check something in the terminal, or interact with a shell.",
+      "  </terminal-tools>",
+    );
+
+    sections.push(
+      "  <browser-tools>",
+      "  - openPreview: open a web page in the preview browser.",
+      "  - Interaction: clickElement, fillInput, selectOption, pressKey.",
+      "  - Inspection: screenshot (returns base64 image), getPageContent (returns text/HTML), waitForElement.",
+      "  </browser-tools>",
+    );
+
+    sections.push("</tools>");
+
+    sections.push(
+      "",
+      "<event-handling>",
+      "  <event name=\"[Executor Event]\">",
+      "  1. First check if any Workspace Rule applies. If a rule matches, follow it (e.g. run another executor, send a command, etc.) AND briefly state what finished.",
+      "  2. If a rule says to run an executor, you MUST call the runExecutor tool every time — even if that same executor was already run earlier in this session. Never skip the tool call or claim you started an executor without actually calling runExecutor. Each rule match requires a new tool invocation.",
+      "  3. When a rule requires multiple sequential actions (e.g. run A then B then C), invoke each tool one at a time — do not narrate future steps, just invoke the next tool.",
+      "  4. If no rule applies, respond in 1-2 sentences only, stating what finished, whether it succeeded or failed, and the key detail (e.g. error message) if it failed. Do not repeat the output logs.",
+      "  </event>",
+      "  <event name=\"[Browser Event]\">",
+      "  Respond in 1-2 sentences. State what error occurred and suggest a fix if obvious.",
+      "  </event>",
+      "</event-handling>",
+    );
+
     if (enabledRules.length > 0) {
-      lines.push("");
-      lines.push("## Workspace Rules");
-      lines.push("The user has configured the following rules for this workspace. Follow them:");
+      sections.push(
+        "",
+        "<workspace-rules>",
+        "The user has configured the following rules for this workspace. Follow them:",
+      );
       enabledRules.forEach((rule, i) => {
-        lines.push(`${i + 1}. [${rule.name}]: ${rule.content}`);
+        sections.push(`${i + 1}. [${rule.name}]: ${rule.content}`);
       });
+      sections.push("</workspace-rules>");
     }
 
-    return lines.join("\n");
+    return sections.join("\n");
   }
 
   private createTools(projectId: string, branch: string | null, sessionId?: string) {
