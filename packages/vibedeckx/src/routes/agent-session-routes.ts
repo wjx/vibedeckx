@@ -165,14 +165,21 @@ const routes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      const sessionId = fastify.agentSessionManager.getOrCreateSession(
+      const sessionId = fastify.agentSessionManager.findExistingSession(
         pseudoProjectId,
         branch ?? null,
         projectPath,
         false,
         permissionMode || "edit",
-        (agentType as AgentType) || "claude-code"
       );
+
+      if (!sessionId) {
+        // No existing session for this branch — return placeholder. Frontend
+        // shows the "start a conversation" empty state; the session will be
+        // created on first user message via /agent-sessions/new.
+        console.log(`[API] /api/path/agent-sessions: no existing session (path=${projectPath}, branch=${branch ?? "<null>"})`);
+        return reply.code(200).send({ session: null, messages: [] });
+      }
 
       const session = fastify.agentSessionManager.getSession(sessionId);
       const messages = fastify.agentSessionManager.getMessages(sessionId);
@@ -193,7 +200,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         messages,
       });
     } catch (error) {
-      console.error("[API] Failed to create path-based agent session:", error);
+      console.error("[API] Failed to load path-based agent session:", error);
       return reply.code(500).send({ error: String(error) });
     }
   });
@@ -221,11 +228,15 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const countMap = new Map(
         fastify.storage.agentSessions.countEntries().map(r => [r.session_id, r.cnt])
       );
-      const sessions = dbSessions.map(s => {
-        const inMemory = fastify.agentSessionManager.getSession(s.id);
-        const status = inMemory?.status ?? (s.status === "running" ? "stopped" : s.status);
-        return { ...s, status, entry_count: countMap.get(s.id) ?? 0 };
-      });
+      // Hide empty sessions from history — only sessions that actually held a
+      // conversation should appear in the dropdown.
+      const sessions = dbSessions
+        .map(s => {
+          const inMemory = fastify.agentSessionManager.getSession(s.id);
+          const status = inMemory?.status ?? (s.status === "running" ? "stopped" : s.status);
+          return { ...s, status, entry_count: countMap.get(s.id) ?? 0 };
+        })
+        .filter(s => s.entry_count > 0);
       return reply.code(200).send({ sessions });
     }
   );
@@ -346,16 +357,20 @@ const routes: FastifyPluginAsync = async (fastify) => {
       const countMap = new Map(
         fastify.storage.agentSessions.countEntries().map(r => [r.session_id, r.cnt])
       );
-      const sessions = dbSessions.map(s => {
-        const inMemory = fastify.agentSessionManager.getSession(s.id);
-        const status = inMemory?.status ?? (s.status === "running" ? "stopped" : s.status);
-        return { ...s, status, entry_count: countMap.get(s.id) ?? 0 };
-      });
+      // Hide empty sessions from history — only sessions that actually held a
+      // conversation should appear in the dropdown.
+      const sessions = dbSessions
+        .map(s => {
+          const inMemory = fastify.agentSessionManager.getSession(s.id);
+          const status = inMemory?.status ?? (s.status === "running" ? "stopped" : s.status);
+          return { ...s, status, entry_count: countMap.get(s.id) ?? 0 };
+        })
+        .filter(s => s.entry_count > 0);
       return reply.code(200).send({ sessions });
     }
   );
 
-  // 创建或获取 Agent Session
+  // Load existing Agent Session for a branch (no auto-create)
   fastify.post<{
     Params: { projectId: string };
     Body: { branch?: string | null; permissionMode?: "plan" | "edit"; agentType?: string };
@@ -424,7 +439,11 @@ const routes: FastifyPluginAsync = async (fastify) => {
           `data=${JSON.stringify(result.data).substring(0, 500)}`);
 
         if (result.ok) {
-          const remoteData = result.data as { session: { id: string }; messages: unknown[] };
+          const remoteData = result.data as { session: { id: string } | null; messages: unknown[] };
+          if (!remoteData.session) {
+            // Remote has no existing session for this branch — pass through.
+            return reply.code(200).send({ session: null, messages: [] });
+          }
           const localSessionId = `remote-${agentMode}-${project.id}-${remoteData.session.id}`;
           fastify.remoteSessionMap.set(localSessionId, {
             remoteServerId: agentMode,
@@ -445,12 +464,12 @@ const routes: FastifyPluginAsync = async (fastify) => {
                 const patch = ConversationPatch.addEntry(i, remoteData.messages[i] as AgentMessage);
                 fastify.remotePatchCache.appendMessage(localSessionId, JSON.stringify({ JsonPatch: patch }), true);
               }
-              console.log(`[API] getOrCreate proxy: seeded cache with ${remoteData.messages.length} msgs for ${localSessionId}`);
+              console.log(`[API] findExisting proxy: seeded cache with ${remoteData.messages.length} msgs for ${localSessionId}`);
             } else {
-              console.log(`[API] getOrCreate proxy: cache already has ${cacheEntry.messages.length} msgs for ${localSessionId} (remote returned ${remoteData.messages.length}), skipping seed`);
+              console.log(`[API] findExisting proxy: cache already has ${cacheEntry.messages.length} msgs for ${localSessionId} (remote returned ${remoteData.messages.length}), skipping seed`);
             }
           } else {
-            console.log(`[API] getOrCreate proxy: remote returned 0 messages for ${localSessionId} — NOT seeding cache. Cache existing size=${fastify.remotePatchCache.getOrCreate(localSessionId).messages.length}`);
+            console.log(`[API] findExisting proxy: remote returned 0 messages for ${localSessionId} — NOT seeding cache. Cache existing size=${fastify.remotePatchCache.getOrCreate(localSessionId).messages.length}`);
           }
 
           return reply.code(200).send({
@@ -473,17 +492,22 @@ const routes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Project has no local path" });
     }
 
-    console.log(`[API] Creating LOCAL agent session: projectId=${req.params.projectId}, branch=${branch ?? null}, path=${project.path}, permissionMode=${permissionMode || "edit"}`);
+    console.log(`[API] Loading LOCAL agent session: projectId=${req.params.projectId}, branch=${branch ?? null}, path=${project.path}`);
 
     try {
-      const sessionId = fastify.agentSessionManager.getOrCreateSession(
+      const sessionId = fastify.agentSessionManager.findExistingSession(
         req.params.projectId,
         branch ?? null,
         project.path,
         false,
         permissionMode || "edit",
-        (agentType as AgentType) || "claude-code"
       );
+
+      if (!sessionId) {
+        // No existing session — UI shows empty placeholder. Session is created
+        // on first user message via /agent-sessions/new.
+        return reply.code(200).send({ session: null, messages: [] });
+      }
 
       const session = fastify.agentSessionManager.getSession(sessionId);
       const messages = fastify.agentSessionManager.getMessages(sessionId);
@@ -502,7 +526,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
         messages,
       });
     } catch (error) {
-      console.error("[API] Failed to create agent session:", error);
+      console.error("[API] Failed to load agent session:", error);
       return reply.code(500).send({ error: String(error) });
     }
   });

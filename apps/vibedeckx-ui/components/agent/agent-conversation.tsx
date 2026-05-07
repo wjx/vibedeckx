@@ -157,12 +157,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     isLoading,
     error,
     remoteStatus,
-    startSession,
     sendMessage,
     uploadPaste,
     stopSession,
     restartSession,
     startNewConversation,
+    ensureSession,
     switchMode,
     acceptPlan,
   } = useAgentSession(projectId, branch, project?.agent_mode, agentType, {
@@ -286,8 +286,9 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     submitMessage: async (content: string) => {
       onStatusChange?.();  // Optimistic "working" overlay — overrides any prior
       // "idle" overlay set by New Conversation so the dot turns blue immediately.
-      if (!session || status !== "running") {
-        const newSession = await startSession(permissionMode);
+      if (!session) {
+        // No persisted session yet (placeholder). Create one via /new on first send.
+        const newSession = await ensureSession(permissionMode);
         if (newSession) {
           sendMessage(content, newSession.id);
         }
@@ -295,7 +296,7 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
         sendMessage(content);
       }
     }
-  }), [session, status, startSession, sendMessage, permissionMode, onStatusChange]);
+  }), [session, ensureSession, sendMessage, permissionMode, onStatusChange]);
 
   const handlePasteText = useCallback(
     (event: ClipboardEvent<HTMLTextAreaElement>, text: string) => {
@@ -370,12 +371,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
     // so the workspace dot turns blue the moment the user hits send.
     onStatusChange?.();
 
-    // Resolve which session id to use. If no session yet, the session will be
-    // created below and materialization must happen against that new id.
+    // Resolve which session id to use. If no session yet, create one via /new
+    // and use the resulting id for paste materialization + sendMessage.
     let targetSessionId: string | undefined = session?.id;
     let startedSession: AgentSession | null = null;
-    if (!session || status !== "running") {
-      startedSession = await startSession(permissionMode);
+    if (!session) {
+      startedSession = await ensureSession(permissionMode);
       if (!startedSession) {
         // Restore input on failure so the user doesn't lose their pastes.
         setInput(rawText);
@@ -626,11 +627,12 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
                   const ok = window.confirm("Current conversation is running. Stop it and start a new conversation?");
                   if (!ok) return;
                 }
-                const newId = await startNewConversation();
+                await startNewConversation();
                 onNewConversation?.();
-                if (newId && setSessionUrlParam) {
-                  setSessionUrlParam(newId);
-                }
+                // Drop ?session=<id> from the URL — the new conversation has no
+                // sessionId yet (one is created on first user message). Without
+                // this, refreshing the page would reload the prior session.
+                setSessionUrlParam?.(null);
               }}
               disabled={isLoading}
               className="h-7 w-7"

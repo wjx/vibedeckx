@@ -82,115 +82,52 @@ export class AgentSessionManager {
   }
 
   /**
-   * Get or create an agent session for a branch.
+   * Find an existing agent session for a branch, or return null. Never creates.
    *
-   * Resolution order for "which session matches (projectId, branch)":
+   * Sessions are only persisted on first user message (see `createNewSession`),
+   * so "auto-load" callers must handle the null case (empty placeholder UI).
+   *
+   * Resolution order:
    * 1. DB-first: query `getLatestByBranch` (ORDER BY updated_at DESC LIMIT 1)
    *    so we always return the most-recently-updated session, not whichever
-   *    one happened to be inserted first into the in-memory Map. This is
-   *    the authoritative answer.
-   * 2. skipDb fallback (remote path-based pseudo-projects): no DB to query,
-   *    so fall back to a scan of `this.sessions`. Remote-only sessions
-   *    rarely have multiple entries per branch, so first-match is fine.
-   * 3. No match anywhere → create a brand new session.
+   *    one happened to be inserted first into the in-memory Map.
+   * 2. skipDb fallback (remote path-based pseudo-projects): scan `this.sessions`.
+   * 3. No match anywhere → null.
    */
-  getOrCreateSession(
+  findExistingSession(
     projectId: string,
     branch: string | null,
     projectPath: string,
     skipDb = false,
     permissionMode: "plan" | "edit" = "edit",
-    agentType: AgentType = "claude-code"
-  ): string {
-    console.log(`[getOrCreate] ENTER projectId=${projectId} branch=${branch ?? "<null>"} skipDb=${skipDb} sessionsMapSize=${this.sessions.size}`);
-    // 1. DB-first resolution (preferred path)
+  ): string | null {
+    console.log(`[findExisting] ENTER projectId=${projectId} branch=${branch ?? "<null>"} skipDb=${skipDb} sessionsMapSize=${this.sessions.size}`);
     if (!skipDb) {
       const latestDbRow = this.storage.agentSessions.getLatestByBranch(
         projectId,
         branch ?? ""
       );
-      console.log(`[getOrCreate] DB latestByBranch(${projectId}, ${branch ?? ""}) → ${latestDbRow ? `id=${latestDbRow.id} status=${latestDbRow.status} updatedAt=${latestDbRow.updated_at}` : "NONE"}`);
+      console.log(`[findExisting] DB latestByBranch(${projectId}, ${branch ?? ""}) → ${latestDbRow ? `id=${latestDbRow.id} status=${latestDbRow.status} updatedAt=${latestDbRow.updated_at}` : "NONE"}`);
       if (latestDbRow) {
         const inMemory = this.sessions.get(latestDbRow.id);
-        console.log(`[getOrCreate] inMemory lookup for ${latestDbRow.id} → ${inMemory ? `FOUND (dormant=${inMemory.dormant}, status=${inMemory.status}, entries=${inMemory.store.entries.filter(Boolean).length}, processAlive=${inMemory.process != null && inMemory.process.exitCode === null})` : "NOT FOUND — will fall through to create NEW"}`);
         if (inMemory) {
           return this.reuseExistingSession(inMemory, projectPath, permissionMode);
         }
-        // DB row exists but session isn't in memory. The restore path (called
-        // on startup) should have populated it; if we're here, either restore
-        // was skipped or the session has no entries yet. Fall through to
-        // create — same behavior as before.
+        // DB row exists but session isn't in memory. The restore path
+        // populates in-memory on startup, so this shouldn't normally happen.
+        // Treat as "no active session" — the user can pick the row from the
+        // history dropdown to explicitly load it.
       }
-    } else {
-      // 2. skipDb fallback: in-memory scan for remote path-based sessions.
-      // These are pseudo-projects with no DB rows, so there's nothing more
-      // authoritative to consult. First-match is acceptable because remote
-      // pseudo-projects don't accumulate many sessions per branch.
-      for (const session of this.sessions.values()) {
-        if (session.projectId === projectId && session.branch === branch) {
-          console.log(`[getOrCreate] skipDb in-memory match: ${session.id} (entries=${session.store.entries.filter(Boolean).length})`);
-          return this.reuseExistingSession(session, projectPath, permissionMode);
-        }
+      return null;
+    }
+    // skipDb fallback: in-memory scan for remote path-based sessions.
+    for (const session of this.sessions.values()) {
+      if (session.projectId === projectId && session.branch === branch) {
+        console.log(`[findExisting] skipDb in-memory match: ${session.id} (entries=${session.store.entries.filter(Boolean).length})`);
+        return this.reuseExistingSession(session, projectPath, permissionMode);
       }
-      console.log(`[getOrCreate] skipDb: no in-memory match, will create NEW`);
     }
-
-    // Create new session
-    const sessionId = randomUUID();
-    console.log(`[AgentSession] Creating new session ${sessionId}`);
-
-    // Calculate absolute worktree path
-    const absoluteWorktreePath = resolveWorktreePath(projectPath, branch);
-
-    console.log(`[AgentSession] projectPath=${projectPath}, branch=${branch}, absoluteWorktreePath=${absoluteWorktreePath}`);
-
-    // Create session in database (skip for remote path-based sessions)
-    if (!skipDb) {
-      this.storage.agentSessions.create({
-        id: sessionId,
-        project_id: projectId,
-        branch: branch ?? "",
-        permission_mode: permissionMode,
-        // agent_type passed to storage after Phase 4 migration (task 4.2/4.3)
-      });
-    }
-
-    // Initialize message store with EntryIndexProvider
-    const indexProvider = new EntryIndexProvider();
-
-    const store: MessageStore = {
-      patches: [],
-      entries: [],
-      indexProvider,
-      toolTracker: new EntryTracker(indexProvider),
-      currentAssistantIndex: null,
-    };
-
-    // Initialize running session
-    const runningSession: RunningSession = {
-      id: sessionId,
-      projectId,
-      branch,
-      process: null,
-      dormant: false,
-      store,
-      subscribers: new Set(),
-      status: "running",
-      buffer: "",
-      skipDb,
-      permissionMode,
-      agentType,
-    };
-
-    this.sessions.set(sessionId, runningSession);
-
-    // Notify provider of session creation (for per-session state init)
-    getProvider(agentType).onSessionCreated?.(sessionId);
-
-    // Spawn Claude Code process
-    this.spawnAgent(runningSession, absoluteWorktreePath);
-
-    return sessionId;
+    return null;
   }
 
   /**
@@ -286,7 +223,7 @@ export class AgentSessionManager {
   }
 
   /**
-   * Handle reuse of an existing in-memory session found by getOrCreateSession:
+   * Handle reuse of an existing in-memory session found by findExistingSession:
    * - dormant: update permission mode if differs (no respawn — wakes lazily)
    * - running OR process alive (stream-json between-turns: status="stopped"
    *   but the CLI is still waiting on stdin): switchMode if mode differs,

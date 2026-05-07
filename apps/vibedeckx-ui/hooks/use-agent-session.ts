@@ -93,12 +93,12 @@ function getAuthHeaders(contentType?: string): Record<string, string> {
   return headers;
 }
 
-async function createOrGetSession(
+async function loadExistingSession(
   projectId: string,
   branch: string | null,
   permissionMode?: "plan" | "edit",
   agentType?: AgentType
-): Promise<{ session: AgentSession; messages: AgentMessage[] }> {
+): Promise<{ session: AgentSession | null; messages: AgentMessage[] }> {
   const response = await fetch(`${getApiBase()}/api/projects/${projectId}/agent-sessions`, {
     method: "POST",
     headers: getAuthHeaders("application/json"),
@@ -106,7 +106,7 @@ async function createOrGetSession(
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create session");
+    throw new Error("Failed to load session");
   }
 
   return response.json();
@@ -360,6 +360,16 @@ export function useAgentSession(projectId: string | null, branch: string | null,
   const sessionGenerationRef = useRef(0); // Incremented on branch/project change to discard stale API responses
   const lastStartFailedRef = useRef(false); // Prevents auto-restart loop after session creation failure
   const startingRef = useRef(false); // Reentrancy guard for startSession
+  // After "New Conversation" the user explicitly wants an empty placeholder.
+  // Without this flag, auto-start would immediately re-load the latest session
+  // for the branch (which is the one they just stopped). Cleared by the reset
+  // effect on workspace switch or when the user picks a session from history.
+  const placeholderRef = useRef(false);
+  const prevWorkspaceRef = useRef<{ projectId: string | null; branch: string | null; agentMode: string | undefined }>({
+    projectId,
+    branch,
+    agentMode,
+  });
   const onTaskCompletedRef = useRef(options?.onTaskCompleted);
   const onSessionStartedRef = useRef(options?.onSessionStarted);
   const onTitleUpdatedRef = useRef(options?.onTitleUpdated);
@@ -674,15 +684,28 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       console.log(`[AgentSession] Starting REST call: projectId=${projectId}, branch=${branch}, sessionId=${explicitSessionId ?? "latest"}, agentType=${agentType}, generation=${generation}`);
       const { session: newSession, messages: initialMessages } = explicitSessionId
         ? await getSessionById(explicitSessionId)
-        : await createOrGetSession(projectId, branch, permissionMode, agentType);
-
-      console.log(`[AgentSession] REST response: sessionId=${newSession.id}, msgCount=${initialMessages?.length ?? 0}, status=${newSession.status}, explicitSessionIdRequested=${explicitSessionId ?? "<null>"}`);
+        : await loadExistingSession(projectId, branch, permissionMode, agentType);
 
       // If branch/project changed while the API call was in flight, discard the result
       if (sessionGenerationRef.current !== generation) {
         console.log("[AgentSession] Discarding stale session response (generation mismatch)");
         return null;
       }
+
+      // No existing session for this (projectId, branch) — surface the empty
+      // placeholder. A real session is created on first user message via
+      // ensureSession() / POST /agent-sessions/new.
+      if (!newSession) {
+        console.log(`[AgentSession] No existing session for ${projectId}/${branch ?? "<null>"} — placeholder`);
+        setSession(null);
+        setStatus("stopped");
+        setMessages([]);
+        containerRef.current = { entries: [], status: "stopped" };
+        setIsInitialized(true);
+        return null;
+      }
+
+      console.log(`[AgentSession] REST response: sessionId=${newSession.id}, msgCount=${initialMessages?.length ?? 0}, status=${newSession.status}, explicitSessionIdRequested=${explicitSessionId ?? "<null>"}`);
 
       // Cache the session for future workspace switches (cache under both the explicit id key and the latest key)
       sessionCache.set(cacheKey, newSession);
@@ -886,10 +909,11 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     }
   }, [session?.id, projectId, branch, explicitSessionId]);
 
-  // Start a brand-new conversation: stops the current (if running) and creates a fresh session
-  // via POST /api/projects/:projectId/agent-sessions/new. Returns the new session id so the
-  // caller can reflect it in the URL.
-  const startNewConversation = useCallback(async (overrideAgentType?: AgentType): Promise<string | null> => {
+  // Reset to an empty conversation placeholder. Stops the prior session (if any)
+  // but does NOT create a new session in the database — that happens on first
+  // user message via ensureSession(). Returns null because there's no
+  // sessionId to surface yet.
+  const startNewConversation = useCallback(async (): Promise<null> => {
     if (!projectId) return null;
     // Best-effort stop — we don't want to leave an orphan running in the background.
     // NOTE: don't guard on status === "running". Between turns, stream-json agents
@@ -900,41 +924,66 @@ export function useAgentSession(projectId: string | null, branch: string | null,
       try {
         await stopSessionApi(session.id);
       } catch (e) {
-        // Don't block creating the new session — but log so we notice if stops
-        // systematically fail (e.g. remoteSessionMap miss after a server restart).
         console.warn("[AgentSession] startNewConversation: stop of prior session failed:", e);
       }
+      sessionCache.delete(getCacheKey(projectId, branch, session.id));
     }
+    sessionCache.delete(getCacheKey(projectId, branch, explicitSessionId));
+    // Clear local UI state to the empty placeholder.
+    setSession(null);
+    setStatus("stopped");
+    setIsInitialized(true);
+    setError(null);
+    setRemoteStatus(null);
+    setMessages([]);
+    containerRef.current = { entries: [], status: "stopped" };
+    // Suppress the auto-start effect from re-loading the latest session
+    // for this branch (which is the one we just left). Cleared on the next
+    // workspace switch.
+    placeholderRef.current = true;
+    return null;
+  }, [projectId, branch, session?.id, explicitSessionId]);
+
+  // Create a real session on demand (called by submitMessage on first send).
+  // POSTs to /api/projects/:projectId/agent-sessions/new and wires up WS.
+  // If a session already exists, returns it unchanged.
+  const ensureSession = useCallback(async (
+    permissionMode?: "plan" | "edit"
+  ): Promise<AgentSession | null> => {
+    if (!projectId) return null;
+    if (session) return session;
+
     setIsLoading(true);
     setError(null);
     try {
-      const data = await createNewAgentSession(
-        projectId,
-        branch,
-        session?.permissionMode,
-        overrideAgentType ?? session?.agentType ?? agentType
-      );
-      // Proactively clear UI so the stale old conversation doesn't render during the
-      // one-frame gap between this return and the reset effect firing on sessionId
-      // change. Mirrors the clears in the projectId/branch/agentMode/explicitSessionId
-      // reset effect (minus isLoading, which the finally block handles).
-      setSession(null);
-      setStatus("stopped");
-      setIsInitialized(false);
-      setError(null);
-      setRemoteStatus(null);
-      setMessages([]);
-      containerRef.current = { entries: [], status: "stopped" };
-      return data.session.id;
+      const data = await createNewAgentSession(projectId, branch, permissionMode, agentType);
+      const newSession: AgentSession = {
+        id: data.session.id,
+        projectId: data.session.projectId,
+        branch: data.session.branch,
+        status: data.session.status as AgentSessionStatus,
+        permissionMode: (data.session.permissionMode ?? "edit") as "plan" | "edit",
+        agentType: (data.session.agentType ?? "claude-code") as AgentType,
+      };
+      sessionCache.set(getCacheKey(projectId, branch, explicitSessionId), newSession);
+      sessionCache.set(getCacheKey(projectId, branch, newSession.id), newSession);
+      setSession(newSession);
+      setStatus(newSession.status);
+      setIsInitialized(true);
+      // No longer in placeholder mode — a real session exists now.
+      placeholderRef.current = false;
+      connectWebSocket(newSession.id);
+      onSessionStartedRef.current?.();
+      return newSession;
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : "Failed to start new conversation";
+      const errorMsg = e instanceof Error ? e.message : "Failed to create session";
       setError(errorMsg);
-      console.error("[AgentSession] startNewConversation:", e);
+      console.error("[AgentSession] ensureSession:", e);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, branch, session?.id, session?.status, session?.permissionMode, session?.agentType, agentType]);
+  }, [projectId, branch, agentType, session, explicitSessionId, connectWebSocket]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -990,6 +1039,17 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     shortLivedConnectionsRef.current = 0;
     lastStartFailedRef.current = false;
     startingRef.current = false;
+    // Clear placeholder intent only on workspace switch or when navigating to
+    // a specific session via URL. A pure URL-cleared transition (caused by
+    // the New Conversation button itself dropping ?session=) must preserve
+    // placeholderRef so auto-start doesn't immediately re-load the latest.
+    const prev = prevWorkspaceRef.current;
+    const workspaceChanged =
+      prev.projectId !== projectId || prev.branch !== branch || prev.agentMode !== agentMode;
+    if (workspaceChanged || explicitSessionId) {
+      placeholderRef.current = false;
+    }
+    prevWorkspaceRef.current = { projectId, branch, agentMode };
 
     // Mark that we need to auto-start session after reset
     shouldAutoStartRef.current = true;
@@ -1003,7 +1063,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
 
   // Auto-start session after mount or worktree switch
   useEffect(() => {
-    if (shouldAutoStartRef.current && projectId && !session && !isLoading && !lastStartFailedRef.current) {
+    if (shouldAutoStartRef.current && projectId && !session && !isLoading && !lastStartFailedRef.current && !placeholderRef.current) {
       shouldAutoStartRef.current = false;
       console.log(`[AgentSession] Auto-start: projectId=${projectId}, branch=${branch}, agentMode=${agentMode}`);
       startSession();
@@ -1055,6 +1115,7 @@ export function useAgentSession(projectId: string | null, branch: string | null,
     stopSession,
     restartSession,
     startNewConversation,
+    ensureSession,
     switchMode,
     acceptPlan,
   };
