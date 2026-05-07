@@ -595,63 +595,61 @@ export const AgentConversation = forwardRef<AgentConversationHandle, AgentConver
             );
           })()}
         </div>
-        {session && (
-          <div className="flex items-center gap-1">
-            {projectId && (
-              <SessionHistoryDropdown
-                projectId={projectId}
-                branch={branch}
-                currentSessionId={session?.id ?? null}
-                currentEntryCount={messages.length}
-                refreshKey={titleRefreshKey}
-                pendingTitleSessionId={pendingTitleSessionId}
-                aiTitleOverride={aiTitleOverride}
-                onSwitch={(id) => {
-                  setSessionUrlParam?.(id);
-                }}
-                onDelete={(id, remaining) => {
-                  if (id === session?.id) {
-                    // Current was deleted — redirect to most-recent remaining, or clear URL
-                    const next = remaining[0];  // remaining is already sorted updated_at DESC
-                    setSessionUrlParam?.(next ? next.id : null);
-                  }
-                }}
-              />
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={async () => {
-                console.log("[NewConv] click", { liveStatus: status, sessionStatus: session?.status, sessionId: session?.id });
-                if (status === "running") {
-                  const ok = window.confirm("Current conversation is running. Stop it and start a new conversation?");
-                  if (!ok) return;
-                }
-                await startNewConversation();
-                onNewConversation?.();
-                // Drop ?session=<id> from the URL — the new conversation has no
-                // sessionId yet (one is created on first user message). Without
-                // this, refreshing the page would reload the prior session.
-                setSessionUrlParam?.(null);
+        <div className="flex items-center gap-1">
+          {projectId && (
+            <SessionHistoryDropdown
+              projectId={projectId}
+              branch={branch}
+              currentSessionId={session?.id ?? null}
+              currentEntryCount={messages.length}
+              refreshKey={titleRefreshKey}
+              pendingTitleSessionId={pendingTitleSessionId}
+              aiTitleOverride={aiTitleOverride}
+              onSwitch={(id) => {
+                setSessionUrlParam?.(id);
               }}
-              disabled={isLoading}
-              className="h-7 w-7"
-              title="New Conversation"
-            >
-              <SquarePen className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => stopSession()}
-              disabled={session.status !== "running"}
-              className="h-7 text-xs"
-            >
-              <Square className="h-3 w-3 mr-1" />
-              Stop
-            </Button>
-          </div>
-        )}
+              onDelete={(id, remaining) => {
+                if (id === session?.id) {
+                  // Current was deleted — redirect to most-recent remaining, or clear URL
+                  const next = remaining[0];  // remaining is already sorted updated_at DESC
+                  setSessionUrlParam?.(next ? next.id : null);
+                }
+              }}
+            />
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={async () => {
+              console.log("[NewConv] click", { liveStatus: status, sessionStatus: session?.status, sessionId: session?.id });
+              if (status === "running") {
+                const ok = window.confirm("Current conversation is running. Stop it and start a new conversation?");
+                if (!ok) return;
+              }
+              await startNewConversation();
+              onNewConversation?.();
+              // Drop ?session=<id> from the URL — the new conversation has no
+              // sessionId yet (one is created on first user message). Without
+              // this, refreshing the page would reload the prior session.
+              setSessionUrlParam?.(null);
+            }}
+            disabled={isLoading || !session}
+            className="h-7 w-7"
+            title="New Conversation"
+          >
+            <SquarePen className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => stopSession()}
+            disabled={status !== "running"}
+            className="h-7 text-xs"
+          >
+            <Square className="h-3 w-3 mr-1" />
+            Stop
+          </Button>
+        </div>
       </div>
 
       {/* Messages area */}
