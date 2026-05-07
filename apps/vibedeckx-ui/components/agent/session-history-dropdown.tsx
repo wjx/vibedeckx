@@ -140,7 +140,13 @@ export function SessionHistoryDropdown({
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const triggerPending = currentSessionId !== null && isTitlePending(currentSessionId);
-  const triggerLabel = currentSession ? label(currentSession) : "History";
+  // No currentSessionId → user is in the placeholder state after clicking
+  // New Conversation; show "New Session" rather than "History".
+  const triggerLabel = currentSession
+    ? label(currentSession)
+    : currentSessionId === null
+      ? "New Session"
+      : "History";
   const triggerTitle = triggerPending ? "Generating title…" : triggerLabel;
 
   return (
